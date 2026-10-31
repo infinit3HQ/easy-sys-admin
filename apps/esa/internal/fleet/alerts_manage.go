@@ -190,6 +190,9 @@ func (s *Service) CreateChannel(ctx context.Context, a Actor, name, kind string,
 	if err != nil {
 		return ChannelView{}, err
 	}
+	if err := s.underCap(ctx, a, &store.NotifyChannel{}, maxChannels, "notification channels"); err != nil {
+		return ChannelView{}, err
+	}
 	if v, ok := s.notifier.(ChannelValidator); ok {
 		if _, err := v.Validate(kind, cfg); err != nil {
 			return ChannelView{}, invalid("config", "%s", err.Error())
@@ -251,23 +254,32 @@ func (s *Service) DeleteChannel(ctx context.Context, a Actor, id int64) error {
 	return nil
 }
 
-// TestChannel sends a test message through one channel and returns the error, if any.
+// TestChannel sends a test message through one channel and returns the
+// error, if any. Unlike alerts it is sent right away, not queued.
 func (s *Service) TestChannel(ctx context.Context, a Actor, id int64) error {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+		return err
+	}
+	if err := s.limitRate(a, "channel.test"); err != nil {
 		return err
 	}
 	var ch store.NotifyChannel
 	if err := s.scoped(ctx, a).Where("id = ?", id).Take(&ch).Error; err != nil {
 		return mapStore(err)
 	}
+	if s.notifier == nil {
+		return &UnavailableError{Message: "notifications are not configured"}
+	}
 	err := s.sendOne(ctx, ch, Message{Title: "esa test notification", Body: "This channel works. Alerts from easy-sys-admin will arrive here.", Severity: "info", URL: s.publicURL.JoinPath("/app/alerts").String()})
+	s.audit(ctx, nil, a, "channel.test", ch.Name, map[string]any{"ok": err == nil})
 	if err != nil {
-		return &UnavailableError{Message: err.Error()}
+		return &UnavailableError{Message: netErrorText(err)}
 	}
 	return nil
 }
 
-// notify sends a message to every enabled channel of the account.
+// notify queues a message for every enabled channel of the account.
+// Delivery happens in the background (see enqueueNotify).
 func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 	if s.notifier == nil {
 		return
@@ -277,9 +289,7 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 		return
 	}
 	for _, ch := range chans {
-		if err := s.sendOne(ctx, ch, msg); err != nil {
-			s.log.Warn("send notification", "channel", ch.Name, "err", err)
-		}
+		s.enqueueNotify(ch, msg)
 	}
 }
 
@@ -294,7 +304,10 @@ func (s *Service) sendOne(ctx context.Context, ch store.NotifyChannel, msg Messa
 	now := s.now()
 	changes := map[string]any{"last_error": ""}
 	if err != nil {
-		changes["last_error"] = err.Error()
+		// The channel page shows last_error to every member: store the
+		// category only, and log the detail.
+		s.log.Warn("send notification", "account_id", ch.AccountID, "channel", ch.Name, "err", err)
+		changes["last_error"] = netErrorText(err)
 	} else {
 		changes["last_sent_at"] = now
 	}

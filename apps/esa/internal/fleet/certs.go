@@ -11,6 +11,7 @@ import (
 
 	"gorm.io/gorm/clause"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/netguard"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
@@ -64,6 +65,12 @@ func (s *Service) AddCert(ctx context.Context, a Actor, hostname string, port in
 		port = 443
 	}
 	if _, err := validPort(port); err != nil {
+		return CertView{}, err
+	}
+	if err := s.underCap(ctx, a, &store.CertTarget{}, maxCerts, "certificates"); err != nil {
+		return CertView{}, err
+	}
+	if err := s.limitRate(a, "cert.add"); err != nil {
 		return CertView{}, err
 	}
 	c := store.CertTarget{AccountID: a.AccountID, Hostname: hostname, Port: port, CreatedAt: s.now()}
@@ -132,12 +139,15 @@ func (s *Service) CheckCerts(ctx context.Context) {
 func (s *Service) checkCert(ctx context.Context, c *store.CertTarget) {
 	now := s.now()
 	c.CheckedAt = &now
-	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 10 * time.Second}, Config: &tls.Config{ServerName: c.Hostname}}
+	// The hostname is user input: dial through the address policy.
+	nd := netguard.Dialer(s.allowPrivate, net.Dialer{Timeout: 10 * time.Second})
+	d := &tls.Dialer{NetDialer: nd, Config: &tls.Config{ServerName: c.Hostname}}
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	conn, err := d.DialContext(cctx, "tcp", net.JoinHostPort(c.Hostname, strconv.Itoa(c.Port)))
 	if err != nil {
-		c.LastError = strings.TrimPrefix(err.Error(), "tls: ")
+		s.log.Info("certificate check failed", "account_id", c.AccountID, "host", c.Hostname, "port", c.Port, "err", err)
+		c.LastError = netErrorText(err)
 	} else {
 		state := conn.(*tls.Conn).ConnectionState()
 		_ = conn.Close()

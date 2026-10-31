@@ -21,18 +21,36 @@ const (
 	hourlyRetention = 90 * 24 * time.Hour
 )
 
-// PollAll polls every ready server in every account, a few at a time.
+// PollAll polls every ready server in every account, a few at a time. The
+// caller's deadline ends the cycle; servers attempted longest ago go first,
+// so a cycle cut short does not starve the same servers every time.
+// Servers that keep rejecting esa's login are polled less often.
 func (s *Service) PollAll(ctx context.Context) {
 	var ids []int64
-	if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("enrollment = 'ready'").Pluck("id", &ids).Error; err != nil {
+	err := s.db.WithContext(ctx).Model(&store.Server{}).
+		Joins("LEFT JOIN server_states ON server_states.server_id = servers.id").
+		Where("servers.enrollment = 'ready'").
+		Order("server_states.last_attempt_at NULLS FIRST, servers.id").
+		Pluck("servers.id", &ids).Error
+	if err != nil {
 		s.log.Error("list servers to poll", "err", err)
 		return
 	}
 	sem := make(chan struct{}, pollConcurrency)
 	var wg sync.WaitGroup
+	skipped := 0
+loop:
 	for _, id := range ids {
+		if s.pollDeferred(id) {
+			continue
+		}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			skipped++
+			break loop
+		}
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(id int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
@@ -40,6 +58,9 @@ func (s *Service) PollAll(ctx context.Context) {
 		}(id)
 	}
 	wg.Wait()
+	if skipped > 0 {
+		s.log.Warn("poll cycle ran out of time; the rest wait for the next cycle")
+	}
 }
 
 // PollServer collects one status snapshot, stores it, and evaluates alerts.
@@ -64,9 +85,17 @@ func (s *Service) PollServer(ctx context.Context, serverID int64) {
 	ep, err := s.endpoint(ctx, srv)
 	var snap proto.Status
 	if err == nil {
-		pctx, cancel := context.WithTimeout(ctx, pollTimeout)
+		pctx, cancel := context.WithTimeout(s.netCtx(ctx), pollTimeout)
 		err = s.pool.Call(pctx, ep, &snap, "status")
 		cancel()
+	}
+	switch {
+	case err == nil:
+		s.clearBackoff(serverID)
+	case errors.Is(err, remote.ErrAuthFailed):
+		if d := s.recordAuthFailure(serverID); d > 0 {
+			s.log.Warn("ssh login refused repeatedly; polling less often", "server_id", serverID, "next_in", d)
+		}
 	}
 	if err != nil {
 		var mismatch *remote.HostKeyMismatchError
@@ -172,7 +201,7 @@ func (s *Service) RefreshUpdates(ctx context.Context, serverID int64, refresh bo
 		return err
 	}
 	var upd proto.PendingUpdates
-	cctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 6*time.Minute)
 	defer cancel()
 	args := []string{}
 	if refresh {

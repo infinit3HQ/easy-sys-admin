@@ -25,7 +25,8 @@ func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, 
 }
 
 // every runs fn after delay and then on each interval. A panic in one run
-// is logged and does not stop the loop.
+// is logged and does not stop the loop. Each run gets a deadline slightly
+// under the interval, so a stuck run cannot hold up the next one.
 func every(ctx context.Context, log *slog.Logger, name string, interval, delay time.Duration, fn func(context.Context)) {
 	select {
 	case <-ctx.Done():
@@ -41,7 +42,9 @@ func every(ctx context.Context, log *slog.Logger, name string, interval, delay t
 					log.Error("background job panicked", "job", name, "panic", v, "stack", string(debug.Stack()))
 				}
 			}()
-			fn(ctx)
+			rctx, cancel := context.WithTimeout(ctx, interval-interval/12)
+			defer cancel()
+			fn(rctx)
 		}()
 		select {
 		case <-ctx.Done():

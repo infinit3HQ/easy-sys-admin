@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,39 +20,27 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/netguard"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/version"
 )
 
 // Sender implements fleet.Notifier and fleet.ChannelValidator.
 type Sender struct {
-	http *http.Client
+	http   *http.Client
+	dialer *net.Dialer
 }
 
-// New returns a Sender whose HTTP client refuses loopback, link-local
-// (cloud metadata), and unspecified addresses, so a webhook URL cannot be
-// used to reach the control plane's own host or instance metadata.
+// New returns a Sender whose connections go through the address policy:
+// metadata, link-local, and unspecified addresses are always refused, and
+// loopback and private addresses unless allowPrivate is set. The check runs
+// on the resolved address at dial time, so DNS rebinding cannot bypass it.
 func New(allowPrivate bool) *Sender {
-	_ = allowPrivate // TODO(agent B): enforce
-	dialer := &net.Dialer{
-		Timeout: 10 * time.Second,
-		Control: func(_, address string, _ syscall.RawConn) error {
-			host, _, err := net.SplitHostPort(address)
-			if err != nil {
-				return err
-			}
-			ip := net.ParseIP(host)
-			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-				return fmt.Errorf("refusing to send notifications to %s", host)
-			}
-			return nil
-		},
-	}
-	return &Sender{http: &http.Client{
+	dialer := netguard.Dialer(allowPrivate, net.Dialer{Timeout: 10 * time.Second})
+	return &Sender{dialer: dialer, http: &http.Client{
 		Timeout: 15 * time.Second,
 		Transport: &http.Transport{
 			DialContext:         dialer.DialContext,
@@ -126,7 +115,7 @@ func (s *Sender) Send(ctx context.Context, ch store.NotifyChannel, raw []byte, m
 		}
 		return s.postJSON(ctx, c.URL, body, []byte(c.Secret))
 	case "email":
-		return sendMail(c, title, m)
+		return s.sendMail(ctx, c, title, m)
 	}
 	return fmt.Errorf("unknown channel kind %q", ch.Kind)
 }
@@ -193,7 +182,7 @@ func (s *Sender) do(req *http.Request) error {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("send to %s: %s", req.URL.Host, resp.Status)
+		return fmt.Errorf("send to %s: %w", req.URL.Host, &fleet.HTTPStatusError{Code: resp.StatusCode})
 	}
 	return nil
 }
@@ -206,7 +195,7 @@ func unwrapURLError(err error) error {
 	return err
 }
 
-func sendMail(c fleet.ChannelConfig, title string, m fleet.Message) error {
+func (s *Sender) sendMail(ctx context.Context, c fleet.ChannelConfig, title string, m fleet.Message) error {
 	from, _ := mail.ParseAddress(c.From)
 	var to []string
 	for _, t := range c.To {
@@ -223,10 +212,65 @@ func sendMail(c fleet.ChannelConfig, title string, m fleet.Message) error {
 	}
 	body.WriteString("\r\n")
 
-	addr := net.JoinHostPort(c.SMTPHost, strconv.Itoa(c.SMTPPort))
 	var auth smtp.Auth
 	if c.Username != "" {
 		auth = smtp.PlainAuth("", c.Username, c.Password, c.SMTPHost)
 	}
-	return smtp.SendMail(addr, auth, from.Address, to, []byte(body.String()))
+	return s.smtpSend(ctx, c.SMTPHost, c.SMTPPort, auth, from.Address, to, []byte(body.String()))
+}
+
+// smtpSend is smtp.SendMail with a context: it dials through the address
+// policy and bounds the whole conversation by ctx.
+func (s *Sender) smtpSend(ctx context.Context, host string, port int, auth smtp.Auth, from string, to []string, msg []byte) error {
+	conn, err := s.dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	if err != nil {
+		return fmt.Errorf("send to %s: %w", host, err)
+	}
+	defer conn.Close()
+	if dl, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(dl)
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
+
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	if err := c.Hello("localhost"); err != nil {
+		return err
+	}
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err := c.StartTLS(&tls.Config{ServerName: host}); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if ok, _ := c.Extension("AUTH"); !ok {
+			return errors.New("smtp: server doesn't support AUTH")
+		}
+		if err := c.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err := c.Mail(from); err != nil {
+		return err
+	}
+	for _, addr := range to {
+		if err := c.Rcpt(addr); err != nil {
+			return err
+		}
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(msg); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
 }

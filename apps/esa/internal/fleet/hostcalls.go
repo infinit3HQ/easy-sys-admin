@@ -23,7 +23,7 @@ func (s *Service) call(ctx context.Context, a Actor, serverID int64, timeout tim
 	if err != nil {
 		return srv, err
 	}
-	cctx, cancel := context.WithTimeout(ctx, timeout)
+	cctx, cancel := context.WithTimeout(s.netCtx(ctx), timeout)
 	defer cancel()
 	if err := s.pool.Call(cctx, ep, out, action, args...); err != nil {
 		return srv, s.hostErr(ctx, srv, err)
@@ -142,6 +142,13 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 	}
 	var out proto.JobsReport
 	_, err := s.call(ctx, a, serverID, time.Minute, &out, "jobs")
+	// Cron command lines often hold secrets (tokens, passwords in URLs), so
+	// they need the same access as logs. Schedules stay visible.
+	if a.can(RoleAdmin, ScopeLogs) != nil {
+		for i := range out.Cron {
+			out.Cron[i].Command = ""
+		}
+	}
 	return out, err
 }
 

@@ -34,11 +34,16 @@ func (s *Service) ProbeServer(ctx context.Context, a Actor, host string, port in
 	if port, err = validPort(port); err != nil {
 		return ProbeResult{}, err
 	}
-	pctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	if err := s.limitRate(a, "server.probe"); err != nil {
+		return ProbeResult{}, err
+	}
+	pctx, cancel := context.WithTimeout(s.netCtx(ctx), 20*time.Second)
 	defer cancel()
 	k, err := remote.ProbeHostKey(pctx, host, port)
+	s.audit(ctx, nil, a, "server.probe", host, map[string]any{"port": port, "ok": err == nil})
 	if err != nil {
-		return ProbeResult{}, &UnavailableError{Message: err.Error()}
+		s.log.Info("probe host key", "account_id", a.AccountID, "host", host, "port", port, "err", err)
+		return ProbeResult{}, &UnavailableError{Message: "could not read the host key of " + host + ": " + netErrorText(err)}
 	}
 	return ProbeResult{HostKey: remote.MarshalKey(k), Fingerprint: remote.Fingerprint(k), KeyType: k.Type()}, nil
 }
@@ -73,12 +78,15 @@ func (s *Service) AddServer(ctx context.Context, a Actor, in AddServerInput) (Se
 	if in.KeepLogin && !a.Role.AtLeast(RoleOwner) {
 		return ServerView{}, invalid("keepLogin", "only account owners can store a login")
 	}
+	if err := s.limitRate(a, "server.add"); err != nil {
+		return ServerView{}, err
+	}
 	k, err := s.accountKey(ctx, a.AccountID)
 	if err != nil {
 		return ServerView{}, err
 	}
 
-	ictx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	ictx, cancel := context.WithTimeout(s.netCtx(ctx), 5*time.Minute)
 	defer cancel()
 	res, err := remote.Install(ictx, remote.InstallRequest{
 		Host: srv.Host, Port: srv.Port, HostKey: hostKey, Login: in.Login,
@@ -135,6 +143,9 @@ func (s *Service) validateNewServer(ctx context.Context, a Actor, name, host str
 		return srv, nil, err
 	}
 	if err := s.checkGroup(ctx, a, groupID); err != nil {
+		return srv, nil, err
+	}
+	if err := s.underCap(ctx, a, &store.Server{}, maxServers, "servers"); err != nil {
 		return srv, nil, err
 	}
 	var dup int64
@@ -222,7 +233,7 @@ func (s *Service) verifyHelper(ctx context.Context, serverID int64) error {
 		Protocol int    `json:"protocol"`
 		Arch     string `json:"arch"`
 	}
-	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 30*time.Second)
 	defer cancel()
 	if err := s.pool.Call(cctx, ep, &v, "version"); err != nil {
 		return fmt.Errorf("helper check as esa: %w", err)
