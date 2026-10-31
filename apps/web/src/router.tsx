@@ -1,6 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { createRouter } from '@tanstack/react-router'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
+import { getGlobalStartContext } from '@tanstack/react-start'
 import { routeTree } from './routeTree.gen'
 import { ApiError } from '#/lib/api'
 
@@ -9,7 +10,12 @@ export function getRouter() {
     defaultOptions: {
       queries: {
         staleTime: 10_000,
-        retry: (count, error) => !(error instanceof ApiError && error.status >= 400 && error.status < 500) && count < 2,
+        retry: (count, error) =>
+          !(
+            error instanceof ApiError &&
+            error.status >= 400 &&
+            error.status < 500
+          ) && count < 2,
       },
     },
   })
@@ -19,8 +25,12 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
+    // The per-request CSP nonce from src/start.ts; undefined in the browser.
+    ssr: { nonce: getGlobalStartContext()?.nonce },
     defaultErrorComponent: ({ error }) => (
-      <div className="m-8 rounded border border-fail/40 bg-fail/10 p-6 font-mono text-sm text-fail">{error instanceof Error ? error.message : String(error)}</div>
+      <div className="m-8 rounded border border-fail/40 bg-fail/10 p-6 font-mono text-sm text-fail">
+        {error instanceof Error ? error.message : String(error)}
+      </div>
     ),
   })
   setupRouterSsrQueryIntegration({ router, queryClient })

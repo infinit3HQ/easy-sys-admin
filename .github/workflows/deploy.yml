@@ -5,8 +5,9 @@ name: Deploy
 # Settings come from repository secrets and variables; the env file exists
 # only for the length of the job.
 #
-# Pushes to main deploy after CI passes when the repository variable
-# DEPLOY_ENABLED is "true". "Run workflow" deploys on demand.
+# Pushes to main of this repository deploy after CI passes when the
+# repository variable DEPLOY_ENABLED is "true". "Run workflow" deploys on
+# demand, from main only. CI runs for pull requests and forks never deploy.
 on:
   workflow_run:
     workflows: [CI]
@@ -24,21 +25,29 @@ concurrency:
 jobs:
   deploy:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (vars.DEPLOY_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+        vars.DEPLOY_ENABLED == 'true' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: [self-hosted, esa-deploy]
     environment:
       name: production
       url: https://${{ vars.ESA_HOST }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
 
       - name: Write env file from secrets
         env:
           ESA_HOST: ${{ vars.ESA_HOST }}
-          ESA_SIGNUP: ${{ vars.ESA_SIGNUP || 'true' }}
+          ESA_SIGNUP: ${{ vars.ESA_SIGNUP || 'false' }}
+          # Empty leaves the control plane default.
+          ESA_ALLOW_PRIVATE_NETWORKS: ${{ vars.ESA_ALLOW_PRIVATE_NETWORKS }}
           ESA_AUTH_PASSWORD: ${{ vars.ESA_AUTH_PASSWORD || 'true' }}
           ESA_ALLOWED_EMAILS: ${{ vars.ESA_ALLOWED_EMAILS }}
           ESA_OIDC_ISSUER: ${{ vars.ESA_OIDC_ISSUER }}
@@ -59,13 +68,22 @@ jobs:
           for v in ESA_HOST ESA_MASTER_KEY POSTGRES_PASSWORD; do
             if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set in the repository settings"; exit 1; fi
           done
+          vars="ESA_HOST ESA_SIGNUP ESA_ALLOW_PRIVATE_NETWORKS ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME
+                ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET
+                ESA_STACK_NAME ESA_ROUTER TRAEFIK_NETWORK TRAEFIK_ENTRYPOINT TRAEFIK_CERT_RESOLVER"
+          # Values are written in single quotes, so they cannot hold a single quote or a line break.
+          nl='
+          '
+          for v in $vars; do
+            case "$(printenv "$v")" in
+              *"'"*|*"$nl"*) echo "::error::$v contains a single quote or a line break, which the env file cannot hold"; exit 1 ;;
+            esac
+          done
           umask 077
           f="$RUNNER_TEMP/esa-$GITHUB_RUN_ID.env"
           {
             # Single quotes: compose takes the value literally.
-            for v in ESA_HOST ESA_SIGNUP ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME \
-                     ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET \
-                     ESA_STACK_NAME ESA_ROUTER TRAEFIK_NETWORK TRAEFIK_ENTRYPOINT TRAEFIK_CERT_RESOLVER; do
+            for v in $vars; do
               printf "%s='%s'\n" "$v" "$(printenv "$v")"
             done
             printf "ESA_PUBLIC_URL='https://%s'\n" "$ESA_HOST"
