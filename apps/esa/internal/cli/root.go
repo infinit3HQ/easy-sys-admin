@@ -28,6 +28,7 @@ func Execute() int {
 		SilenceErrors: true,
 	}
 	root.AddCommand(newServeCommand(), newHealthcheckCommand())
+	addClientCommands(root)
 
 	if err := root.ExecuteContext(ctx); err != nil {
 		if !errors.Is(err, context.Canceled) {
