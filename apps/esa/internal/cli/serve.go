@@ -18,17 +18,25 @@ func newServeCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
 		Short: "Run the control plane (API, sign-in, background jobs)",
-		Long: `Run the control plane. Settings come from ESA_* environment variables:
+		Long: `Run the control plane. Settings come from ESA_* environment variables
+(docs/configuration.md lists them all):
 
   ESA_DATABASE_URL        PostgreSQL URL (required)
+  ESA_MASTER_KEY          base64 key that seals stored secrets (required)
   ESA_LISTEN              bind address, default 127.0.0.1:8080
   ESA_PUBLIC_URL          origin users open, default http://localhost:3000
-  ESA_AUTH_MODE           oidc (default) or dev (loopback only)
+  ESA_HELPER_DIR          directory with esa-helper-linux-{amd64,arm64}, default ./bin
+  ESA_AUTH_MODE           standard (default) or dev (loopback only)
+  ESA_AUTH_PASSWORD       email and password sign-in, default true
+  ESA_SIGNUP              open sign-up, default false
   ESA_OIDC_ISSUER         OIDC issuer URL, for example https://auth.example.com/application/o/esa/
   ESA_OIDC_CLIENT_ID      OIDC client id
   ESA_OIDC_CLIENT_SECRET  OIDC client secret
   ESA_OIDC_PROVIDER_NAME  name on the sign-in button, default Authentik
+  ESA_GOOGLE_CLIENT_ID    Google sign-in client id
+  ESA_GOOGLE_CLIENT_SECRET Google sign-in client secret
   ESA_ALLOWED_EMAILS      comma-separated allow list, empty allows everyone
+  ESA_ALLOW_PRIVATE_NETWORKS  allow private addresses; default true unless sign-up is open
   ESA_LOG_FORMAT          text (default) or json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

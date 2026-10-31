@@ -51,12 +51,12 @@ Our five servers are the first group, on the control plane hosted on Server_Medi
 
 ## What is already out there
 
-| Tool | Covers | Leaves out |
-|---|---|---|
-| [unattended-upgrades](https://wiki.debian.org/UnattendedUpgrades) | Apt security updates on one machine | Groups, a fleet page, Docker cache, VS Code copies |
-| [docuum](https://github.com/stepchowfun/docuum) | Least-recently-used Docker images | BuildKit cache, which was 47 GB and 70 GB on two of our servers |
-| [topgrade](https://github.com/topgrade-rs/topgrade) | Many package managers, plus a wide Docker prune | Stopped containers get removed. No group settings. |
-| Cockpit | A UI on one server | You log into each machine |
+| Tool                                                              | Covers                                          | Leaves out                                                      |
+| ----------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------- |
+| [unattended-upgrades](https://wiki.debian.org/UnattendedUpgrades) | Apt security updates on one machine             | Groups, a fleet page, Docker cache, VS Code copies              |
+| [docuum](https://github.com/stepchowfun/docuum)                   | Least-recently-used Docker images               | BuildKit cache, which was 47 GB and 70 GB on two of our servers |
+| [topgrade](https://github.com/topgrade-rs/topgrade)               | Many package managers, plus a wide Docker prune | Stopped containers get removed. No group settings.              |
+| Cockpit                                                           | A UI on one server                              | You log into each machine                                       |
 
 The product is the group form and the history. The cleanups themselves stay small and strict.
 

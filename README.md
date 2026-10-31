@@ -1,92 +1,95 @@
 # easy-sys-admin
 
-One board for a whole server fleet. Add servers, put them in groups, and set when each group gets its disks cleaned and packages patched. The board shows live status. AI agents read the same data over MCP.
+One board for a fleet of Linux servers. Add servers, put them in groups, and set when each group gets its disks cleaned and its packages patched. The board shows live status, and you can share a group with another team. AI agents read the same data, and can start runs, over MCP.
 
-Everything is configured with environment variables. You never need to edit code to deploy your own copy.
+Nothing listens on your servers. The control plane connects over SSH as a restricted `esa` user that can only run one small helper binary.
 
-## What is in the repo
+## What it does
 
-| Path           | What it is                                                                                                                    |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `apps/esa`     | Go: the control plane (`esa serve`), the CLI (`esa ...`), and `esa-helper`, the small binary installed on each managed server |
-| `apps/web`     | TanStack Start: landing page, the board, and the MCP endpoint at `/mcp`                                                       |
-| `packages/api` | `openapi.yaml`, the API contract. Go handlers, the Go CLI client, and the TypeScript client are all generated from it         |
-| `deploy/`      | `compose.yaml` for one Docker host behind Traefik                                                                             |
+- Live status every minute: CPU, memory, disks and inodes, load, network, time sync, failed units, Docker, reboot required. History for 90 days.
+- Package updates, security-only or all, one server at a time. Upgrades run in a systemd unit, so a dropped connection does not break them. Optional reboot, then a check that containers came back.
+- Cleanups that stay small and strict: idle Docker build cache, old VS Code server copies, a journal size cap. Never volumes, never images in use.
+- Services, containers, logs, scheduled jobs, access and security reports for each server.
+- Alerts for disk, inodes, memory, unreachable servers, failed units, unhealthy containers, certificates and failed runs, sent to ntfy, webhooks, Discord, Slack or email.
+- A private personal space for every user, teams with invites and roles, and groups shared between teams with view or operate access.
+- A web app, a CLI and an MCP endpoint on top of one API.
+
+## How it fits together
+
+```
+browser / CLI / AI agent ──HTTPS──> web (TanStack Start) ──> control plane (Go) ──> PostgreSQL
+                                                                    │
+                                                                    └─SSH as "esa"─> esa-helper on each server
+```
+
+| Path                     | What it is                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers    |
+| `apps/web`               | TanStack Start: landing page, the board, the MCP endpoint at `/mcp`, and a proxy to the API |
+| `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it               |
+| `packages/eslint-config` | Shared ESLint config                                                                        |
+| `packages/tsconfig`      | Shared TypeScript configs                                                                   |
+| `deploy`                 | `compose.yaml` and `.env.example` for one Docker host behind Traefik                        |
+| `docs`                   | Documentation, listed below                                                                 |
+
+## Quick start
+
+You need PostgreSQL, Go 1.27, Node 26 and pnpm 12.
+
+```sh
+createdb esa_dev
+cp .env.example .env               # then set ESA_MASTER_KEY=$(openssl rand -base64 32)
+pnpm install
+pnpm --filter @esa/esa dev         # control plane on 127.0.0.1:8080
+pnpm --filter @esa/web dev         # web on http://localhost:3000
+```
+
+Open http://localhost:3000 and use "Continue as the local dev user". Details are in [docs/development.md](docs/development.md).
 
 ## Deploy
 
-1. Copy `deploy/.env.example` to `deploy/.env` and fill it in. The table below lists every setting.
-2. Point a hostname at the host. Traefik must already run there with a network named `proxy`, or set `TRAEFIK_NETWORK`.
-3. `docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build`
+```sh
+cp deploy/.env.example deploy/.env  # set ESA_HOST, ESA_PUBLIC_URL, ESA_MASTER_KEY, POSTGRES_PASSWORD
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+```
 
-No ports are published. Traefik reaches the web container over its network, and the web container talks to the control plane and PostgreSQL over a private network. One hostname serves the app, the API (`/api/v1`), MCP (`/mcp`), and the enroll scripts (`/enroll`).
+Traefik must already run on the host. No ports are published; one hostname serves the app, the API, MCP and the enroll scripts. Deploying from GitHub Actions on a self-hosted runner is covered in [docs/deployment.md](docs/deployment.md). Every setting is an environment variable, listed in [docs/configuration.md](docs/configuration.md).
 
-### With GitHub Actions
+## Add a server
 
-`.github/workflows/deploy.yml` builds and starts the stack on a self-hosted runner labelled `esa-deploy`. It writes the env file from the `production` environment's secrets and the repository's variables into the runner's temp directory and deletes it when the job ends.
+On the board, choose "Add server". Either paste the one-time command it gives you on the server:
 
-- Secrets: `ESA_MASTER_KEY`, `POSTGRES_PASSWORD`, and optionally `ESA_OIDC_CLIENT_SECRET` and `ESA_GOOGLE_CLIENT_SECRET`.
-- Variables: `ESA_HOST`, and optionally every other setting in the table below. Pushes to `main` deploy after CI passes once `DEPLOY_ENABLED` is `true`. "Run workflow" deploys on demand.
+```sh
+curl -fsSL https://esa.example.com/enroll/enr_... | sudo sh
+```
 
-## Settings
+or give esa a sudo login once, which it uses to install the helper and then forgets. Both pin the server's host key. [docs/server-helper.md](docs/server-helper.md) lists exactly what gets installed.
 
-| Variable                                           | Default                                           | Meaning                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ESA_HOST`                                         | required                                          | Public hostname, for example `esa.example.com`                                                                                                                                                                                                                              |
-| `ESA_PUBLIC_URL`                                   | `https://$ESA_HOST`                               | Origin users open. The deploy workflow sets it from `ESA_HOST`                                                                                                                                                                                                              |
-| `ESA_MASTER_KEY`                                   | required                                          | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored logins and channel credentials. Comma-separate several keys to rotate: the first seals new secrets. Back it up, because without it stored secrets cannot be read                                       |
-| `POSTGRES_PASSWORD`                                | required                                          | Password of the bundled PostgreSQL. It takes effect only when the database is first created                                                                                                                                                                                 |
-| `ESA_AUTH_PASSWORD`                                | `true`                                            | Email and password sign-in                                                                                                                                                                                                                                                  |
-| `ESA_SIGNUP`                                       | `false`                                           | Anyone can create an email and password account, and gets their own fleet. When off, only the first user of an empty install can sign up. Ignored, with a warning in the log, when `ESA_ALLOWED_EMAILS` is set, because a password sign-up cannot prove who owns an address |
-| `ESA_ALLOW_PRIVATE_NETWORKS`                       | `true` when sign-up is off, `false` when it is on | Lets servers, certificate checks, and notification channels use private and loopback addresses (10/8, 172.16/12, 192.168/16, 127/8). Link-local and cloud metadata addresses are always refused                                                                             |
-| `ESA_ALLOWED_EMAILS`                               | empty                                             | Comma-separated emails allowed to sign in with any method. Empty allows everyone. Checked again on every request, so removing an address ends its sessions and API tokens. People on the list should sign in with OIDC or Google                                            |
-| `ESA_OIDC_ISSUER`                                  | empty                                             | OpenID Connect issuer, for example Authentik. Redirect URI: `https://$ESA_HOST/auth/callback/oidc`                                                                                                                                                                          |
-| `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`     | empty                                             | OIDC client                                                                                                                                                                                                                                                                 |
-| `ESA_OIDC_PROVIDER_NAME`                           | `Authentik`                                       | Name on the sign-in button                                                                                                                                                                                                                                                  |
-| `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET` | empty                                             | Google sign-in. Redirect URI: `https://$ESA_HOST/auth/callback/google`                                                                                                                                                                                                      |
-| `ESA_STACK_NAME`                                   | `esa`                                             | Compose project name                                                                                                                                                                                                                                                        |
-| `ESA_ROUTER`                                       | `esa`                                             | Traefik router and service name. Change it if your Traefik already has a router with this name                                                                                                                                                                              |
-| `TRAEFIK_NETWORK`                                  | `proxy`                                           | Docker network Traefik watches                                                                                                                                                                                                                                              |
-| `TRAEFIK_ENTRYPOINT`                               | `websecure`                                       | Traefik entrypoint                                                                                                                                                                                                                                                          |
-| `TRAEFIK_CERT_RESOLVER`                            | `cloudflare`                                      | Traefik certificate resolver                                                                                                                                                                                                                                                |
-
-Control plane only, for running it outside compose: `ESA_DATABASE_URL`, `ESA_LISTEN` (default `127.0.0.1:8080`), `ESA_HELPER_DIR`, `ESA_LOG_FORMAT` (`text` or `json`), and `ESA_AUTH_MODE=dev` for a one-click local login, which is only allowed on loopback. The web server reads `ESA_API_URL`, the address of the control plane.
-
-### Teams and shared groups
-
-- Every user gets a private personal space at first sign-in. Nobody else can join it.
-- Anyone can create a team from the space switcher in the sidebar, then invite people from the Team page with one-time links (owner, admin or viewer; optionally limited to one email address).
-- A group can be shared with another team from the group page, with `view` or `operate` access. The owning team keeps the SSH key, settings, schedules and alerts. See [docs/teams.md](docs/teams.md).
-
-### Security notes
-
-- API tokens expire after 1 to 365 days (90 by default). Sessions end after 24 hours without use, and after 7 days at most. Settings > Sessions has "Sign out everywhere".
-- Enroll commands need an `https` `ESA_PUBLIC_URL` (plain `http` works only on localhost). When an enrollment completes, esa connects to the server's SSH port to confirm its host key, so esa must be able to reach it.
-- Each account can have at most 500 servers, 200 certificates, and 25 notification channels. Probing, adding, and reinstalling servers, adding certificates, and testing channels are limited to 20 per minute per account.
-- Servers enrolled before this change get the hardened `esa` user (root-owned home, forced command on the key) the next time the helper is reinstalled.
-- The `production` environment deploys only from `main`. Keep `ESA_MASTER_KEY`, `POSTGRES_PASSWORD` and the OIDC/Google client secrets as environment secrets, not repository secrets. A required reviewer on the environment needs a paid GitHub plan for private repositories; on a public repository it is free.
-
-## CLI
+## CLI and MCP
 
 ```sh
 esa login https://esa.example.com --token esa_...   # token from Settings > API tokens
 esa status
-esa servers show media-01
 esa runs start clean --group production --wait
 ```
 
-`ESA_URL` and `ESA_TOKEN` override the saved login, so one CLI can point at any install. Add `--json` for scripts.
+Point an MCP client at `https://esa.example.com/mcp` with an API token as the bearer token. The tools follow the token's scopes. See [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
 
-## MCP
+## Documentation
 
-Point an MCP client at `https://esa.example.com/mcp` with an API token as the bearer token. The tools match the token's scopes. `read` gives status, updates, services, containers, and reports. `logs:read` adds `get_logs`, and `actions` adds `start_run`. A token with both `logs:read` and `actions` does not get `start_run`, because log text can be written by anyone who reaches a server and could steer an agent. Use a separate token without `logs:read` to start runs.
+| Page                                         | Covers                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------- |
+| [architecture.md](docs/architecture.md)      | Components, request flow, data model, background jobs, runs      |
+| [configuration.md](docs/configuration.md)    | Every environment variable                                       |
+| [deployment.md](docs/deployment.md)          | Compose, GitHub Actions, upgrades, backups, rollbacks            |
+| [development.md](docs/development.md)        | Local setup, scripts, tests, adding endpoints and helper actions |
+| [server-helper.md](docs/server-helper.md)    | What runs on a managed server and its safety rules               |
+| [teams.md](docs/teams.md)                    | Personal spaces, teams, invites, shared groups                   |
+| [security.md](docs/security.md)              | Security model and how to report a vulnerability                 |
+| [cli.md](docs/cli.md), [mcp.md](docs/mcp.md) | The command line and the MCP endpoint                            |
+| [decisions.md](docs/decisions.md)            | Why the stack and design are what they are                       |
+| [status.md](docs/status.md)                  | What is built and what is left                                   |
 
-## Local development
+## Contributing
 
-PostgreSQL, Go 1.27, Node 26, and pnpm 12 are needed. Copy `.env.example` to `.env`, then:
-
-```sh
-pnpm install
-pnpm --filter @esa/esa dev      # control plane on :8080
-pnpm --filter @esa/web dev      # web on :3000
-```
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
