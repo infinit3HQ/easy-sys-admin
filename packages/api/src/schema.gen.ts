@@ -46,7 +46,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Change the account this session works in */
+        /** Change the account this browser session works in */
         put: operations["switchAccount"];
         post?: never;
         delete?: never;
@@ -62,8 +62,650 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every server in the current account with its latest status */
+        /** Every server in the current account with its latest status, worst first */
         get: operations["getFleetOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a server's SSH host key without logging in
+         * @description Show the fingerprint to the person adding the server so they can compare it before any credential is sent.
+         */
+        post: operations["probeServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a server with a one-time sudo login (installs esa-helper) */
+        post: operations["addServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/enrollments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register a server and get a one-time enroll command to paste on it */
+        post: operations["createEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** One server with its latest snapshot and pending updates */
+        get: operations["getServer"];
+        put?: never;
+        post?: never;
+        /** Remove a server from esa */
+        delete: operations["deleteServer"];
+        options?: never;
+        head?: never;
+        /** Rename a server, move it to another group, or change its protection settings */
+        patch: operations["updateServer"];
+        trace?: never;
+    };
+    "/servers/{serverId}/enrollment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue a new enroll command for a pending server */
+        post: operations["renewEnrollment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/host-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the new host key a server presented */
+        post: operations["acceptHostKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/helper": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reinstall or update esa-helper with a sudo login (or the stored one) */
+        post: operations["reinstallHelper"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Chart points for CPU, memory, disk, and load */
+        get: operations["getServerMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/updates/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh package lists on the server (apt-get update) and list pending updates */
+        post: operations["checkServerUpdates"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** systemd services on the server, failed first */
+        get: operations["listServices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/services/{unit}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                unit: string;
+                action: "start" | "stop" | "restart";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start, stop, or restart a service. Protected units cannot be stopped. */
+        post: operations["serviceAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/containers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Docker containers on the server */
+        get: operations["listContainers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/containers/image-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Compare each container's image with its registry */
+        get: operations["checkContainerImages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/containers/{name}/{action}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                name: string;
+                action: "start" | "stop" | "restart" | "update";
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start, stop, restart, or update (pull and recreate) one container
+         * @description Protected containers need `confirm` set to the container's name.
+         */
+        post: operations["containerAction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Journal lines of a unit, or log lines of a container (needs logs:read) */
+        get: operations["getServerLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Users with a login shell, SSH keys, sudo and docker group members, recent logins */
+        get: operations["getServerAccess"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/security": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades */
+        get: operations["getServerSecurity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Cron entries and systemd timers */
+        get: operations["getServerJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Groups in the current account */
+        get: operations["listGroups"];
+        put?: never;
+        /** Create a group */
+        post: operations["createGroup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        /** One group with its last runs */
+        get: operations["getGroup"];
+        /** Replace a group's settings */
+        put: operations["updateGroup"];
+        post?: never;
+        /** Delete a group; its servers stay, without a group */
+        delete: operations["deleteGroup"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Maintenance runs, newest first */
+        get: operations["listRuns"];
+        put?: never;
+        /** Start a measure, clean, update, or reboot run on a group or on servers */
+        post: operations["startRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        /** One run with each server's result */
+        get: operations["getRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Open alerts, or recent alerts including resolved ones */
+        get: operations["listAlerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Alert rules of the account */
+        get: operations["listAlertRules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/rules/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Change one alert rule */
+        put: operations["updateAlertRule"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Notification channels (secrets are never returned) */
+        get: operations["listChannels"];
+        put?: never;
+        /** Add a notification channel (owner only) */
+        post: operations["createChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/channels/{channelId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: components["parameters"]["ChannelId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a channel */
+        delete: operations["deleteChannel"];
+        options?: never;
+        head?: never;
+        /** Turn a channel on or off */
+        patch: operations["updateChannel"];
+        trace?: never;
+    };
+    "/channels/{channelId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: components["parameters"]["ChannelId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a test notification */
+        post: operations["testChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TLS certificates checked daily, soonest expiry first */
+        get: operations["listCerts"];
+        put?: never;
+        /** Add a hostname to check */
+        post: operations["addCert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/certs/{certId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop checking a hostname */
+        delete: operations["deleteCert"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Your API tokens in this account (browser sessions only) */
+        get: operations["listTokens"];
+        put?: never;
+        /** Create an API token for the CLI or an MCP client. The secret is shown once. */
+        post: operations["createToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/tokens/{tokenId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a token */
+        delete: operations["revokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Audit log of the account, newest first (admins) */
+        get: operations["listActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/ssh-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The public key the control plane logs in to servers with */
+        get: operations["getSSHKey"];
         put?: never;
         post?: never;
         delete?: never;
@@ -82,18 +724,17 @@ export interface components {
         ErrorDetail: {
             /**
              * @description Stable machine-readable code.
-             * @example unauthorized
+             * @example not_found
              */
             code: string;
-            /**
-             * @description Human-readable explanation.
-             * @example Sign in to continue.
-             */
+            /** @description Human-readable explanation. */
             message: string;
+            /** @description The input field a bad_request is about. */
+            field?: string;
         };
         AuthConfig: {
             /**
-             * @description `dev` is a local-only login that needs no identity provider.
+             * @description `dev` is a local-only login without an identity provider.
              * @enum {string}
              */
             mode: "oidc" | "dev";
@@ -102,6 +743,8 @@ export interface components {
         };
         /** @enum {string} */
         Role: "owner" | "admin" | "viewer";
+        /** @enum {string} */
+        Scope: "read" | "logs:read" | "actions" | "admin";
         User: {
             /** Format: int64 */
             id: number;
@@ -117,27 +760,90 @@ export interface components {
         Me: {
             user: components["schemas"]["User"];
             account: components["schemas"]["AccountMembership"];
-            /** @description Every account the user belongs to, including the current one. */
             accounts: components["schemas"]["AccountMembership"][];
+            /** @description True when the request used an API token. */
+            viaToken: boolean;
+            /** @description The token's scopes; absent for browser sessions. */
+            scopes?: components["schemas"]["Scope"][];
         };
         SwitchAccountRequest: {
             /** Format: int64 */
             accountId: number;
         };
+        ActionResult: {
+            ok: boolean;
+            output?: string;
+        };
         /**
-         * @description `pending` means the server was added but never answered a poll yet.
+         * @description `pending` means the server never answered a poll yet.
          * @enum {string}
          */
         ServerStatus: "ok" | "warning" | "failing" | "unreachable" | "pending";
-        ServerSummary: {
+        /** @description Headline numbers from the latest snapshot. */
+        ServerMetrics: {
+            /** Format: double */
+            cpuPercent: number;
+            /** Format: double */
+            memPercent: number;
+            /**
+             * Format: double
+             * @description Use of the fullest real filesystem.
+             */
+            diskPercent: number;
+            /** Format: double */
+            load1: number;
+            /** Format: int64 */
+            uptimeSeconds: number;
+            rebootRequired: boolean;
+            failedUnits: number;
+            containersRunning: number;
+            containersUnhealthy: number;
+            os: string;
+            kernel: string;
+        };
+        UpdateCounts: {
+            security: number;
+            other: number;
+            /** Format: date-time */
+            checkedAt?: string | null;
+        };
+        Server: {
             /** Format: int64 */
             id: number;
             name: string;
             host: string;
+            port: number;
+            /** @description SSH user the control plane uses, normally esa. */
+            username: string;
+            /** Format: int64 */
+            groupId?: number | null;
             groupName?: string | null;
+            /** @enum {string} */
+            enrollment: "pending" | "ready";
+            hostKeyFingerprint: string;
+            helperVersion: string;
+            arch: string;
+            hostsControlPlane: boolean;
+            /** @description Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec). */
+            protectedContainers: string[];
+            hasStoredLogin: boolean;
+            /** Format: date-time */
+            createdAt: string;
             status: components["schemas"]["ServerStatus"];
+            reasons: string[];
             /** Format: date-time */
             lastSeenAt?: string | null;
+            lastError: string;
+            hostKeyMismatch: boolean;
+            /** @description Fingerprint of the changed key, when hostKeyMismatch is true. */
+            presentedFingerprint: string;
+            metrics?: components["schemas"]["ServerMetrics"] | null;
+            updates?: components["schemas"]["UpdateCounts"] | null;
+        };
+        ServerDetail: {
+            server: components["schemas"]["Server"];
+            snapshot?: components["schemas"]["HostStatus"] | null;
+            pendingUpdates?: components["schemas"]["PendingUpdates"] | null;
         };
         FleetTotals: {
             servers: number;
@@ -146,33 +852,608 @@ export interface components {
             warning: number;
             failing: number;
             unreachable: number;
+            pending: number;
         };
         FleetOverview: {
             totals: components["schemas"]["FleetTotals"];
-            servers: components["schemas"]["ServerSummary"][];
+            servers: components["schemas"]["Server"][];
+        };
+        ProbeRequest: {
+            host: string;
+            /** @default 22 */
+            port: number;
+        };
+        ProbeResult: {
+            /** @description The key in authorized_keys format. Send it back in AddServerRequest.hostKey. */
+            hostKey: string;
+            /** @example SHA256:qot5ge7vEVWKuojCBUpon6nuWfbMwSf/vOR0+G6shiw */
+            fingerprint: string;
+            /** @example ssh-ed25519 */
+            keyType: string;
+        };
+        /** @description A one-time sudo-capable login. Used to install esa-helper, then discarded unless keepLogin is set. */
+        Login: {
+            username: string;
+            /**
+             * Format: password
+             * @description Login password; also used for sudo when the user is not root.
+             */
+            password?: string;
+            /**
+             * Format: password
+             * @description PEM or OpenSSH private key.
+             */
+            privateKey?: string;
+            /** Format: password */
+            passphrase?: string;
+        };
+        AddServerRequest: {
+            name: string;
+            host: string;
+            /** @default 22 */
+            port: number;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** @description The accepted key from probeServer. */
+            hostKey: string;
+            login: components["schemas"]["Login"];
+            /**
+             * @description Store the login encrypted for later helper updates (owners only).
+             * @default false
+             */
+            keepLogin: boolean;
+            /** @default false */
+            hostsControlPlane: boolean;
+        };
+        EnrollRequest: {
+            name: string;
+            host: string;
+            /** @default 22 */
+            port: number;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** @default false */
+            hostsControlPlane: boolean;
+        };
+        Enrollment: {
+            server: components["schemas"]["Server"];
+            /** @example curl -fsSL https://esa.example.com/enroll/enr_... | sudo sh */
+            command: string;
+            scriptUrl: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        UpdateServerRequest: {
+            name?: string;
+            /**
+             * Format: int64
+             * @description Move to this group. Send clearGroup to remove from its group.
+             */
+            groupId?: number | null;
+            clearGroup?: boolean;
+            hostsControlPlane?: boolean;
+            protectedContainers?: string[];
+        };
+        AcceptHostKeyRequest: {
+            /** @description Must equal the presented fingerprint, to confirm what you checked. */
+            fingerprint: string;
+        };
+        ReinstallRequest: {
+            login?: components["schemas"]["Login"];
+        };
+        MetricPoint: {
+            /** Format: date-time */
+            at: string;
+            /** Format: double */
+            cpuPercent: number;
+            /** Format: double */
+            memPercent: number;
+            /** Format: double */
+            diskPercent: number;
+            /** Format: double */
+            load1: number;
+        };
+        MetricsResponse: {
+            window: string;
+            points: components["schemas"]["MetricPoint"][];
+        };
+        ContainerActionRequest: {
+            /** @description The container's name; required for protected containers. */
+            confirm?: string;
+        };
+        HostStatus: {
+            /** Format: date-time */
+            collectedAt: string;
+            hostname: string;
+            os: string;
+            kernel: string;
+            arch: string;
+            /** Format: date-time */
+            bootTime: string;
+            /** Format: int64 */
+            uptimeSeconds: number;
+            cpuCount: number;
+            /** Format: double */
+            cpuPercent: number;
+            /** Format: double */
+            load1: number;
+            /** Format: double */
+            load5: number;
+            /** Format: double */
+            load15: number;
+            /** Format: int64 */
+            memTotal: number;
+            /** Format: int64 */
+            memUsed: number;
+            /** Format: int64 */
+            memAvailable: number;
+            /** Format: int64 */
+            swapTotal: number;
+            /** Format: int64 */
+            swapUsed: number;
+            disks: components["schemas"]["Disk"][];
+            net: components["schemas"]["NetIf"][];
+            timeSynced: boolean;
+            rebootRequired: boolean;
+            rebootPackages?: string[];
+            failedUnits: string[];
+            docker?: components["schemas"]["DockerSummary"];
+        };
+        Disk: {
+            mount: string;
+            device: string;
+            fsType: string;
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            used: number;
+            /** Format: int64 */
+            avail: number;
+            /** Format: int64 */
+            inodesTotal: number;
+            /** Format: int64 */
+            inodesUsed: number;
+        };
+        NetIf: {
+            name: string;
+            /** Format: int64 */
+            rxBytes: number;
+            /** Format: int64 */
+            txBytes: number;
+        };
+        DockerSummary: {
+            version: string;
+            running: number;
+            exited: number;
+            restarting: number;
+            unhealthy: number;
+            total: number;
+            /** Format: int64 */
+            imagesBytes: number;
+            /** Format: int64 */
+            buildCacheBytes: number;
+            /** Format: int64 */
+            volumesBytes: number;
+            /** Format: int64 */
+            containersBytes: number;
+        };
+        PendingUpdates: {
+            packages: components["schemas"]["PendingPackage"][];
+            security: number;
+            other: number;
+            held: string[];
+            /** Format: date-time */
+            listsUpdatedAt: string;
+        };
+        PendingPackage: {
+            name: string;
+            from: string;
+            to: string;
+            archive: string;
+            security: boolean;
+        };
+        ServiceUnit: {
+            unit: string;
+            description: string;
+            load: string;
+            active: string;
+            sub: string;
+            enabled: string;
+            /** Format: int64 */
+            memoryBytes: number;
+            /** Format: date-time */
+            since?: string;
+            protected: boolean;
+        };
+        ServiceList: {
+            items: components["schemas"]["ServiceUnit"][];
+        };
+        Container: {
+            id: string;
+            name: string;
+            image: string;
+            imageId: string;
+            state: string;
+            status: string;
+            health?: string;
+            restartCount: number;
+            restartPolicy: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            startedAt?: string;
+            ports: string[];
+            composeProject?: string;
+            composeService?: string;
+            protected: boolean;
+        };
+        ContainerList: {
+            items: components["schemas"]["Container"][];
+        };
+        ImageCheck: {
+            container: string;
+            image: string;
+            localDigest: string;
+            remoteDigest: string;
+            updateAvailable: boolean;
+            error?: string;
+        };
+        ImageCheckList: {
+            items: components["schemas"]["ImageCheck"][];
+        };
+        LogLine: {
+            /** Format: date-time */
+            time: string;
+            priority: number;
+            message: string;
+            stream?: string;
+        };
+        LogList: {
+            items: components["schemas"]["LogLine"][];
+        };
+        AccessReport: {
+            users: components["schemas"]["LocalUser"][];
+            groups: {
+                [key: string]: string[];
+            };
+            logins: components["schemas"]["LoginRecord"][];
+            failedSsh24h: number;
+            passwordAuth: boolean;
+            permitRootLogin: string;
+        };
+        LocalUser: {
+            name: string;
+            uid: number;
+            home: string;
+            shell: string;
+            authorizedKeys: components["schemas"]["AuthorizedKey"][];
+        };
+        AuthorizedKey: {
+            type: string;
+            fingerprint: string;
+            comment: string;
+        };
+        LoginRecord: {
+            user: string;
+            from: string;
+            /** Format: date-time */
+            at: string;
+        };
+        SecurityReport: {
+            listening: components["schemas"]["Listener"][];
+            firewall: string;
+            crowdsec: string;
+            fail2ban: string;
+            unattendedUpgrades: boolean;
+        };
+        Listener: {
+            proto: string;
+            address: string;
+            port: number;
+            process: string;
+        };
+        JobsReport: {
+            cron: components["schemas"]["CronEntry"][];
+            timers: components["schemas"]["Timer"][];
+        };
+        CronEntry: {
+            source: string;
+            user: string;
+            schedule: string;
+            command: string;
+        };
+        Timer: {
+            unit: string;
+            activates: string;
+            /** Format: date-time */
+            next?: string;
+            /** Format: date-time */
+            last?: string;
+            result: string;
+            failed: boolean;
+        };
+        /** @enum {string} */
+        Day: "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+        CleanPolicy: {
+            /** @description Run cleanups on the schedule. */
+            enabled: boolean;
+            days: components["schemas"]["Day"][];
+            /**
+             * @description HH:MM in the group's timezone.
+             * @example 03:30
+             */
+            time: string;
+            /** @description Prune idle Docker build cache. */
+            buildCache: boolean;
+            /** @description Remove old VS Code server copies. */
+            vscode: boolean;
+            /** @description Cap the systemd journal. */
+            journal: boolean;
+            /** @example 200M */
+            journalSize: string;
+        };
+        UpdatePolicy: {
+            enabled: boolean;
+            /** @enum {string} */
+            mode: "security" | "all";
+            days: components["schemas"]["Day"][];
+            /** @example 04:00 */
+            time: string;
+            /** @description Packages never upgraded by esa. */
+            hold: string[];
+            /** @description Reboot one server at a time after updates when the server asks for it. Never the control plane host. */
+            rebootIfRequired: boolean;
+        };
+        GroupInput: {
+            name: string;
+            /** @example Asia/Colombo */
+            timezone: string;
+            clean: components["schemas"]["CleanPolicy"];
+            updates: components["schemas"]["UpdatePolicy"];
+        };
+        Group: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            timezone: string;
+            clean: components["schemas"]["CleanPolicy"];
+            updates: components["schemas"]["UpdatePolicy"];
+            serverCount: number;
+            /** Format: date-time */
+            nextClean?: string | null;
+            /** Format: date-time */
+            nextUpdate?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            lastRuns: components["schemas"]["Run"][];
+        };
+        GroupList: {
+            items: components["schemas"]["Group"][];
+        };
+        /** @enum {string} */
+        RunKind: "measure" | "clean" | "update" | "reboot";
+        RunOptions: {
+            buildCache?: boolean;
+            vscode?: boolean;
+            journal?: boolean;
+            journalSize?: string;
+            /** @enum {string} */
+            updateMode?: "security" | "all";
+            hold?: string[];
+            rebootIfRequired?: boolean;
+        };
+        StartRunRequest: {
+            kind: components["schemas"]["RunKind"];
+            /** Format: int64 */
+            groupId?: number | null;
+            serverIds?: number[];
+            /** @description Overrides the group's settings. Omit to use them. */
+            options?: components["schemas"]["RunOptions"] | null;
+        };
+        RunServer: {
+            /** Format: int64 */
+            serverId: number;
+            serverName: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+            error: string;
+            /** Format: int64 */
+            bytesFreed: number;
+            /** @description Cleanup report, upgrade result, or reboot outcome. */
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            startedAt?: string | null;
+            /** Format: date-time */
+            finishedAt?: string | null;
+        };
+        Run: {
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["RunKind"];
+            /** @enum {string} */
+            trigger: "schedule" | "manual" | "api" | "mcp";
+            /** @enum {string} */
+            status: "running" | "succeeded" | "failed" | "partial" | "skipped" | "missed";
+            /** Format: int64 */
+            groupId?: number | null;
+            groupName?: string | null;
+            options: components["schemas"]["RunOptions"];
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: string | null;
+            summary: string;
+            /** Format: int64 */
+            bytesFreed: number;
+            servers: components["schemas"]["RunServer"][];
+        };
+        RunList: {
+            items: components["schemas"]["Run"][];
+        };
+        Alert: {
+            /** Format: int64 */
+            id: number;
+            kind: string;
+            /** Format: int64 */
+            serverId?: number | null;
+            serverName?: string | null;
+            subject: string;
+            /** @enum {string} */
+            severity: "info" | "warning" | "critical";
+            message: string;
+            /** Format: date-time */
+            pendingSince: string;
+            /** Format: date-time */
+            firedAt?: string | null;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+        };
+        AlertList: {
+            items: components["schemas"]["Alert"][];
+        };
+        AlertRule: {
+            /** Format: int64 */
+            id: number;
+            /** @enum {string} */
+            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key";
+            enabled: boolean;
+            /**
+             * Format: double
+             * @description Percent for disk, inode, and memory; days for cert_expiry; unused otherwise.
+             */
+            threshold: number;
+            /** @description How long the condition must hold before the alert fires. */
+            forMinutes: number;
+        };
+        AlertRuleList: {
+            items: components["schemas"]["AlertRule"][];
+        };
+        AlertRuleInput: {
+            enabled: boolean;
+            /** Format: double */
+            threshold: number;
+            forMinutes: number;
+        };
+        /** @enum {string} */
+        ChannelKind: "ntfy" | "webhook" | "discord" | "slack" | "email";
+        /** @description ntfy: url (with topic) and optional token. webhook: url and optional secret for an X-Esa-Signature HMAC. discord and slack: the incoming webhook url. email: smtpHost, smtpPort, username, password, from, to. */
+        ChannelConfig: {
+            url?: string;
+            /** Format: password */
+            token?: string;
+            /** Format: password */
+            secret?: string;
+            smtpHost?: string;
+            smtpPort?: number;
+            username?: string;
+            /** Format: password */
+            password?: string;
+            from?: string;
+            to?: string[];
+        };
+        Channel: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            kind: components["schemas"]["ChannelKind"];
+            enabled: boolean;
+            /** @description A description safe to show, without secrets. */
+            target: string;
+            lastError: string;
+            /** Format: date-time */
+            lastSentAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ChannelList: {
+            items: components["schemas"]["Channel"][];
+        };
+        CreateChannelRequest: {
+            name: string;
+            kind: components["schemas"]["ChannelKind"];
+            config: components["schemas"]["ChannelConfig"];
+        };
+        UpdateChannelRequest: {
+            enabled: boolean;
+        };
+        Cert: {
+            /** Format: int64 */
+            id: number;
+            hostname: string;
+            port: number;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            daysLeft?: number | null;
+            issuer: string;
+            lastError: string;
+            /** Format: date-time */
+            checkedAt?: string | null;
+        };
+        CertList: {
+            items: components["schemas"]["Cert"][];
+        };
+        AddCertRequest: {
+            hostname: string;
+            /** @default 443 */
+            port: number;
+        };
+        Token: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            scopes: components["schemas"]["Scope"][];
+            /** @description The first characters of the secret, to recognise it. */
+            prefix: string;
+            /** Format: date-time */
+            lastUsedAt?: string | null;
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: date-time */
+            revokedAt?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TokenList: {
+            items: components["schemas"]["Token"][];
+        };
+        CreateTokenRequest: {
+            name: string;
+            scopes?: components["schemas"]["Scope"][];
+            /** @description 0 or absent means no expiry. */
+            expiresInDays?: number;
+        };
+        CreatedToken: {
+            token: components["schemas"]["Token"];
+            /** @description Shown only in this response. */
+            secret: string;
+        };
+        ActivityEntry: {
+            /** Format: int64 */
+            id: number;
+            action: string;
+            target: string;
+            /** @enum {string} */
+            source: "web" | "api" | "mcp" | "system";
+            userName: string;
+            detail: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            createdAt: string;
+        };
+        ActivityList: {
+            items: components["schemas"]["ActivityEntry"][];
+        };
+        SSHKey: {
+            publicKey: string;
+            fingerprint: string;
         };
     };
     responses: {
-        /** @description The request is malformed */
-        BadRequest: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description No valid session */
-        Unauthorized: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description The session may not do this */
-        Forbidden: {
+        /** @description Error */
+        Error: {
             headers: {
                 [name: string]: unknown;
             };
@@ -181,7 +1462,11 @@ export interface components {
             };
         };
     };
-    parameters: never;
+    parameters: {
+        ServerId: number;
+        GroupId: number;
+        ChannelId: number;
+    };
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -206,6 +1491,7 @@ export interface operations {
                     "application/json": components["schemas"]["AuthConfig"];
                 };
             };
+            default: components["responses"]["Error"];
         };
     };
     getMe: {
@@ -226,7 +1512,7 @@ export interface operations {
                     "application/json": components["schemas"]["Me"];
                 };
             };
-            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
         };
     };
     switchAccount: {
@@ -251,9 +1537,7 @@ export interface operations {
                     "application/json": components["schemas"]["Me"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Error"];
         };
     };
     getFleetOverview: {
@@ -274,7 +1558,1060 @@ export interface operations {
                     "application/json": components["schemas"]["FleetOverview"];
                 };
             };
-            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
+        };
+    };
+    probeServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeRequest"];
+            };
+        };
+        responses: {
+            /** @description The presented host key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProbeResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    addServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddServerRequest"];
+            };
+        };
+        responses: {
+            /** @description The new server */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnrollRequest"];
+            };
+        };
+        responses: {
+            /** @description The pending server and its enroll command */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrollment"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Server detail */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDetail"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteServer: {
+        parameters: {
+            query?: {
+                /** @description Also remove the esa user, its sudo rule, and esa-helper from the server. */
+                uninstall?: boolean;
+            };
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateServerRequest"];
+            };
+        };
+        responses: {
+            /** @description The updated server */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    renewEnrollment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A fresh enroll command */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Enrollment"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptHostKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptHostKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description The server, working again */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    reinstallHelper: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReinstallRequest"];
+            };
+        };
+        responses: {
+            /** @description The server with the new helper version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Server"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerMetrics: {
+        parameters: {
+            query?: {
+                window?: "1h" | "24h" | "7d" | "30d" | "90d";
+            };
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Points, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsResponse"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    checkServerUpdates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The server with fresh update data */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerDetail"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listServices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Services */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    serviceAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                unit: string;
+                action: "start" | "stop" | "restart";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listContainers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Containers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContainerList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    checkContainerImages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One result per container */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageCheckList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    containerAction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                name: string;
+                action: "start" | "stop" | "restart" | "update";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContainerActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Done */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerLogs: {
+        parameters: {
+            query?: {
+                unit?: string;
+                container?: string;
+                lines?: number;
+                /** @description Journal priority 0 (emerg) to 7 (debug); -1 for all */
+                priority?: number;
+                grep?: string;
+            };
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Log lines, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Access report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccessReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerSecurity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Security report */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SecurityReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerJobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Scheduled jobs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobsReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listGroups: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Groups */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupInput"];
+            };
+        };
+        responses: {
+            /** @description The new group */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Group */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupInput"];
+            };
+        };
+        responses: {
+            /** @description The updated group */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Group"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteGroup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listRuns: {
+        parameters: {
+            query?: {
+                groupId?: number;
+                serverId?: number;
+                kind?: components["schemas"]["RunKind"];
+                status?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    startRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartRunRequest"];
+            };
+        };
+        responses: {
+            /** @description The run, started in the background */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAlerts: {
+        parameters: {
+            query?: {
+                all?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Alerts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRuleList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertRuleInput"];
+            };
+        };
+        responses: {
+            /** @description The updated rule */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertRule"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Channels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChannelRequest"];
+            };
+        };
+        responses: {
+            /** @description The new channel */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Channel"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: components["parameters"]["ChannelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: components["parameters"]["ChannelId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateChannelRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    testChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                channelId: components["parameters"]["ChannelId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listCerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Certificates */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CertList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    addCert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddCertRequest"];
+            };
+        };
+        responses: {
+            /** @description The checked certificate */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cert"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteCert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                certId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tokens */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description The token and its secret */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedToken"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tokenId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listActivity: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Audit entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getSSHKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public key */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SSHKey"];
+                };
+            };
+            default: components["responses"]["Error"];
         };
     };
 }

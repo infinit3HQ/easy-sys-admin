@@ -7,7 +7,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "node --env-file-if-exists=../../.env ./node_modules/vite/bin/vite.js dev --port 3000",
+    "dev": "node --env-file-if-exists=../../.env ./node_modules/vite/bin/vite.js dev",
     "build": "vite build",
     "start": "node --env-file-if-exists=../../.env .output/server/index.mjs",
     "generate": "tsr generate",
@@ -19,13 +19,17 @@
     "@fontsource-variable/big-shoulders": "catalog:",
     "@fontsource-variable/instrument-sans": "catalog:",
     "@fontsource-variable/martian-mono": "catalog:",
+    "@modelcontextprotocol/server": "catalog:",
     "@tailwindcss/vite": "catalog:",
+    "@tanstack/react-query": "catalog:",
     "@tanstack/react-router": "catalog:",
+    "@tanstack/react-router-ssr-query": "catalog:",
     "@tanstack/react-start": "catalog:",
     "nitro": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tailwindcss": "catalog:"
+    "tailwindcss": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@esa/eslint-config": "workspace:*",

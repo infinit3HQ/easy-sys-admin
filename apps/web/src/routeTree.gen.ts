@@ -10,33 +10,258 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteRouteImport } from './routes/app/route'
+import { Route as HealthzRouteImport } from './routes/healthz'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as ApiSplatRouteImport } from './routes/api/$'
+import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppActivityRouteImport } from './routes/app/activity'
+import { Route as AppAlertsRouteImport } from './routes/app/alerts'
+import { Route as AppSettingsRouteImport } from './routes/app/settings'
+import { Route as AuthSplatRouteImport } from './routes/auth/$'
+import { Route as EnrollSplatRouteImport } from './routes/enroll/$'
+import { Route as AppGroupsIndexRouteImport } from './routes/app/groups/index'
+import { Route as AppGroupsGroupIdRouteImport } from './routes/app/groups/$groupId'
+import { Route as AppGroupsNewRouteImport } from './routes/app/groups/new'
+import { Route as AppRunsIndexRouteImport } from './routes/app/runs/index'
+import { Route as AppRunsRunIdRouteImport } from './routes/app/runs/$runId'
+import { Route as AppServersServerIdRouteImport } from './routes/app/servers/$serverId'
+import { Route as AppServersNewRouteImport } from './routes/app/servers/new'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRouteRoute = AppRouteRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HealthzRoute = HealthzRouteImport.update({
+  id: '/healthz',
+  path: '/healthz',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppActivityRoute = AppActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppAlertsRoute = AppAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppSettingsRoute = AppSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AuthSplatRoute = AuthSplatRouteImport.update({
+  id: '/auth/$',
+  path: '/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EnrollSplatRoute = EnrollSplatRouteImport.update({
+  id: '/enroll/$',
+  path: '/enroll/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppGroupsIndexRoute = AppGroupsIndexRouteImport.update({
+  id: '/groups/',
+  path: '/groups/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppGroupsGroupIdRoute = AppGroupsGroupIdRouteImport.update({
+  id: '/groups/$groupId',
+  path: '/groups/$groupId',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppGroupsNewRoute = AppGroupsNewRouteImport.update({
+  id: '/groups/new',
+  path: '/groups/new',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppRunsIndexRoute = AppRunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppRunsRunIdRoute = AppRunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppServersServerIdRoute = AppServersServerIdRouteImport.update({
+  id: '/servers/$serverId',
+  path: '/servers/$serverId',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppServersNewRoute = AppServersNewRouteImport.update({
+  id: '/servers/new',
+  path: '/servers/new',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app': typeof AppRouteRouteWithChildren
+  '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/api/$': typeof ApiSplatRoute
+  '/app/activity': typeof AppActivityRoute
+  '/app/alerts': typeof AppAlertsRoute
+  '/app/settings': typeof AppSettingsRoute
+  '/auth/$': typeof AuthSplatRoute
+  '/enroll/$': typeof EnrollSplatRoute
+  '/app/': typeof AppIndexRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/groups/new': typeof AppGroupsNewRoute
+  '/app/runs/$runId': typeof AppRunsRunIdRoute
+  '/app/servers/$serverId': typeof AppServersServerIdRoute
+  '/app/servers/new': typeof AppServersNewRoute
+  '/app/groups/': typeof AppGroupsIndexRoute
+  '/app/runs/': typeof AppRunsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/api/$': typeof ApiSplatRoute
+  '/app/activity': typeof AppActivityRoute
+  '/app/alerts': typeof AppAlertsRoute
+  '/app/settings': typeof AppSettingsRoute
+  '/auth/$': typeof AuthSplatRoute
+  '/enroll/$': typeof EnrollSplatRoute
+  '/app': typeof AppIndexRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/groups/new': typeof AppGroupsNewRoute
+  '/app/runs/$runId': typeof AppRunsRunIdRoute
+  '/app/servers/$serverId': typeof AppServersServerIdRoute
+  '/app/servers/new': typeof AppServersNewRoute
+  '/app/groups': typeof AppGroupsIndexRoute
+  '/app/runs': typeof AppRunsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app': typeof AppRouteRouteWithChildren
+  '/healthz': typeof HealthzRoute
+  '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/api/$': typeof ApiSplatRoute
+  '/app/activity': typeof AppActivityRoute
+  '/app/alerts': typeof AppAlertsRoute
+  '/app/settings': typeof AppSettingsRoute
+  '/auth/$': typeof AuthSplatRoute
+  '/enroll/$': typeof EnrollSplatRoute
+  '/app/': typeof AppIndexRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/groups/new': typeof AppGroupsNewRoute
+  '/app/runs/$runId': typeof AppRunsRunIdRoute
+  '/app/servers/$serverId': typeof AppServersServerIdRoute
+  '/app/servers/new': typeof AppServersNewRoute
+  '/app/groups/': typeof AppGroupsIndexRoute
+  '/app/runs/': typeof AppRunsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/app'
+    | '/healthz'
+    | '/login'
+    | '/mcp'
+    | '/api/$'
+    | '/app/activity'
+    | '/app/alerts'
+    | '/app/settings'
+    | '/auth/$'
+    | '/enroll/$'
+    | '/app/'
+    | '/app/groups/$groupId'
+    | '/app/groups/new'
+    | '/app/runs/$runId'
+    | '/app/servers/$serverId'
+    | '/app/servers/new'
+    | '/app/groups/'
+    | '/app/runs/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/healthz'
+    | '/login'
+    | '/mcp'
+    | '/api/$'
+    | '/app/activity'
+    | '/app/alerts'
+    | '/app/settings'
+    | '/auth/$'
+    | '/enroll/$'
+    | '/app'
+    | '/app/groups/$groupId'
+    | '/app/groups/new'
+    | '/app/runs/$runId'
+    | '/app/servers/$serverId'
+    | '/app/servers/new'
+    | '/app/groups'
+    | '/app/runs'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/healthz'
+    | '/login'
+    | '/mcp'
+    | '/api/$'
+    | '/app/activity'
+    | '/app/alerts'
+    | '/app/settings'
+    | '/auth/$'
+    | '/enroll/$'
+    | '/app/'
+    | '/app/groups/$groupId'
+    | '/app/groups/new'
+    | '/app/runs/$runId'
+    | '/app/servers/$serverId'
+    | '/app/servers/new'
+    | '/app/groups/'
+    | '/app/runs/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRouteRoute: typeof AppRouteRouteWithChildren
+  HealthzRoute: typeof HealthzRoute
+  LoginRoute: typeof LoginRoute
+  McpRoute: typeof McpRoute
+  ApiSplatRoute: typeof ApiSplatRoute
+  AuthSplatRoute: typeof AuthSplatRoute
+  EnrollSplatRoute: typeof EnrollSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +273,176 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/healthz': {
+      id: '/healthz'
+      path: '/healthz'
+      fullPath: '/healthz'
+      preLoaderRoute: typeof HealthzRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app/': {
+      id: '/app/'
+      path: '/'
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/activity': {
+      id: '/app/activity'
+      path: '/activity'
+      fullPath: '/app/activity'
+      preLoaderRoute: typeof AppActivityRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/alerts': {
+      id: '/app/alerts'
+      path: '/alerts'
+      fullPath: '/app/alerts'
+      preLoaderRoute: typeof AppAlertsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/settings': {
+      id: '/app/settings'
+      path: '/settings'
+      fullPath: '/app/settings'
+      preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/auth/$': {
+      id: '/auth/$'
+      path: '/auth/$'
+      fullPath: '/auth/$'
+      preLoaderRoute: typeof AuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/enroll/$': {
+      id: '/enroll/$'
+      path: '/enroll/$'
+      fullPath: '/enroll/$'
+      preLoaderRoute: typeof EnrollSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/app/groups/': {
+      id: '/app/groups/'
+      path: '/groups'
+      fullPath: '/app/groups/'
+      preLoaderRoute: typeof AppGroupsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/groups/$groupId': {
+      id: '/app/groups/$groupId'
+      path: '/groups/$groupId'
+      fullPath: '/app/groups/$groupId'
+      preLoaderRoute: typeof AppGroupsGroupIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/groups/new': {
+      id: '/app/groups/new'
+      path: '/groups/new'
+      fullPath: '/app/groups/new'
+      preLoaderRoute: typeof AppGroupsNewRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/runs/': {
+      id: '/app/runs/'
+      path: '/runs'
+      fullPath: '/app/runs/'
+      preLoaderRoute: typeof AppRunsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/runs/$runId': {
+      id: '/app/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/app/runs/$runId'
+      preLoaderRoute: typeof AppRunsRunIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/servers/$serverId': {
+      id: '/app/servers/$serverId'
+      path: '/servers/$serverId'
+      fullPath: '/app/servers/$serverId'
+      preLoaderRoute: typeof AppServersServerIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/servers/new': {
+      id: '/app/servers/new'
+      path: '/servers/new'
+      fullPath: '/app/servers/new'
+      preLoaderRoute: typeof AppServersNewRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
   }
 }
 
+interface AppRouteRouteChildren {
+  AppActivityRoute: typeof AppActivityRoute
+  AppAlertsRoute: typeof AppAlertsRoute
+  AppSettingsRoute: typeof AppSettingsRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppGroupsGroupIdRoute: typeof AppGroupsGroupIdRoute
+  AppGroupsNewRoute: typeof AppGroupsNewRoute
+  AppRunsRunIdRoute: typeof AppRunsRunIdRoute
+  AppServersServerIdRoute: typeof AppServersServerIdRoute
+  AppServersNewRoute: typeof AppServersNewRoute
+  AppGroupsIndexRoute: typeof AppGroupsIndexRoute
+  AppRunsIndexRoute: typeof AppRunsIndexRoute
+}
+
+const AppRouteRouteChildren: AppRouteRouteChildren = {
+  AppActivityRoute: AppActivityRoute,
+  AppAlertsRoute: AppAlertsRoute,
+  AppSettingsRoute: AppSettingsRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppGroupsGroupIdRoute: AppGroupsGroupIdRoute,
+  AppGroupsNewRoute: AppGroupsNewRoute,
+  AppRunsRunIdRoute: AppRunsRunIdRoute,
+  AppServersServerIdRoute: AppServersServerIdRoute,
+  AppServersNewRoute: AppServersNewRoute,
+  AppGroupsIndexRoute: AppGroupsIndexRoute,
+  AppRunsIndexRoute: AppRunsIndexRoute,
+}
+
+const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(
+  AppRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRouteRoute: AppRouteRouteWithChildren,
+  HealthzRoute: HealthzRoute,
+  LoginRoute: LoginRoute,
+  McpRoute: McpRoute,
+  ApiSplatRoute: ApiSplatRoute,
+  AuthSplatRoute: AuthSplatRoute,
+  EnrollSplatRoute: EnrollSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
