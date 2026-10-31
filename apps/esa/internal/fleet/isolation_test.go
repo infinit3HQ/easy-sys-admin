@@ -176,7 +176,3 @@ func TestViewerCannotChange(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-func sprint(v any) string {
-	return strings.ReplaceAll(strings.TrimSpace(strings.Join(strings.Fields(fmtAny(v)), " ")), "\n", " ")
-}
