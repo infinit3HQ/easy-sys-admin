@@ -52,7 +52,18 @@ type Deps struct {
 	// private or loopback addresses. Link-local, metadata, multicast, and
 	// unspecified addresses are always refused.
 	AllowPrivateNetworks bool
-	Logger               *slog.Logger
+	// PollConcurrency is how many servers PollAll contacts at once. Zero uses 64.
+	PollConcurrency int
+	// SSHConnectTimeout bounds the TCP connect of SSH dials. Zero uses
+	// remote.DefaultConnectTimeout.
+	SSHConnectTimeout time.Duration
+	// MaxServersPerAccount caps servers per account. Zero uses 500.
+	MaxServersPerAccount int
+	// MetricsRawRetention and MetricsHourlyRetention say how long metric
+	// samples and hourly averages are kept. Zero uses 48 hours and 90 days.
+	MetricsRawRetention    time.Duration
+	MetricsHourlyRetention time.Duration
+	Logger                 *slog.Logger
 }
 
 // Service implements every fleet operation.
@@ -68,8 +79,14 @@ type Service struct {
 	signup    bool
 	// allowPrivate mirrors Deps.AllowPrivateNetworks.
 	allowPrivate bool
-	log          *slog.Logger
-	now          func() time.Time
+	// Limits from Deps, with defaults applied.
+	pollConcurrency int
+	connectTimeout  time.Duration
+	maxServers      int
+	rawRetention    time.Duration
+	hourlyRetention time.Duration
+	log             *slog.Logger
+	now             func() time.Time
 
 	// baseCtx outlives requests; background runs use it.
 	baseCtx context.Context
@@ -95,9 +112,21 @@ func New(baseCtx context.Context, d Deps) *Service {
 	return &Service{
 		store: d.Store, db: d.Store.DB(), box: d.Box, pool: d.Pool, helpers: d.Helpers,
 		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, signup: d.Signup, allowPrivate: d.AllowPrivateNetworks, log: log,
-		now: func() time.Time { return time.Now().UTC() }, baseCtx: baseCtx,
+		pollConcurrency: orDefault(d.PollConcurrency, defaultPollConcurrency),
+		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
+		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
+		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),
+		hourlyRetention: orDefault(d.MetricsHourlyRetention, defaultHourlyRetention),
+		now:             func() time.Time { return time.Now().UTC() }, baseCtx: baseCtx,
 		signers: map[int64]*accountSigner{},
 	}
+}
+
+func orDefault[T int | time.Duration](v, def T) T {
+	if v > 0 {
+		return v
+	}
+	return def
 }
 
 // Wait blocks until background runs started by the service have finished.

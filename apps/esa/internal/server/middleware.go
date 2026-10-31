@@ -63,7 +63,8 @@ func logRequests(log *slog.Logger) middleware {
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
-			if r.URL.Path == "/healthz" && rec.status == http.StatusOK {
+			// Health checks and metric scrapes would flood the log; only failures are kept.
+			if (r.URL.Path == "/healthz" || r.URL.Path == "/metrics") && rec.status == http.StatusOK {
 				return
 			}
 			log.Info("http request",

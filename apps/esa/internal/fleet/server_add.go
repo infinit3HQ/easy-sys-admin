@@ -145,7 +145,7 @@ func (s *Service) validateNewServer(ctx context.Context, a Actor, name, host str
 	if err := s.checkGroup(ctx, a, groupID); err != nil {
 		return srv, nil, err
 	}
-	if err := s.underCap(ctx, a, &store.Server{}, maxServers, "servers"); err != nil {
+	if err := s.underCap(ctx, a, &store.Server{}, s.maxServers, "servers"); err != nil {
 		return srv, nil, err
 	}
 	var dup int64

@@ -204,6 +204,7 @@ function GroupPage() {
                 k="Updates"
                 v={g.updates.enabled ? <Until iso={g.nextUpdate} /> : 'off'}
               />
+              <KeyValue k="Servers at a time" v={g.updates.batchSize} />
             </dl>
           </Panel>
           <section>
@@ -260,7 +261,7 @@ function GroupPage() {
         title={confirm === 'update' ? `Update ${g.name}` : `Clean ${g.name}`}
         body={
           confirm === 'update'
-            ? `Installs ${g.updates.mode === 'all' ? 'all pending updates' : 'security updates'} on ${g.serverCount} servers, one at a time${g.updates.rebootIfRequired ? ', rebooting where required' : ''}.`
+            ? `Installs ${g.updates.mode === 'all' ? 'all pending updates' : 'security updates'} on ${g.serverCount} servers, ${g.updates.batchSize > 1 ? `${g.updates.batchSize} at a time` : 'one at a time'}${g.updates.rebootIfRequired ? ', rebooting where required' : ''}.`
             : `Runs the group's cleanups on ${g.serverCount} servers now.`
         }
         actionLabel="Start"

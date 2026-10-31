@@ -1607,8 +1607,18 @@ export interface components {
             time: string;
             /** @description Packages never upgraded by esa. */
             hold: string[];
-            /** @description Reboot one server at a time after updates when the server asks for it. Never the control plane host. */
+            /** @description Reboot each server after its update when the server asks for it. Never the control plane host. */
             rebootIfRequired: boolean;
+            /**
+             * @description Servers updated or rebooted at the same time. The server that hosts the control plane always goes alone.
+             * @default 1
+             */
+            batchSize: number;
+            /**
+             * @description Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
+             * @default 1
+             */
+            maxFailures: number;
         };
         GroupInput: {
             name: string;
@@ -1655,6 +1665,10 @@ export interface components {
             updateMode?: "security" | "all";
             hold?: string[];
             rebootIfRequired?: boolean;
+            /** @description For update and reboot runs, servers worked on at the same time. Omit to use the group's setting (1 without a group). */
+            batchSize?: number;
+            /** @description For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group). */
+            maxFailures?: number;
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];

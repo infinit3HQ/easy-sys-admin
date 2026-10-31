@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"time"
+)
 
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
@@ -78,5 +82,64 @@ func TestSignupDefaults(t *testing.T) {
 	}
 	if cfg.Auth.Signup || !cfg.Auth.SignupIgnored || !cfg.AllowPrivateNetworks {
 		t.Errorf("allow list: %+v, private networks %v", cfg.Auth, cfg.AllowPrivateNetworks)
+	}
+}
+
+func TestLimitDefaults(t *testing.T) {
+	cfg, err := parse(env(base()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PollConcurrency != 64 || cfg.SSHConnectTimeout != 5*time.Second || cfg.MaxServersPerAccount != 500 ||
+		cfg.MetricsRawRetention != 48*time.Hour || cfg.MetricsHourlyRetention != 90*24*time.Hour || !cfg.Metrics {
+		t.Errorf("defaults: %+v", cfg)
+	}
+}
+
+func TestLimitSettings(t *testing.T) {
+	m := base()
+	m["ESA_POLL_CONCURRENCY"] = "128"
+	m["ESA_SSH_CONNECT_TIMEOUT"] = "3s"
+	m["ESA_MAX_SERVERS_PER_ACCOUNT"] = "2000"
+	m["ESA_METRICS_RAW_RETENTION"] = "72h"
+	m["ESA_METRICS_HOURLY_RETENTION"] = "8760h"
+	m["ESA_METRICS"] = "false"
+	cfg, err := parse(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PollConcurrency != 128 || cfg.SSHConnectTimeout != 3*time.Second || cfg.MaxServersPerAccount != 2000 ||
+		cfg.MetricsRawRetention != 72*time.Hour || cfg.MetricsHourlyRetention != 8760*time.Hour || cfg.Metrics {
+		t.Errorf("set: %+v", cfg)
+	}
+
+	bad := map[string]string{
+		"ESA_POLL_CONCURRENCY":         "0",
+		"ESA_SSH_CONNECT_TIMEOUT":      "500ms",
+		"ESA_MAX_SERVERS_PER_ACCOUNT":  "100001",
+		"ESA_METRICS_RAW_RETENTION":    "1h",
+		"ESA_METRICS_HOURLY_RETENTION": "24h", // shorter than the default raw retention of 48h
+		"ESA_METRICS":                  "maybe",
+	}
+	for k, v := range bad {
+		m := base()
+		m[k] = v
+		if _, err := parse(env(m)); err == nil || !strings.Contains(err.Error(), k) {
+			t.Errorf("%s=%s: got %v, want an error naming the variable", k, v, err)
+		}
+	}
+	for _, v := range []string{"513", "ten", "-1"} {
+		m := base()
+		m["ESA_POLL_CONCURRENCY"] = v
+		if _, err := parse(env(m)); err == nil {
+			t.Errorf("ESA_POLL_CONCURRENCY=%s accepted", v)
+		}
+	}
+	for _, v := range []string{"5", "2m", "x"} {
+		m := base()
+		m["ESA_SSH_CONNECT_TIMEOUT"] = v
+		if _, err := parse(env(m)); err == nil {
+			t.Errorf("ESA_SSH_CONNECT_TIMEOUT=%s accepted", v)
+		}
 	}
 }

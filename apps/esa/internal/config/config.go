@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is the control plane configuration.
@@ -32,6 +34,20 @@ type Config struct {
 	// always refused.
 	// Defaults to true when signup is off, false when anyone can sign up.
 	AllowPrivateNetworks bool
+
+	// PollConcurrency is how many servers the minute poll contacts at once.
+	PollConcurrency int
+	// SSHConnectTimeout bounds the TCP connect to a managed server. The SSH
+	// handshake after it has its own fixed limit.
+	SSHConnectTimeout time.Duration
+	// MaxServersPerAccount caps the servers one account can add.
+	MaxServersPerAccount int
+	// MetricsRawRetention is how long per-poll metric samples are kept.
+	MetricsRawRetention time.Duration
+	// MetricsHourlyRetention is how long hourly metric averages are kept.
+	MetricsHourlyRetention time.Duration
+	// Metrics serves GET /metrics in the Prometheus text format.
+	Metrics bool
 
 	Auth AuthConfig
 }
@@ -139,7 +155,63 @@ func parse(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("ESA_ALLOW_PRIVATE_NETWORKS: %w", err)
 	}
 
+	if err := parseLimits(&cfg, get); err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
+}
+
+// parseLimits reads polling, retention, cap, and metrics settings.
+func parseLimits(cfg *Config, get func(string, string) string) error {
+	var err error
+	if cfg.PollConcurrency, err = parseInt(get("ESA_POLL_CONCURRENCY", "64"), 1, 512); err != nil {
+		return fmt.Errorf("ESA_POLL_CONCURRENCY: %w", err)
+	}
+	if cfg.SSHConnectTimeout, err = parseDuration(get("ESA_SSH_CONNECT_TIMEOUT", "5s"), time.Second, time.Minute); err != nil {
+		return fmt.Errorf("ESA_SSH_CONNECT_TIMEOUT: %w", err)
+	}
+	if cfg.MaxServersPerAccount, err = parseInt(get("ESA_MAX_SERVERS_PER_ACCOUNT", "500"), 1, 100000); err != nil {
+		return fmt.Errorf("ESA_MAX_SERVERS_PER_ACCOUNT: %w", err)
+	}
+	if cfg.MetricsRawRetention, err = parseDuration(get("ESA_METRICS_RAW_RETENTION", "48h"), 2*time.Hour, 0); err != nil {
+		return fmt.Errorf("ESA_METRICS_RAW_RETENTION: %w", err)
+	}
+	if cfg.MetricsHourlyRetention, err = parseDuration(get("ESA_METRICS_HOURLY_RETENTION", "2160h"), 2*time.Hour, 0); err != nil {
+		return fmt.Errorf("ESA_METRICS_HOURLY_RETENTION: %w", err)
+	}
+	if cfg.MetricsHourlyRetention < cfg.MetricsRawRetention {
+		return fmt.Errorf("ESA_METRICS_HOURLY_RETENTION (%s) must be at least ESA_METRICS_RAW_RETENTION (%s)", cfg.MetricsHourlyRetention, cfg.MetricsRawRetention)
+	}
+	if cfg.Metrics, err = parseBool(get("ESA_METRICS", "true")); err != nil {
+		return fmt.Errorf("ESA_METRICS: %w", err)
+	}
+	return nil
+}
+
+// parseInt reads a whole number between lo and hi.
+func parseInt(s string, lo, hi int) (int, error) {
+	n, err := strconv.Atoi(s)
+	if err != nil || n < lo || n > hi {
+		return 0, fmt.Errorf("want a whole number from %d to %d, got %q", lo, hi, s)
+	}
+	return n, nil
+}
+
+// parseDuration reads a Go duration such as 5s or 48h, at least lo and, when
+// hi is not zero, at most hi.
+func parseDuration(s string, lo, hi time.Duration) (time.Duration, error) {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("want a duration such as 5s, 30m, or 48h, got %q", s)
+	}
+	if d < lo || (hi > 0 && d > hi) {
+		if hi > 0 {
+			return 0, fmt.Errorf("want a duration from %s to %s, got %s", lo, hi, d)
+		}
+		return 0, fmt.Errorf("want a duration of at least %s, got %s", lo, d)
+	}
+	return d, nil
 }
 
 func parseAuth(cfg *Config, get func(string, string) string, publicURL *url.URL) error {

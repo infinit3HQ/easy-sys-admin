@@ -57,6 +57,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(cfg.AllowPrivateNetworks),
 		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Signup: cfg.Auth.Signup,
 		AllowPrivateNetworks: cfg.AllowPrivateNetworks, Logger: log,
+		PollConcurrency: cfg.PollConcurrency, SSHConnectTimeout: cfg.SSHConnectTimeout,
+		MaxServersPerAccount: cfg.MaxServersPerAccount,
+		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
 	oidc := map[string]*auth.OIDC{}
@@ -66,6 +69,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health(st))
+	if cfg.Metrics {
+		// Unauthenticated: the control plane port is only on loopback or the
+		// internal Docker network. The web app does not proxy this path.
+		mux.HandleFunc("GET /metrics", metrics(st, fl))
+	}
 	auth.Routes(mux, cfg, oidc, sessions, fl, log)
 	api.Mount(mux, fl, sessions, cfg.Auth, log)
 	api.MountEnroll(mux, fl, log)

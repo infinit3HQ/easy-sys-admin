@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -131,5 +132,51 @@ func TestShellQuote(t *testing.T) {
 func TestInstallScriptRejectsBadKey(t *testing.T) {
 	if _, err := InstallScript("ssh-ed25519 AAAA' ; reboot ; '"); err == nil {
 		t.Fatal("a malformed account key must not reach the script")
+	}
+}
+
+func TestConnectTimeoutFromContext(t *testing.T) {
+	ctx := context.Background()
+	if got := connectTimeout(ctx); got != DefaultConnectTimeout {
+		t.Errorf("default: %s", got)
+	}
+	if got := connectTimeout(WithConnectTimeout(ctx, 2*time.Second)); got != 2*time.Second {
+		t.Errorf("set: %s", got)
+	}
+	if got := connectTimeout(WithConnectTimeout(ctx, 0)); got != DefaultConnectTimeout {
+		t.Errorf("zero keeps the default: %s", got)
+	}
+}
+
+// A server that accepts TCP but never speaks SSH is cut off by the
+// caller's deadline, not only by the handshake timeout.
+func TestDialHonoursContextDuringHandshake(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	h, p, _ := net.SplitHostPort(ln.Addr().String())
+	port, _ := strconv.Atoi(p)
+	k, _, _ := ed25519.GenerateKey(rand.Reader)
+	hk, _ := ssh.NewPublicKey(k)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := Dial(ctx, Target{Host: h, Port: port, User: "esa", HostKey: hk}); err == nil {
+		t.Fatal("dial to a silent server succeeded")
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Fatalf("dial took %s; the context deadline should end it", d)
 	}
 }

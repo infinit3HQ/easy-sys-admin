@@ -73,12 +73,14 @@ func runsCmd() *cobra.Command {
 	var servers []string
 	var wait bool
 	var mode string
+	var batch, maxFailures int
 	start := &cobra.Command{
 		Use:   "start <measure|clean|update|reboot>",
 		Short: "Start a run on a group or on servers",
 		Example: "  esa runs start measure --group production\n" +
 			"  esa runs start clean --server media-01 --wait\n" +
-			"  esa runs start update --group production --mode security",
+			"  esa runs start update --group production --mode security\n" +
+			"  esa runs start update --group production --batch 10 --max-failures 3",
 		Args: cobra.ExactArgs(1),
 		RunE: func(c *cobra.Command, args []string) error {
 			kind := apiclient.RunKind(args[0])
@@ -90,17 +92,27 @@ func runsCmd() *cobra.Command {
 			if (group == "") == (len(servers) == 0) {
 				return errors.New("give exactly one of --group or --server")
 			}
+			if mode != "" && mode != "security" && mode != "all" {
+				return errors.New("--mode must be security or all")
+			}
+			batchSet, maxSet := c.Flags().Changed("batch"), c.Flags().Changed("max-failures")
+			if batchSet && (batch < 1 || batch > 50) {
+				return errors.New("--batch must be between 1 and 50")
+			}
+			if maxSet && (maxFailures < 1 || maxFailures > 1000) {
+				return errors.New("--max-failures must be between 1 and 1000")
+			}
 			cl, err := client()
 			if err != nil {
 				return err
 			}
 			body := apiclient.StartRunJSONRequestBody{Kind: kind}
+			var grp *apiclient.Group
 			if group != "" {
-				gid, err := findGroup(c.Context(), cl, group)
-				if err != nil {
+				if grp, err = findGroup(c.Context(), cl, group); err != nil {
 					return err
 				}
-				body.GroupId = &gid
+				body.GroupId = &grp.Id
 			} else {
 				var ids []int64
 				for _, ref := range servers {
@@ -112,12 +124,21 @@ func runsCmd() *cobra.Command {
 				}
 				body.ServerIds = &ids
 			}
-			if mode != "" && kind == apiclient.Update {
-				opts := apiclient.RunOptions{JournalSize: "200M"}
-				if mode != "security" && mode != "all" {
-					return errors.New("--mode must be security or all")
+			rolling := kind == apiclient.Update || kind == apiclient.Reboot
+			setMode := mode != "" && kind == apiclient.Update
+			if setMode || (rolling && (batchSet || maxSet)) {
+				// Options replace the group's settings for the run, so start
+				// from them and change only what the flags set.
+				opts := runOptionsFrom(grp)
+				if setMode {
+					opts.UpdateMode = proto.UpdateMode(mode)
 				}
-				opts.UpdateMode = proto.UpdateMode(mode)
+				if batchSet && rolling {
+					opts.BatchSize = batch
+				}
+				if maxSet && rolling {
+					opts.MaxFailures = maxFailures
+				}
 				body.Options = &opts
 			}
 			r, err := cl.StartRunWithResponse(c.Context(), body)
@@ -162,25 +183,40 @@ func runsCmd() *cobra.Command {
 	start.Flags().StringSliceVar(&servers, "server", nil, "server name or id (repeatable)")
 	start.Flags().BoolVar(&wait, "wait", false, "wait for the run to finish and exit non-zero if it fails")
 	start.Flags().StringVar(&mode, "mode", "", "for update runs: security or all (default: the group's setting)")
+	start.Flags().IntVar(&batch, "batch", 0, "for update and reboot runs: servers worked on at the same time, 1 to 50 (default: the group's setting)")
+	start.Flags().IntVar(&maxFailures, "max-failures", 0, "for update and reboot runs: stop after this many servers fail, 1 to 1000 (default: the group's setting)")
 
 	cmd.AddCommand(list, show, start)
 	return cmd
 }
 
-func findGroup(ctx context.Context, cl *apiclient.ClientWithResponses, name string) (int64, error) {
+func findGroup(ctx context.Context, cl *apiclient.ClientWithResponses, name string) (*apiclient.Group, error) {
 	r, err := cl.ListGroupsWithResponse(ctx)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	if err := apiErr(r.HTTPResponse, r.Body); err != nil {
-		return 0, err
+		return nil, err
 	}
 	for _, g := range r.JSON200.Items {
 		if strings.EqualFold(g.Name, name) || strconv.FormatInt(g.Id, 10) == name {
-			return g.Id, nil
+			return &g, nil
 		}
 	}
-	return 0, fmt.Errorf("no group named %q", name)
+	return nil, fmt.Errorf("no group named %q", name)
+}
+
+// runOptionsFrom returns a group's run settings, or the control plane's
+// defaults for a run on servers picked by name.
+func runOptionsFrom(g *apiclient.Group) apiclient.RunOptions {
+	if g == nil {
+		return apiclient.RunOptions{BuildCache: true, VSCode: true, JournalSize: "200M", UpdateMode: proto.UpdateSecurity}
+	}
+	return apiclient.RunOptions{
+		BuildCache: g.Clean.BuildCache, VSCode: g.Clean.Vscode, Journal: g.Clean.Journal, JournalSize: g.Clean.JournalSize,
+		UpdateMode: proto.UpdateMode(g.Updates.Mode), Hold: g.Updates.Hold, RebootIfRequired: g.Updates.RebootIfRequired,
+		BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures,
+	}
 }
 
 func getRun(ctx context.Context, id int64) (*apiclient.Run, error) {

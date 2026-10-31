@@ -161,16 +161,16 @@ Two more limits protect the servers and the control plane:
 
 ### Caps
 
-| Item                              | Cap | Source                  |
-| --------------------------------- | --- | ----------------------- |
-| Servers per account               | 500 | `fleet/limits_state.go` |
-| Certificates per account          | 200 | same                    |
-| Notification channels per account | 25  | same                    |
-| Teams created per user            | 20  | `fleet/teams.go`        |
-| Members per team                  | 100 | same                    |
-| Pending invites per team          | 50  | same                    |
-| Shares per group                  | 50  | `fleet/sharing.go`      |
-| Pending share links per group     | 50  | same                    |
+| Item                              | Cap                                                  | Source                  |
+| --------------------------------- | ---------------------------------------------------- | ----------------------- |
+| Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT` | `fleet/limits_state.go` |
+| Certificates per account          | 200                                                  | same                    |
+| Notification channels per account | 25                                                   | same                    |
+| Teams created per user            | 20                                                   | `fleet/teams.go`        |
+| Members per team                  | 100                                                  | same                    |
+| Pending invites per team          | 50                                                   | same                    |
+| Shares per group                  | 50                                                   | `fleet/sharing.go`      |
+| Pending share links per group     | 50                                                   | same                    |
 
 ## Security headers
 
@@ -194,9 +194,13 @@ base-uri 'none'; object-src 'none'; form-action 'self'
 
 `style-src` allows inline styles because React renders style attributes on the server. `font-src` allows `data:` because Vite inlines small font subsets.
 
+## Metrics endpoint
+
+`GET /metrics` on the control plane needs no login. It is served only on the control plane's own address (the internal Docker network, or loopback by default), the web server does not proxy it, and it reports counts with fixed labels, never names, hosts, emails, or tokens. `ESA_METRICS=false` turns it off.
+
 ## Logs
 
-- The request log records method, path, status, and duration. It never logs query strings, because OIDC callbacks carry the authorization code there. Successful `/healthz` checks are not logged.
+- The request log records method, path, status, and duration. It never logs query strings, because OIDC callbacks carry the authorization code there. Successful `/healthz` checks and `/metrics` scrapes are not logged.
 - `api.RedactPath` replaces the token segment of paths under `/enroll/`, `/api/v1/invites/`, `/api/v1/shares/`, `/invite/`, and `/share/` with `[redacted]`. It applies to request logs, panic logs, and API error logs.
 - Notification errors name only the host, because a webhook URL can hold a secret. The channel's visible `last_error` holds only an error category; the detail goes to the server log.
 - Errors from a helper install have the sudo password replaced with `[password]`.

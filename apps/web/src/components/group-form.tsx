@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import type { GroupInput } from '@esa/api'
-import { Choice, ErrorBanner, Field, Panel, Toggle, cn } from '#/components/kit'
+import {
+  Choice,
+  ErrorBanner,
+  Field,
+  NumberInput,
+  Panel,
+  Toggle,
+  cn,
+} from '#/components/kit'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '#/components/ui/native-select'
@@ -31,6 +39,8 @@ export const defaultGroup: GroupInput = {
     time: '04:00',
     hold: [],
     rebootIfRequired: false,
+    batchSize: 1,
+    maxFailures: 1,
   },
 }
 
@@ -211,7 +221,9 @@ export function GroupForm({
           }
         >
           <p className="mb-4 text-xs text-muted-foreground">
-            One server at a time. The first failure stops the rest of the group.
+            Servers are updated in batches, in name order. The server hosting
+            esa always goes on its own. Once the failure limit is reached, the
+            rest of the group is skipped.
           </p>
           <div className={cn('space-y-5', !g.updates.enabled && 'opacity-50')}>
             <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-6">
@@ -241,6 +253,34 @@ export function GroupForm({
                 />
               </Field>
             </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field
+                label="Servers at a time"
+                hint="Upgraded together. 1 is the safest."
+              >
+                <NumberInput
+                  className="w-24"
+                  min={1}
+                  max={50}
+                  required
+                  value={g.updates.batchSize}
+                  onChange={(batchSize) => setUpd({ batchSize })}
+                />
+              </Field>
+              <Field
+                label="Stop after failures"
+                hint="The run stops once this many servers fail."
+              >
+                <NumberInput
+                  className="w-24"
+                  min={1}
+                  max={1000}
+                  required
+                  value={g.updates.maxFailures}
+                  onChange={(maxFailures) => setUpd({ maxFailures })}
+                />
+              </Field>
+            </div>
             <Field label="Never upgrade" hint="Package names, comma-separated.">
               <Input
                 className="font-mono"
@@ -256,7 +296,7 @@ export function GroupForm({
               onChange={(rebootIfRequired) => setUpd({ rebootIfRequired })}
               disabled={disabled}
               label="Reboot after updates when a server asks for it"
-              hint="One at a time, waiting for each to come back. The server hosting esa is skipped."
+              hint="Each server reboots after its own update, and its batch waits for it to come back. The server hosting esa is skipped."
             />
           </div>
         </Panel>

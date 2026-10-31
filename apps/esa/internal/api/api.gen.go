@@ -1247,14 +1247,19 @@ type UpdateMemberRequest struct {
 
 // UpdatePolicy defines model for UpdatePolicy.
 type UpdatePolicy struct {
-	Days    []Day `json:"days"`
-	Enabled bool  `json:"enabled"`
+	// BatchSize Servers updated or rebooted at the same time. The server that hosts the control plane always goes alone.
+	BatchSize int   `json:"batchSize"`
+	Days      []Day `json:"days"`
+	Enabled   bool  `json:"enabled"`
 
 	// Hold Packages never upgraded by esa.
-	Hold []string         `json:"hold"`
-	Mode UpdatePolicyMode `json:"mode"`
+	Hold []string `json:"hold"`
 
-	// RebootIfRequired Reboot one server at a time after updates when the server asks for it. Never the control plane host.
+	// MaxFailures Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
+	MaxFailures int              `json:"maxFailures"`
+	Mode        UpdatePolicyMode `json:"mode"`
+
+	// RebootIfRequired Reboot each server after its update when the server asks for it. Never the control plane host.
 	RebootIfRequired bool `json:"rebootIfRequired"`
 
 	// Time Example: 04:00

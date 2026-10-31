@@ -32,7 +32,17 @@ func (e *HostKeyMismatchError) Error() string {
 // errProbeDone stops the handshake once the host key is captured.
 var errProbeDone = errors.New("probe complete")
 
-const dialTimeout = 15 * time.Second
+// Connection limits. The TCP connect is bounded separately from the SSH
+// handshake, so a server that is down or filtered costs a poll worker only
+// the connect timeout, while a slow but alive sshd still gets the full
+// handshake time. Both are also bounded by the caller's context.
+const (
+	// DefaultConnectTimeout bounds the TCP connect unless the context sets
+	// another limit with WithConnectTimeout (ESA_SSH_CONNECT_TIMEOUT).
+	DefaultConnectTimeout = 5 * time.Second
+	// handshakeTimeout bounds the SSH handshake and authentication.
+	handshakeTimeout = 15 * time.Second
+)
 
 // ProbeHostKey connects far enough to read the host key, then disconnects
 // before authenticating, so no password or key is offered to a host that
@@ -57,7 +67,7 @@ func probe(ctx context.Context, host string, port int, algos []string) (ssh.Publ
 			return errProbeDone
 		},
 		HostKeyAlgorithms: algos,
-		Timeout:           dialTimeout,
+		Timeout:           handshakeTimeout,
 	}
 	conn, err := dialTCP(ctx, host, port)
 	if err != nil {
@@ -66,7 +76,7 @@ func probe(ctx context.Context, host string, port int, algos []string) (ssh.Publ
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
 	defer stop()
-	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	_, _, _, err = ssh.NewClientConn(conn, net.JoinHostPort(host, strconv.Itoa(port)), cfg)
 	if presented != nil {
 		return presented, nil
@@ -109,7 +119,7 @@ func Dial(ctx context.Context, t Target) (*ssh.Client, error) {
 			return nil
 		},
 		HostKeyAlgorithms: []string{algoFor(t.HostKey)},
-		Timeout:           dialTimeout,
+		Timeout:           handshakeTimeout,
 	}
 	addr := net.JoinHostPort(t.Host, strconv.Itoa(t.Port))
 	conn, err := dialTCP(ctx, t.Host, t.Port)
@@ -118,7 +128,7 @@ func Dial(ctx context.Context, t Target) (*ssh.Client, error) {
 	}
 	// Bound the handshake by the context as well as the timeout.
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
-	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
+	_ = conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	c, chans, reqs, err := ssh.NewClientConn(conn, addr, cfg)
 	stop()
 	if err != nil {
@@ -162,10 +172,25 @@ func allowPrivate(ctx context.Context) bool {
 	return !ok || allow
 }
 
+type connectTimeoutKey struct{}
+
+// WithConnectTimeout sets the TCP connect timeout for SSH dials made with
+// ctx. Zero or less keeps DefaultConnectTimeout.
+func WithConnectTimeout(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, connectTimeoutKey{}, d)
+}
+
+func connectTimeout(ctx context.Context) time.Duration {
+	if d, ok := ctx.Value(connectTimeoutKey{}).(time.Duration); ok && d > 0 {
+		return d
+	}
+	return DefaultConnectTimeout
+}
+
 // dialTCP checks every resolved address against the address policy at
 // connect time, so DNS rebinding cannot slip past an earlier check.
 func dialTCP(ctx context.Context, host string, port int) (net.Conn, error) {
-	d := netguard.Dialer(allowPrivate(ctx), net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second})
+	d := netguard.Dialer(allowPrivate(ctx), net.Dialer{Timeout: connectTimeout(ctx), KeepAlive: 30 * time.Second})
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s:%d: %w", host, port, err)

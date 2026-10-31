@@ -39,6 +39,10 @@ type Group struct {
 	UpdateTime       string `gorm:"not null;default:'04:00'"`
 	HoldPackages     JSON   `gorm:"type:jsonb;not null;default:'[]'"`
 	RebootIfRequired bool   `gorm:"not null;default:false"`
+	// Rolling updates: servers worked on at once, and failed servers that
+	// stop the run. Reboot runs use them too.
+	UpdateBatchSize   int `gorm:"not null;default:1"`
+	UpdateMaxFailures int `gorm:"not null;default:1"`
 
 	// Last schedule slot each job claimed, so a slot runs once.
 	CleanSlotAt  *time.Time

@@ -37,6 +37,32 @@ type RunOptions struct {
 	UpdateMode       proto.UpdateMode `json:"updateMode,omitempty"`
 	Hold             []string         `json:"hold,omitempty"`
 	RebootIfRequired bool             `json:"rebootIfRequired,omitempty"`
+	// BatchSize and MaxFailures shape update and reboot runs. 0 means 1.
+	BatchSize   int `json:"batchSize,omitempty"`
+	MaxFailures int `json:"maxFailures,omitempty"`
+}
+
+// Limits on a group's rolling update settings.
+const (
+	maxBatchSize   = 50
+	maxMaxFailures = 1000
+)
+
+// batching returns the batch size and failure limit, with 0 read as 1 so
+// runs stored before these settings existed keep going one at a time.
+func (o RunOptions) batching() (size, maxFailures int) {
+	return max(o.BatchSize, 1), max(o.MaxFailures, 1)
+}
+
+// validBatching checks a batch size and failure limit, where 0 means 1.
+func validBatching(size, maxFailures int) error {
+	if size < 0 || size > maxBatchSize {
+		return invalid("batchSize", "must be between 1 and %d", maxBatchSize)
+	}
+	if maxFailures < 0 || maxFailures > maxMaxFailures {
+		return invalid("maxFailures", "must be between 1 and %d", maxMaxFailures)
+	}
+	return nil
 }
 
 // RunRequest starts a run on a group or on specific servers.
@@ -136,15 +162,19 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		return RunView{}, invalid("groupId", "the group has no servers")
 	}
 
-	opts := RunOptions{BuildCache: true, VSCode: true, JournalSize: "200M", UpdateMode: proto.UpdateSecurity}
+	opts := RunOptions{BuildCache: true, VSCode: true, JournalSize: "200M", UpdateMode: proto.UpdateSecurity, BatchSize: 1, MaxFailures: 1}
 	if group != nil {
 		opts = RunOptions{
 			BuildCache: group.CleanBuildCache, VSCode: group.CleanVSCode, Journal: group.CleanJournal, JournalSize: group.JournalSize,
 			UpdateMode: proto.UpdateMode(group.UpdateMode), RebootIfRequired: group.RebootIfRequired,
+			BatchSize: group.UpdateBatchSize, MaxFailures: group.UpdateMaxFailures,
 		}
 		_ = group.HoldPackages.Decode(&opts.Hold)
 	}
 	if req.Options != nil {
+		// An override replaces the settings, except that a batch size or
+		// failure limit left out keeps the group's.
+		batch, maxFailures := opts.BatchSize, opts.MaxFailures
 		opts = *req.Options
 		if opts.JournalSize == "" {
 			opts.JournalSize = "200M"
@@ -152,6 +182,19 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if opts.UpdateMode == "" {
 			opts.UpdateMode = proto.UpdateSecurity
 		}
+		if opts.BatchSize == 0 {
+			opts.BatchSize = batch
+		}
+		if opts.MaxFailures == 0 {
+			opts.MaxFailures = maxFailures
+		}
+	}
+	if err := validBatching(opts.BatchSize, opts.MaxFailures); err != nil {
+		return RunView{}, err
+	}
+	opts.BatchSize, opts.MaxFailures = opts.batching()
+	if req.Kind != RunUpdate && req.Kind != RunReboot {
+		opts.BatchSize, opts.MaxFailures = 0, 0
 	}
 	if req.Kind == RunClean && !opts.BuildCache && !opts.VSCode && !opts.Journal {
 		return RunView{}, invalid("options", "turn on at least one cleanup")

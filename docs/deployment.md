@@ -1,6 +1,6 @@
 # Deployment
 
-easy-sys-admin runs on one Docker host behind Traefik, using `deploy/compose.yaml`. The stack has three containers: PostgreSQL, the Go control plane, and the web server. No ports are published. Traefik reaches the web container over its Docker network, and one hostname serves the board, the API (`/api/v1`), sign-in (`/auth`), MCP (`/mcp`), and the enroll scripts (`/enroll`). This page covers a deployment by hand, a deployment with GitHub Actions on a self-hosted runner, upgrades, backups, health checks, and rollbacks. The examples use `esa.example.com`. Every setting is described in [configuration.md](configuration.md).
+easy-sys-admin runs on one Docker host behind Traefik, using `deploy/compose.yaml`. The stack has three containers: PostgreSQL, the Go control plane, and the web server. No ports are published. Traefik reaches the web container over its Docker network, and one hostname serves the board, the API (`/api/v1`), sign-in (`/auth`), MCP (`/mcp`), and the enroll scripts (`/enroll`). This page covers a deployment by hand, a deployment with GitHub Actions on a self-hosted runner, upgrades, backups, health checks, monitoring, and rollbacks. The examples use `esa.example.com`. Every setting is described in [configuration.md](configuration.md).
 
 ## How the stack is wired
 
@@ -91,7 +91,7 @@ Deploys share the concurrency group `deploy-production`. A new deploy waits for 
 3. In Settings > Secrets and variables > Actions > Variables, add repository variables:
    - `ESA_HOST`, for example `esa.example.com` (required)
    - `DEPLOY_ENABLED=true`, once you want pushes to `main` to deploy
-   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md).
+   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md).
 
 4. Set up Traefik on the host as in step 1 of [Deploy with docker compose](#deploy-with-docker-compose).
 
@@ -187,6 +187,46 @@ curl -fsS https://esa.example.com/healthz
 | 503    | `{"web":"ok","controlPlane":"unreachable"}`          | The web server cannot reach the control plane.       |
 
 Each container also has a Docker health check. PostgreSQL runs `pg_isready`, the control plane runs `esa healthcheck` against its own `/healthz`, and the web server fetches `/`. `docker compose ps` shows the results.
+
+## Monitoring
+
+The control plane serves `GET /metrics` in the Prometheus text format on port 8080. It needs no login. The port is only on the stack's `internal` Docker network (and on loopback when you run `esa serve` yourself), and the web server does not proxy `/metrics`, so it cannot be reached through the public hostname. The output holds counts only, never server names, hosts, emails, or tokens. Set `ESA_METRICS=false` to turn it off.
+
+| Metric                           | Type      | Meaning                                                                                  |
+| -------------------------------- | --------- | ---------------------------------------------------------------------------------------- |
+| `esa_build_info{version,commit}` | gauge     | Always 1. The labels say what is running.                                                |
+| `esa_db_up`                      | gauge     | 1 when PostgreSQL answered the scrape.                                                   |
+| `esa_servers{status}`            | gauge     | Servers in all accounts by status: `ok`, `warning`, `failing`, `unreachable`, `pending`. |
+| `esa_runs_running`               | gauge     | Maintenance runs in progress.                                                            |
+| `esa_poll_cycle_seconds`         | gauge     | Duration of the last poll cycle.                                                         |
+| `esa_poll_cycle_servers`         | gauge     | Ready servers at the start of the last cycle.                                            |
+| `esa_poll_cycle_skipped`         | gauge     | Servers the last cycle had no time to start.                                             |
+| `esa_polls_total{result}`        | counter   | Scheduled polls: `ok`, `failed`, and `deferred` (skipped by back-off).                   |
+| `esa_poll_duration_seconds`      | histogram | Time per scheduled poll, buckets 0.5, 1, 2, 5, 10, 30, and 45 seconds.                   |
+| `esa_ssh_connections`            | gauge     | Open pooled SSH connections.                                                             |
+| `esa_notify_queue_length`        | gauge     | Alert notifications waiting for delivery.                                                |
+| `esa_notify_dropped_total`       | counter   | Notifications dropped because the queue was full.                                        |
+
+Check it from the host:
+
+```sh
+docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T web wget -qO- http://esa:8080/metrics
+```
+
+To scrape it, run Prometheus on the same Docker network. Add the stack's `internal` network (`<ESA_STACK_NAME>_internal`, `esa_internal` by default) to the Prometheus container as an external network, then point a job at the `esa` service:
+
+```yaml
+scrape_configs:
+  - job_name: esa
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['esa:8080']
+```
+
+Two signs that polling needs attention:
+
+- `esa_poll_cycle_skipped` above 0, or the log line `poll cycle ran out of time; the rest wait for the next cycle` at warning level. It names how many servers were skipped and how many there are. Raise `ESA_POLL_CONCURRENCY` when it repeats.
+- `esa_poll_cycle_seconds` close to 55. The next cycle starts a minute after the last one, so a cycle near its limit has no room left.
 
 ## Roll back
 

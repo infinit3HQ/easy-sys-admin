@@ -141,6 +141,7 @@ func toGroup(g fleet.GroupView) Group {
 		Updates: UpdatePolicy{
 			Enabled: g.Updates.Enabled, Mode: UpdatePolicyMode(g.Updates.Mode), Days: toDays(g.Updates.Days),
 			Time: g.Updates.Time, Hold: nonNil(g.Updates.Hold), RebootIfRequired: g.Updates.RebootIfRequired,
+			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures,
 		},
 	}
 }

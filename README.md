@@ -7,7 +7,7 @@ Nothing listens on your servers. The control plane connects over SSH as a restri
 ## What it does
 
 - Live status every minute: CPU, memory, disks and inodes, load, network, time sync, failed units, Docker, reboot required. History for 90 days.
-- Package updates, security-only or all, one server at a time. Upgrades run in a systemd unit, so a dropped connection does not break them. Optional reboot, then a check that containers came back.
+- Package updates, security-only or all, in batches of servers you choose (one at a time by default), stopping after a set number of failures. Upgrades run in a systemd unit, so a dropped connection does not break them. Optional reboot, then a check that containers came back.
 - Cleanups that stay small and strict: idle Docker build cache, old VS Code server copies, a journal size cap. Never volumes, never images in use.
 - Services, containers, logs, scheduled jobs, access and security reports for each server.
 - Alerts for disk, inodes, memory, unreachable servers, failed units, unhealthy containers, certificates and failed runs, sent to ntfy, webhooks, Discord, Slack or email.

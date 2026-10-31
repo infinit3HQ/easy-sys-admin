@@ -99,6 +99,7 @@ func (s *Service) AcceptHostKey(ctx context.Context, a Actor, id int64, fp strin
 		return ServerView{}, err
 	}
 	s.pool.Forget(srv.ID)
+	s.clearBackoff(srv.ID)
 	s.background(func(ctx context.Context) { s.PollServer(ctx, srv.ID) })
 	return s.GetServer(ctx, a, id)
 }
@@ -156,6 +157,7 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 	}
 	s.audit(ctx, nil, a, "server.reinstall_helper", srv.Name, nil)
 	s.pool.Forget(srv.ID)
+	s.clearBackoff(srv.ID)
 	if err := s.verifyHelper(ctx, srv.ID); err != nil {
 		return ServerView{}, &UnavailableError{Message: err.Error()}
 	}
@@ -186,6 +188,7 @@ func (s *Service) DeleteServer(ctx context.Context, a Actor, id int64, uninstall
 		}
 	}
 	s.pool.Forget(srv.ID)
+	s.clearBackoff(srv.ID)
 	err = s.store.InTx(ctx, func(q *store.Queries) error {
 		if err := q.Raw().Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Delete(&store.Server{}).Error; err != nil {
 			return err

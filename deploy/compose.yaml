@@ -55,6 +55,11 @@ services:
       ESA_OIDC_PROVIDER_NAME: ${ESA_OIDC_PROVIDER_NAME:-Authentik}
       ESA_GOOGLE_CLIENT_ID: ${ESA_GOOGLE_CLIENT_ID:-}
       ESA_GOOGLE_CLIENT_SECRET: ${ESA_GOOGLE_CLIENT_SECRET:-}
+      # Empty leaves the control plane defaults (see docs/configuration.md).
+      ESA_POLL_CONCURRENCY: ${ESA_POLL_CONCURRENCY:-}
+      ESA_MAX_SERVERS_PER_ACCOUNT: ${ESA_MAX_SERVERS_PER_ACCOUNT:-}
+      ESA_METRICS_RAW_RETENTION: ${ESA_METRICS_RAW_RETENTION:-}
+      ESA_METRICS_HOURLY_RETENTION: ${ESA_METRICS_HOURLY_RETENTION:-}
     # The control plane SSHs out to managed servers, including this host by
     # its public address, so it needs normal outbound networking.
     extra_hosts:

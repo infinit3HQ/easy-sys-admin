@@ -61,6 +61,13 @@ func (p *Pool) Close() {
 	}
 }
 
+// Len is the number of open connections.
+func (p *Pool) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.conns)
+}
+
 // Forget closes the connection to one server, for example after its
 // address or host key changed.
 func (p *Pool) Forget(serverID int64) {

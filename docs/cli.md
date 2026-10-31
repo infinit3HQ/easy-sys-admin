@@ -155,12 +155,14 @@ The id must be a number.
 
 Starts a run on a group or on a list of servers.
 
-| Flag       | Meaning                                                                                         |
-| ---------- | ----------------------------------------------------------------------------------------------- |
-| `--group`  | Group name (case-insensitive) or numeric id.                                                    |
-| `--server` | Server name or id. Repeat the flag or separate values with commas.                              |
-| `--wait`   | Poll every 3 seconds until the run finishes, then print the result. Progress dots go to stderr. |
-| `--mode`   | For `update` runs only: `security` or `all`. Without it the run uses the group's setting.       |
+| Flag             | Meaning                                                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `--group`        | Group name (case-insensitive) or numeric id.                                                                               |
+| `--server`       | Server name or id. Repeat the flag or separate values with commas.                                                         |
+| `--wait`         | Poll every 3 seconds until the run finishes, then print the result. Progress dots go to stderr.                            |
+| `--mode`         | For `update` runs only: `security` or `all`. Without it the run uses the group's setting.                                  |
+| `--batch`        | For `update` and `reboot` runs: servers worked on at the same time, 1 to 50. Without it the run uses the group's setting.  |
+| `--max-failures` | For `update` and `reboot` runs: stop after this many servers fail, 1 to 1000. Without it the run uses the group's setting. |
 
 Give exactly one of `--group` or `--server`. All servers in one run must belong to one team.
 
@@ -169,6 +171,7 @@ esa runs start measure --group production
 esa runs start clean --server media-01 --wait
 esa runs start clean --server web-01,web-02
 esa runs start update --group production --mode security
+esa runs start update --group production --batch 10 --max-failures 3
 esa runs start reboot --server 42 --wait
 ```
 
@@ -176,12 +179,14 @@ What the kinds do:
 
 - `measure` reports how much space a cleanup would free. It changes nothing.
 - `clean` prunes idle Docker build cache, removes old VS Code server copies, and vacuums the journal, as the group's settings allow. A run on servers without `--group` cleans build cache and VS Code copies and leaves the journal alone.
-- `update` installs package updates one server at a time.
-- `reboot` reboots and waits for the server to come back.
+- `update` installs package updates in batches: the servers of a batch upgrade at the same time, and the next batch starts when the batch is done. The run stops once the failure limit is reached, and the remaining servers are skipped. The server that hosts the control plane always goes in a batch of its own.
+- `reboot` reboots and waits for the server to come back, in batches the same way.
 
 Without `--wait`, the command prints the run id and exits. With `--json`, it prints the run as the API returned it.
 
-`--mode` replaces the group's update settings for that run. The run then has no held packages and does not reboot when a reboot is required, even if the group is set up to do either. Leave `--mode` off to keep the group's settings. `--mode` is ignored for kinds other than `update`.
+`--mode`, `--batch`, and `--max-failures` change only what they set. With `--group`, the CLI reads the group's settings first (cleanups, journal size, update mode, held packages, reboot if required, batch size, failure limit) and sends them with the flags applied, so the run keeps the group's held packages and reboot setting. With `--server`, the rest are the control plane's defaults: update mode `security`, no held packages, no reboot, batch size 1, failure limit 1. `--mode` is ignored for kinds other than `update`, and `--batch` and `--max-failures` for kinds other than `update` and `reboot`.
+
+With the default batch size of 1 and failure limit of 1, a run works on one server at a time and stops at the first failure. For a group of 200 servers at about 3 minutes each, that takes about 10 hours; `--batch 10` takes about 1 hour. A larger batch spreads a bad update to more servers before the run stops, because the servers already running in a batch always finish.
 
 ### esa alerts
 

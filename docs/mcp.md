@@ -92,7 +92,7 @@ Reading logs needs the admin or owner role, and `operate` access on a shared ser
 
 - `measure` reports reclaimable space and changes nothing.
 - `clean` prunes idle build cache and old VS Code copies, with the group's settings when started on a group.
-- `update` installs package updates one server at a time.
+- `update` installs package updates in batches, using the group's batch size and failure limit (one server at a time and stop at the first failure when started on a server).
 - `reboot` is not offered over MCP. Use the web app or `esa runs start reboot`.
 - On a server or group shared with `view` access, the tool refuses before calling the API and tells the agent to ask the owning team for `operate` access.
 - Starting runs needs the admin or owner role. The tool is marked destructive for the client.

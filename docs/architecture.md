@@ -94,22 +94,26 @@ All packages are under `apps/esa/internal`.
 
 `startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts five loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
 
-| Job      | Interval | First run after | What it does                                                                                                                                                    |
-| -------- | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                      |
-| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, 8 at a time, 45 seconds each. Stores the snapshot and a metric sample, then evaluates alerts. |
-| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                    |
-| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than 48 hours and hourly rows older than 90 days.                                  |
-| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                        |
-| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                              |
+| Job      | Interval | First run after | What it does                                                                                                                                                                                      |
+| -------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                                                        |
+| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample, then evaluates alerts. |
+| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                      |
+| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).     |
+| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                          |
+| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                |
 
 Polling details from `apps/esa/internal/fleet/poll.go`:
 
 - Servers attempted longest ago go first, so a cycle cut short does not starve the same servers.
-- A server is marked `unreachable` after 3 failed polls in a row.
+- A cycle may run for 55 seconds. One status call takes about 1.25 seconds on a real server, most of it a 1 second CPU sample, so the cycle reaches about 44 servers per worker. When the deadline arrives before every server has started, the cycle logs `poll cycle ran out of time` at warning level with the number skipped, the number of ready servers, and the concurrency. The skipped servers go first in the next cycle.
+- A server is marked `unreachable` after 3 failed polls in a row. From then on it is polled once every 5 cycles (5 minutes) until it answers. A successful poll, accepting a new host key, reinstalling the helper, or deleting the server ends this back-off. The unreachable alert (3 minutes by default) still fires and resolves on the first poll after its duration. With the 5 minute spacing it fires about 5 minutes after the server is marked unreachable instead of 3, and resolves up to 5 minutes after the server answers again.
+- Each SSH dial allows `ESA_SSH_CONNECT_TIMEOUT` (5 seconds) for the TCP connect and 15 seconds for the SSH handshake. The poll's context bounds both, so a cycle deadline also ends them.
 - The pending update list is refreshed from apt's existing lists when it is older than 6 hours. It does not run `apt-get update`.
-- Servers that keep refusing esa's SSH login are polled less often: no delay for the first two failures, then 2, 4, 8, and 16 minutes, capped at 30.
+- Servers that keep refusing esa's SSH login are polled less often: no delay for the first two failures, then 2, 4, 8, and 16 minutes, capped at 30. Such a server also counts as unreachable after 3 failures, and the longer of the two delays applies.
 - A server whose host key changed is not contacted until a person accepts the new key.
+- Back-off state is kept in memory. After a restart every server is tried once, and servers that still do not answer go back to every 5 minutes.
+- The control plane serves `GET /metrics` with the last cycle's duration, server count, and skipped count, poll results and durations, pool size, running runs, and the notification queue. See [deployment.md](deployment.md#monitoring).
 
 The schedule tick claims each slot with a conditional update, so two ticks or two control plane processes never start the same slot twice. A slot more than one hour late, for example after the control plane was down, is recorded as a `missed` run instead of running late.
 
@@ -190,24 +194,29 @@ A run is one maintenance job across one or more servers. Runs live in `apps/esa/
 
 ### Kinds
 
-| Kind      | What each server does                                                     | Order                                            |
-| --------- | ------------------------------------------------------------------------- | ------------------------------------------------ |
-| `measure` | `esa-helper clean --measure`: reports reclaimable space, changes nothing. | Parallel, 4 servers at a time, 10 minutes each   |
-| `clean`   | `esa-helper clean --apply` with the selected cleanups.                    | Parallel, 4 servers at a time, 10 minutes each   |
-| `update`  | Package upgrade, then an optional reboot.                                 | One server at a time, stops at the first failure |
-| `reboot`  | Reboot and wait for the server to come back.                              | One server at a time, stops at the first failure |
+| Kind      | What each server does                                                     | Order                                                                  |
+| --------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `measure` | `esa-helper clean --measure`: reports reclaimable space, changes nothing. | Parallel, 4 servers at a time, 10 minutes each                         |
+| `clean`   | `esa-helper clean --apply` with the selected cleanups.                    | Parallel, 4 servers at a time, 10 minutes each                         |
+| `update`  | Package upgrade, then an optional reboot.                                 | In batches of the batch size, stops after the failure limit is reached |
+| `reboot`  | Reboot and wait for the server to come back.                              | In batches of the batch size, stops after the failure limit is reached |
 
-When an `update` or `reboot` run stops, the servers after the failed one are marked `skipped` with "stopped after <name> failed".
+`update` and `reboot` runs use two group settings, which a request can override for one run:
+
+- Batch size (`batchSize`, 1 to 50, default 1): how many servers are worked on at the same time.
+- Failure limit (`maxFailures`, 1 to 1000, default 1): how many failed servers stop the run. 1 stops at the first failure.
+
+The runner takes the run's servers in name order and cuts them into batches of the batch size. The server that hosts the control plane always gets a batch of its own, so the batch before it can be short. The servers of a batch run at the same time, and the next batch starts only when every server in the batch is done. After each batch the runner counts the failed servers so far. When the count reaches the failure limit, it starts no more batches and marks the remaining servers `skipped` with "stopped after <name> failed" (one failure) or "stopped after <n> failed servers". The servers already running in a batch always finish, so a run can end with more failures than the limit. For a group of 200 servers at about 3 minutes each, a batch size of 10 cuts the run from about 10 hours to about 1 hour.
 
 ### Starting a run
 
-`StartRun` needs the admin role and the `actions` scope. A run targets a group or a list of servers. All its servers must belong to one owning account, which owns the run; a run that mixes own and shared servers is refused. Options come from the group (cleanups, journal size, update mode, held packages, reboot if required) or from the request. Without a group the defaults are build cache and VS Code cleanup on, journal off, journal size `200M`, and update mode `security`. The trigger is `schedule`, `manual`, `api`, or `mcp`.
+`StartRun` needs the admin role and the `actions` scope. A run targets a group or a list of servers. All its servers must belong to one owning account, which owns the run; a run that mixes own and shared servers is refused. Options come from the group (cleanups, journal size, update mode, held packages, reboot if required, batch size, failure limit) or from the request. Options in a request replace the group's, except that a batch size or failure limit left out keeps the group's. Without a group the defaults are build cache and VS Code cleanup on, journal off, journal size `200M`, update mode `security`, batch size 1, and failure limit 1. The trigger is `schedule`, `manual`, `api`, or `mcp`.
 
-The run executes in the background. Each server is locked while it is worked on. A server another run already holds is marked `skipped`; in an update run that does not stop the sequence.
+The run executes in the background. Each server is locked while it is worked on. A server another run already holds is marked `skipped`; in an update run that does not count as a failure.
 
 ### Updates
 
-For each server in turn the runner:
+For each server, in parallel with the rest of its batch, the runner:
 
 1. Calls `upgrade-precheck` (3 minute timeout). Problems fail the server.
 2. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
@@ -216,13 +225,13 @@ For each server in turn the runner:
 
 ### Reboots
 
-`rebootAndWait` reads the boot time and the container list, calls `esa-helper reboot`, then checks `status` every 15 seconds until the boot time is more than 30 seconds later than before, for up to 10 minutes. After 20 more seconds it checks that every container that was running with a restart policy other than `no` is running again. A reboot run with the `schedule` trigger skips a server that hosts the control plane. Today the scheduler only starts `clean` and `update` runs.
+`rebootAndWait` reads the boot time and the container list, calls `esa-helper reboot`, then checks `status` every 15 seconds until the boot time is more than 30 seconds later than before, for up to 10 minutes. After 20 more seconds it checks that every container that was running with a restart policy other than `no` is running again. A reboot run reboots one batch at a time, with the same batch size and failure limit as updates. A reboot run with the `schedule` trigger skips a server that hosts the control plane. Today the scheduler only starts `clean` and `update` runs.
 
 ### Finishing and resuming
 
 When all servers are done, the run gets a summary such as "2 ok, 1 failed, 0 skipped" (plus bytes freed for `clean`) and a status: `succeeded`, `partial` (some servers failed and some succeeded), `failed` (some failed and none succeeded), or `skipped` (nothing failed and nothing succeeded). Any failure fires a `run_failed` alert.
 
-At startup `ResumeRuns` looks for runs still marked `running`. Upgrades keep running on the servers while the control plane is down, so for an `update` run it follows the running server's upgrade again and then carries on with the queued servers. Any other kind is finished at once, with its unfinished servers marked failed with "interrupted: the control plane restarted". At shutdown the control plane waits up to 20 seconds for background work.
+At startup `ResumeRuns` looks for runs still marked `running`. Upgrades keep running on the servers while the control plane is down, so for an `update` run it follows the upgrade of every server still marked `running` (the batch that was in flight, which can be several servers) until all of them finish. Failures from before the restart count toward the failure limit. Then it carries on with the queued servers in new batches, or skips them if the limit is reached. Any other kind is finished at once, with its unfinished servers marked failed with "interrupted: the control plane restarted". At shutdown the control plane waits up to 20 seconds for background work.
 
 ## Alerts and notifications
 

@@ -21,10 +21,10 @@ type HTTPStatusError struct{ Code int }
 
 func (e *HTTPStatusError) Error() string { return "HTTP " + strconv.Itoa(e.Code) }
 
-// netCtx applies the account-independent address policy to SSH dials made
-// with ctx.
+// netCtx applies the account-independent address policy and the SSH
+// connect timeout to SSH dials made with ctx.
 func (s *Service) netCtx(ctx context.Context) context.Context {
-	return remote.WithAllowPrivate(ctx, s.allowPrivate)
+	return remote.WithConnectTimeout(remote.WithAllowPrivate(ctx, s.allowPrivate), s.connectTimeout)
 }
 
 // netErrorText turns a connection error into a short category that is safe

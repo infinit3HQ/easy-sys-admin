@@ -35,7 +35,7 @@ func (s *Service) serverLock(id int64) *sync.Mutex {
 // execute runs a stored run to completion.
 func (s *Service) execute(ctx context.Context, runID int64) {
 	var run store.Run
-	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Where("id = ?", runID).Take(&run).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("id = ?", runID).Take(&run).Error; err != nil {
 		s.log.Error("load run", "run_id", runID, "err", err)
 		return
 	}
@@ -50,11 +50,11 @@ func (s *Service) execute(ctx context.Context, runID int64) {
 			s.runClean(ctx, rs, RunKind(run.Kind) == RunClean, opts)
 		})
 	case RunUpdate:
-		s.sequential(ctx, run.Servers, func(ctx context.Context, rs *store.RunServer) bool {
+		s.batched(ctx, run.Servers, opts, nil, func(ctx context.Context, rs *store.RunServer) bool {
 			return s.runUpdate(ctx, run, rs, opts)
 		})
 	case RunReboot:
-		s.sequential(ctx, run.Servers, func(ctx context.Context, rs *store.RunServer) bool {
+		s.batched(ctx, run.Servers, opts, nil, func(ctx context.Context, rs *store.RunServer) bool {
 			return s.runReboot(ctx, run, rs)
 		})
 	}
@@ -76,20 +76,109 @@ func (s *Service) parallel(ctx context.Context, items []store.RunServer, n int, 
 	wg.Wait()
 }
 
-// sequential runs fn per server and stops at the first failure, so one bad
-// package or a server that does not come back cannot take the whole group down.
-func (s *Service) sequential(ctx context.Context, items []store.RunServer, fn func(context.Context, *store.RunServer) bool) {
+// byID orders a run's servers as the run listed them: the group's order.
+func byID(db *gormDB) *gormDB { return db.Order("id") }
+
+// batched runs fn on the queued servers in batches of the run's batch size,
+// in order. The servers of one batch run at the same time, and the next batch
+// starts only when the whole batch is done. Once the failed servers reach the
+// run's limit, the rest are skipped, so one bad package or a server that does
+// not come back cannot take the whole group down. failed holds the indexes of
+// servers that already failed in this run.
+func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOptions, failed []int, fn func(context.Context, *store.RunServer) bool) {
+	size, maxFailures := o.batching()
+	queued := make([]int, 0, len(items))
 	for i := range items {
-		if ctx.Err() != nil {
-			return
-		}
-		if !fn(ctx, &items[i]) {
-			for j := i + 1; j < len(items); j++ {
-				s.setRunServer(ctx, &items[j], "skipped", "stopped after "+items[i].Server.Name+" failed", nil, 0)
-			}
-			return
+		if items[i].Status == "queued" {
+			queued = append(queued, i)
 		}
 	}
+	batches := planBatches(items, queued, size)
+	failed, started := runBatches(ctx, batches, maxFailures, failed, func(ctx context.Context, i int) bool {
+		return fn(ctx, &items[i])
+	})
+	if !stopRun(len(failed), maxFailures) {
+		return
+	}
+	msg := stopMessage(items, failed)
+	for _, batch := range batches[started:] {
+		for _, i := range batch {
+			if items[i].Status == "queued" {
+				s.setRunServer(ctx, &items[i], "skipped", msg, nil, 0)
+			}
+		}
+	}
+}
+
+// planBatches splits the servers at idx, in order, into batches of at most
+// size. The server that hosts the control plane always gets a batch of its
+// own, so its upgrade never runs next to another server's and a restart of
+// the control plane interrupts no one else.
+func planBatches(items []store.RunServer, idx []int, size int) [][]int {
+	size = max(size, 1)
+	var out [][]int
+	var cur []int
+	for _, i := range idx {
+		if items[i].Server.HostsControlPlane {
+			if len(cur) > 0 {
+				out, cur = append(out, cur), nil
+			}
+			out = append(out, []int{i})
+			continue
+		}
+		if cur = append(cur, i); len(cur) == size {
+			out, cur = append(out, cur), nil
+		}
+	}
+	if len(cur) > 0 {
+		out = append(out, cur)
+	}
+	return out
+}
+
+// runBatches runs work on each batch in turn and returns the failed indexes
+// (after the ones passed in) and how many batches it started. It starts no
+// batch once the failures reach maxFailures or ctx ends.
+func runBatches(ctx context.Context, batches [][]int, maxFailures int, failed []int, work func(context.Context, int) bool) ([]int, int) {
+	for b, batch := range batches {
+		if ctx.Err() != nil || stopRun(len(failed), maxFailures) {
+			return failed, b
+		}
+		failed = append(failed, runBatch(ctx, batch, work)...)
+	}
+	return failed, len(batches)
+}
+
+// runBatch runs work on every index at the same time, waits for all of
+// them, and returns the indexes that failed, in batch order.
+func runBatch(ctx context.Context, batch []int, work func(context.Context, int) bool) []int {
+	ok := make([]bool, len(batch))
+	var wg sync.WaitGroup
+	for j, i := range batch {
+		wg.Go(func() { ok[j] = work(ctx, i) })
+	}
+	wg.Wait()
+	var failed []int
+	for j, i := range batch {
+		if !ok[j] {
+			failed = append(failed, i)
+		}
+	}
+	return failed
+}
+
+// stopRun reports whether a run with this many failed servers starts no
+// more batches.
+func stopRun(failed, maxFailures int) bool {
+	return failed >= max(maxFailures, 1)
+}
+
+// stopMessage says why the rest of a run was skipped.
+func stopMessage(items []store.RunServer, failed []int) string {
+	if len(failed) == 1 {
+		return "stopped after " + items[failed[0]].Server.Name + " failed"
+	}
+	return fmt.Sprintf("stopped after %d failed servers", len(failed))
 }
 
 func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status, errMsg string, detail any, freed int64) {
@@ -452,11 +541,11 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 }
 
 // ResumeRuns handles runs left "running" by a previous process. Upgrades
-// keep running on the servers, so those are followed again; other runs
-// are marked failed.
+// keep running on the servers, so those are followed again and the run goes
+// on with its next batches; other runs are marked failed.
 func (s *Service) ResumeRuns(ctx context.Context) {
 	var runs []store.Run
-	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Where("status = 'running'").Find(&runs).Error; err != nil {
+	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("status = 'running'").Find(&runs).Error; err != nil {
 		s.log.Error("load unfinished runs", "err", err)
 		return
 	}
@@ -474,38 +563,39 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 		s.background(func(ctx context.Context) {
 			var opts RunOptions
 			_ = run.Options.Decode(&opts)
-			for i := range run.Servers {
+			failed, running := resumeState(run.Servers)
+			// Every server still "running" belongs to the batch that was in
+			// flight. Their upgrades went on without us, so follow all of them
+			// before the next batch starts.
+			failed = append(failed, runBatch(ctx, running, func(ctx context.Context, i int) bool {
 				rs := &run.Servers[i]
-				switch rs.Status {
-				case "running":
-					ep, err := s.endpoint(ctx, rs.Server)
-					if err != nil || !s.followUpgrade(ctx, run, rs, ep, opts) {
-						if err != nil {
-							s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
-						}
-						s.skipRest(ctx, run.Servers[i+1:], rs.Server.Name)
-						s.finishRun(ctx, run.ID)
-						return
-					}
-				case "queued":
-					if !s.runUpdate(ctx, run, rs, opts) {
-						s.skipRest(ctx, run.Servers[i+1:], rs.Server.Name)
-						s.finishRun(ctx, run.ID)
-						return
-					}
+				ep, err := s.endpoint(ctx, rs.Server)
+				if err != nil {
+					s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
+					return false
 				}
-			}
+				return s.followUpgrade(ctx, run, rs, ep, opts)
+			})...)
+			s.batched(ctx, run.Servers, opts, failed, func(ctx context.Context, rs *store.RunServer) bool {
+				return s.runUpdate(ctx, run, rs, opts)
+			})
 			s.finishRun(ctx, run.ID)
 		})
 	}
 }
 
-func (s *Service) skipRest(ctx context.Context, rest []store.RunServer, after string) {
-	for j := range rest {
-		if rest[j].Status == "queued" {
-			s.setRunServer(ctx, &rest[j], "skipped", "stopped after "+after+" failed", nil, 0)
+// resumeState returns the indexes of a run's servers that already failed and
+// of those still running (the batch in flight when the process stopped).
+func resumeState(servers []store.RunServer) (failed, running []int) {
+	for i := range servers {
+		switch servers[i].Status {
+		case "failed":
+			failed = append(failed, i)
+		case "running":
+			running = append(running, i)
 		}
 	}
+	return failed, running
 }
 
 func humanBytes(n int64) string {

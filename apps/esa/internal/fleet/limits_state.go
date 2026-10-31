@@ -4,12 +4,14 @@ import (
 	"context"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// Per-account caps on stored items.
+// Per-account caps on stored items. maxServers is the default of
+// ESA_MAX_SERVERS_PER_ACCOUNT; Service.maxServers holds the setting.
 const (
 	maxChannels = 25
 	maxCerts    = 200
@@ -23,17 +25,25 @@ const (
 )
 
 // runtimeState is in-memory state kept per Service: rate limits, the
-// notification queue, and poll back-off. It lives beside the Service rather
-// than in it, keyed by the Service pointer.
+// notification queue, poll back-off, and poll statistics. It lives beside
+// the Service rather than in it, keyed by the Service pointer.
 type runtimeState struct {
 	rateMu sync.Mutex
 	rates  map[string]*rateBucket
 
-	notifyOnce sync.Once
-	notifyQ    chan notifyJob
+	notifyOnce    sync.Once
+	notifyQ       chan notifyJob
+	notifyQueue   atomic.Pointer[chan notifyJob] // notifyQ once created, for Stats
+	notifyDropped atomic.Uint64
 
 	backoffMu sync.Mutex
 	backoff   map[int64]*pollBackoff
+	// cycleStart is when the current or last PollAll began. Back-off for
+	// unreachable servers counts whole cycles from it.
+	cycleStart time.Time
+
+	statsMu sync.Mutex
+	stats   PollStats
 }
 
 var runtimeStates sync.Map // *Service -> *runtimeState
@@ -114,6 +124,7 @@ func (s *Service) enqueueNotify(ch store.NotifyChannel, msg Message) {
 	rt := s.rt()
 	rt.notifyOnce.Do(func() {
 		rt.notifyQ = make(chan notifyJob, notifyQueueSize)
+		rt.notifyQueue.Store(&rt.notifyQ)
 		for range notifyWorkers {
 			go s.notifyWorker(rt.notifyQ)
 		}
@@ -121,6 +132,7 @@ func (s *Service) enqueueNotify(ch store.NotifyChannel, msg Message) {
 	select {
 	case rt.notifyQ <- notifyJob{ch: ch, msg: msg}:
 	default:
+		rt.notifyDropped.Add(1)
 		s.log.Warn("notification queue full; dropping message", "account_id", ch.AccountID, "channel", ch.Name)
 	}
 }
@@ -139,15 +151,32 @@ func (s *Service) notifyWorker(q <-chan notifyJob) {
 
 // ---- Poll back-off -----------------------------------------------------------
 
-// pollBackoff counts consecutive SSH authentication failures for a server.
-// Repeated failed logins can get esa's address banned (fail2ban), so such
-// servers are polled less often.
+// pollBackoff holds when a server may next be polled on schedule. Two
+// things push that time out, and the later one wins:
+//
+//   - Consecutive SSH authentication failures. Repeated failed logins can
+//     get esa's address banned (fail2ban), so such servers are polled less
+//     often (backoffDelay).
+//   - Being unreachable. Once a server has missed unreachableAfter polls in
+//     a row it is polled once every unreachablePollEvery, so a dead server
+//     does not hold a poll worker for a connect or handshake timeout every
+//     minute.
+//
+// The state is in memory only. After a restart every server is tried once
+// and the back-off starts again from its stored missed-poll count.
 type pollBackoff struct {
 	failures int
 	next     time.Time
 }
 
-const maxPollBackoff = 30 * time.Minute
+const (
+	maxPollBackoff = 30 * time.Minute
+	// unreachablePollEvery spaces polls of an unreachable server.
+	unreachablePollEvery = 5 * time.Minute
+	// cycleSlack absorbs ticker jitter, so a server backed off for five
+	// cycles is polled on the fifth one, not the sixth.
+	cycleSlack = 2 * time.Second
+)
 
 // backoffDelay is how long to wait after n consecutive auth failures:
 // nothing for the first two, then 2, 4, 8, 16, and at most 30 minutes.
@@ -181,11 +210,44 @@ func (s *Service) clearBackoff(serverID int64) {
 	rt.backoffMu.Unlock()
 }
 
-// pollDeferred reports whether scheduled polling of a server is backing off.
-func (s *Service) pollDeferred(serverID int64) bool {
+// recordUnreachable defers scheduled polls of a server that stopped
+// answering for unreachablePollEvery, counted from the start of the current
+// poll cycle. It keeps a later time set by the auth-failure back-off.
+func (s *Service) recordUnreachable(serverID int64) {
+	rt := s.rt()
+	rt.backoffMu.Lock()
+	defer rt.backoffMu.Unlock()
+	from := rt.cycleStart
+	if from.IsZero() {
+		from = time.Now()
+	}
+	next := from.Add(unreachablePollEvery - cycleSlack)
+	b := rt.backoff[serverID]
+	if b == nil {
+		b = &pollBackoff{}
+		rt.backoff[serverID] = b
+	}
+	if next.After(b.next) {
+		b.next = next
+	}
+}
+
+// startCycle records the start of a poll cycle and returns it.
+func (s *Service) startCycle() time.Time {
+	rt := s.rt()
+	now := time.Now()
+	rt.backoffMu.Lock()
+	rt.cycleStart = now
+	rt.backoffMu.Unlock()
+	return now
+}
+
+// pollDeferred reports whether scheduled polling of a server is backing
+// off at time at, the start of the poll cycle asking.
+func (s *Service) pollDeferred(serverID int64, at time.Time) bool {
 	rt := s.rt()
 	rt.backoffMu.Lock()
 	defer rt.backoffMu.Unlock()
 	b := rt.backoff[serverID]
-	return b != nil && time.Now().Before(b.next)
+	return b != nil && at.Before(b.next)
 }

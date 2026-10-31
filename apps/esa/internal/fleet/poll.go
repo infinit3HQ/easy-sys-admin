@@ -14,18 +14,22 @@ import (
 )
 
 const (
-	pollTimeout     = 45 * time.Second
-	pollConcurrency = 8
-	updatesEvery    = 6 * time.Hour
-	rawRetention    = 48 * time.Hour
-	hourlyRetention = 90 * 24 * time.Hour
+	pollTimeout  = 45 * time.Second
+	updatesEvery = 6 * time.Hour
+	// Defaults of ESA_POLL_CONCURRENCY, ESA_METRICS_RAW_RETENTION, and
+	// ESA_METRICS_HOURLY_RETENTION. The Service holds the settings.
+	defaultPollConcurrency = 64
+	defaultRawRetention    = 48 * time.Hour
+	defaultHourlyRetention = 90 * 24 * time.Hour
 )
 
-// PollAll polls every ready server in every account, a few at a time. The
-// caller's deadline ends the cycle; servers attempted longest ago go first,
-// so a cycle cut short does not starve the same servers every time.
-// Servers that keep rejecting esa's login are polled less often.
+// PollAll polls every ready server in every account, s.pollConcurrency at
+// a time. The caller's deadline ends the cycle; servers attempted longest
+// ago go first, so a cycle cut short does not starve the same servers every
+// time. Servers that keep rejecting esa's login, and servers that stopped
+// answering, are polled less often (see pollBackoff).
 func (s *Service) PollAll(ctx context.Context) {
+	start := s.startCycle()
 	var ids []int64
 	err := s.db.WithContext(ctx).Model(&store.Server{}).
 		Joins("LEFT JOIN server_states ON server_states.server_id = servers.id").
@@ -36,38 +40,63 @@ func (s *Service) PollAll(ctx context.Context) {
 		s.log.Error("list servers to poll", "err", err)
 		return
 	}
-	sem := make(chan struct{}, pollConcurrency)
+	sem := make(chan struct{}, s.pollConcurrency)
 	var wg sync.WaitGroup
-	skipped := 0
+	skipped, deferred := 0, 0
+	countRest := func(rest []int64) {
+		for _, id := range rest {
+			if s.pollDeferred(id, start) {
+				deferred++
+			} else {
+				skipped++
+			}
+		}
+	}
 loop:
-	for _, id := range ids {
-		if s.pollDeferred(id) {
+	for i, id := range ids {
+		if s.pollDeferred(id, start) {
+			deferred++
 			continue
+		}
+		if ctx.Err() != nil {
+			countRest(ids[i:])
+			break
 		}
 		select {
 		case sem <- struct{}{}:
 		case <-ctx.Done():
-			skipped++
+			// Count what this cycle had no time to start.
+			countRest(ids[i:])
 			break loop
 		}
 		wg.Add(1)
 		go func(id int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			s.PollServer(ctx, id)
+			began := time.Now()
+			ok := s.pollServer(ctx, id)
+			s.recordPoll(ok, time.Since(began))
 		}(id)
 	}
 	wg.Wait()
+	took := time.Since(start)
+	s.recordCycle(took, len(ids), skipped, deferred)
 	if skipped > 0 {
-		s.log.Warn("poll cycle ran out of time; the rest wait for the next cycle")
+		s.log.Warn("poll cycle ran out of time; the rest wait for the next cycle. Raise ESA_POLL_CONCURRENCY if this repeats",
+			"skipped", skipped, "servers", len(ids), "deferred", deferred, "concurrency", s.pollConcurrency, "seconds", int(took.Seconds()))
 	}
 }
 
 // PollServer collects one status snapshot, stores it, and evaluates alerts.
 func (s *Service) PollServer(ctx context.Context, serverID int64) {
+	s.pollServer(ctx, serverID)
+}
+
+// pollServer is PollServer. It reports whether the server answered.
+func (s *Service) pollServer(ctx context.Context, serverID int64) bool {
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", serverID).Take(&srv).Error; err != nil {
-		return
+		return false
 	}
 	var state store.ServerState
 	if err := s.db.WithContext(ctx).Where("server_id = ?", serverID).Take(&state).Error; err != nil {
@@ -79,7 +108,7 @@ func (s *Service) PollServer(ctx context.Context, serverID int64) {
 	if state.HostKeyMismatch {
 		// Never touch a server whose key changed until a person accepts it.
 		s.saveState(ctx, &state)
-		return
+		return false
 	}
 
 	ep, err := s.endpoint(ctx, srv)
@@ -102,10 +131,10 @@ func (s *Service) PollServer(ctx context.Context, serverID int64) {
 		if errors.As(err, &mismatch) {
 			s.recordMismatch(ctx, serverID, mismatch)
 			s.evaluateAlerts(ctx, srv, nil)
-			return
+			return false
 		}
 		if ctx.Err() != nil {
-			return
+			return false
 		}
 		state.MissedPolls++
 		state.LastError = err.Error()
@@ -113,9 +142,15 @@ func (s *Service) PollServer(ctx context.Context, serverID int64) {
 			state.Status = string(StatusUnreachable)
 			state.Reasons = store.MustJSON([]string{"no answer: " + err.Error()})
 		}
+		if state.MissedPolls >= unreachableAfter {
+			s.recordUnreachable(serverID)
+			if state.MissedPolls == unreachableAfter {
+				s.log.Info("server not answering; polling it every 5 minutes until it does", "server_id", serverID)
+			}
+		}
 		s.saveState(ctx, &state)
 		s.evaluateAlerts(ctx, srv, &state)
-		return
+		return false
 	}
 
 	var upd *proto.PendingUpdates
@@ -147,6 +182,7 @@ func (s *Service) PollServer(ctx context.Context, serverID int64) {
 	if state.UpdatesAt == nil || now.Sub(*state.UpdatesAt) > updatesEvery {
 		s.RefreshUpdates(ctx, serverID, false)
 	}
+	return true
 }
 
 func round(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }
@@ -251,10 +287,10 @@ func (s *Service) Rollup(ctx context.Context) {
 		s.log.Error("roll up metrics", "err", err)
 	}
 	now := s.now()
-	if err := db.Where("at < ?", now.Add(-rawRetention)).Delete(&store.MetricSample{}).Error; err != nil {
+	if err := db.Where("at < ?", now.Add(-s.rawRetention)).Delete(&store.MetricSample{}).Error; err != nil {
 		s.log.Error("delete old samples", "err", err)
 	}
-	if err := db.Where("hour < ?", now.Add(-hourlyRetention)).Delete(&store.MetricHourly{}).Error; err != nil {
+	if err := db.Where("hour < ?", now.Add(-s.hourlyRetention)).Delete(&store.MetricHourly{}).Error; err != nil {
 		s.log.Error("delete old hourly metrics", "err", err)
 	}
 }
@@ -268,8 +304,10 @@ type MetricPoint struct {
 	Load1       float64
 }
 
-// Metrics returns chart points for a server over the last `window`. Up to
-// 48 hours uses raw samples, longer windows use hourly averages.
+// Metrics returns chart points for a server over the last `window`. Windows
+// up to the raw retention (48 hours by default) use raw samples, longer
+// windows use hourly averages. A window longer than the hourly retention
+// returns only what is kept.
 func (s *Service) Metrics(ctx context.Context, a Actor, serverID int64, window time.Duration) ([]MetricPoint, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
@@ -279,7 +317,7 @@ func (s *Service) Metrics(ctx context.Context, a Actor, serverID int64, window t
 	}
 	since := s.now().Add(-window)
 	points := []MetricPoint{}
-	if window <= rawRetention {
+	if window <= s.rawRetention {
 		var rows []store.MetricSample
 		if err := s.db.WithContext(ctx).Where("server_id = ? AND at >= ?", serverID, since).Order("at").Find(&rows).Error; err != nil {
 			return nil, err

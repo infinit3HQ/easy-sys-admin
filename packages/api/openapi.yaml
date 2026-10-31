@@ -1930,14 +1930,26 @@ components:
 
     UpdatePolicy:
       type: object
-      required: [enabled, mode, days, time, hold, rebootIfRequired]
+      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures]
       properties:
         enabled: { type: boolean }
         mode: { type: string, enum: [security, all] }
         days: { type: array, items: { $ref: '#/components/schemas/Day' } }
         time: { type: string, example: '04:00' }
         hold: { type: array, items: { type: string }, description: Packages never upgraded by esa. }
-        rebootIfRequired: { type: boolean, description: Reboot one server at a time after updates when the server asks for it. Never the control plane host. }
+        rebootIfRequired: { type: boolean, description: Reboot each server after its update when the server asks for it. Never the control plane host. }
+        batchSize:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 1
+          description: Servers updated or rebooted at the same time. The server that hosts the control plane always goes alone.
+        maxFailures:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 1
+          description: Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
 
     GroupInput:
       type: object
@@ -1988,6 +2000,16 @@ components:
         updateMode: { type: string, enum: [security, all] }
         hold: { type: array, items: { type: string } }
         rebootIfRequired: { type: boolean }
+        batchSize:
+          type: integer
+          minimum: 1
+          maximum: 50
+          description: For update and reboot runs, servers worked on at the same time. Omit to use the group's setting (1 without a group).
+        maxFailures:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group).
 
     StartRunRequest:
       type: object

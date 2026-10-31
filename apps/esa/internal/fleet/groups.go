@@ -30,6 +30,10 @@ type UpdatePolicy struct {
 	Time             string
 	Hold             []string
 	RebootIfRequired bool
+	// BatchSize servers are worked on at once (1 to 50). The run stops
+	// after MaxFailures servers fail (1 to 1000). 0 on input means 1.
+	BatchSize   int
+	MaxFailures int
 }
 
 // GroupInput creates or replaces a group.
@@ -69,6 +73,7 @@ func toGroupView(g store.Group) GroupView {
 		Updates: UpdatePolicy{
 			Enabled: g.UpdatesEnabled, Mode: proto.UpdateMode(g.UpdateMode), Days: splitDays(g.UpdateDays),
 			Time: g.UpdateTime, Hold: []string{}, RebootIfRequired: g.RebootIfRequired,
+			BatchSize: max(g.UpdateBatchSize, 1), MaxFailures: max(g.UpdateMaxFailures, 1),
 		},
 		LastRuns: []RunView{},
 	}
@@ -124,6 +129,9 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	if in.Updates.Mode != proto.UpdateSecurity && in.Updates.Mode != proto.UpdateAll {
 		return invalid("updateMode", "must be security or all")
 	}
+	if err := validBatching(in.Updates.BatchSize, in.Updates.MaxFailures); err != nil {
+		return err
+	}
 	hold := cleanList(in.Updates.Hold)
 	for _, p := range hold {
 		if !pkgNameRe.MatchString(p) {
@@ -135,6 +143,7 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	g.CleanBuildCache, g.CleanVSCode, g.CleanJournal, g.JournalSize = in.Clean.BuildCache, in.Clean.VSCode, in.Clean.Journal, in.Clean.JournalSize
 	g.UpdatesEnabled, g.UpdateMode, g.UpdateDays, g.UpdateTime = in.Updates.Enabled, string(in.Updates.Mode), strings.Join(us.Days, ","), us.Time
 	g.HoldPackages, g.RebootIfRequired = store.MustJSON(hold), in.Updates.RebootIfRequired
+	g.UpdateBatchSize, g.UpdateMaxFailures = max(in.Updates.BatchSize, 1), max(in.Updates.MaxFailures, 1)
 
 	// Mark the most recent slot as taken, so saving the form never starts a
 	// run (or records a "missed" one) for a time that already passed.
@@ -257,6 +266,7 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	}
 	s.audit(ctx, nil, a, "group.update", g.Name, map[string]any{
 		"clean_enabled": g.CleanEnabled, "updates_enabled": g.UpdatesEnabled, "update_mode": g.UpdateMode,
+		"batch_size": g.UpdateBatchSize, "max_failures": g.UpdateMaxFailures,
 	})
 	return s.GetGroup(ctx, a, id)
 }
