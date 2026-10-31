@@ -404,15 +404,11 @@ func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverI
 
 // ---- Finishing -----------------------------------------------------------------------
 
-func (s *Service) finishRun(ctx context.Context, runID int64) {
-	ctx = context.WithoutCancel(ctx)
-	var run store.Run
-	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Preload("Group").Where("id = ?", runID).Take(&run).Error; err != nil {
-		return
-	}
-	var ok, failed, skipped int
+// runTally counts a run's server results and builds the run's summary line:
+// "2 ok, 1 failed, 0 skipped", plus the bytes freed for cleanups.
+func runTally(kind RunKind, servers []store.RunServer) (ok, failed, skipped int, summary string) {
 	var freed int64
-	for _, rs := range run.Servers {
+	for _, rs := range servers {
 		freed += rs.BytesFreed
 		switch rs.Status {
 		case "succeeded":
@@ -423,6 +419,20 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 			skipped++
 		}
 	}
+	summary = fmt.Sprintf("%d ok, %d failed, %d skipped", ok, failed, skipped)
+	if kind == RunClean {
+		summary += ", freed " + humanBytes(freed)
+	}
+	return ok, failed, skipped, summary
+}
+
+func (s *Service) finishRun(ctx context.Context, runID int64) {
+	ctx = context.WithoutCancel(ctx)
+	var run store.Run
+	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Preload("Group").Where("id = ?", runID).Take(&run).Error; err != nil {
+		return
+	}
+	ok, failed, skipped, summary := runTally(RunKind(run.Kind), run.Servers)
 	status := "succeeded"
 	switch {
 	case failed > 0 && ok == 0:
@@ -431,10 +441,6 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 		status = "partial"
 	case ok == 0 && skipped > 0:
 		status = "skipped"
-	}
-	summary := fmt.Sprintf("%d ok, %d failed, %d skipped", ok, failed, skipped)
-	if RunKind(run.Kind) == RunClean {
-		summary += ", freed " + humanBytes(freed)
 	}
 	now := s.now()
 	s.db.WithContext(ctx).Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{"status": status, "summary": summary, "finished_at": now})

@@ -26,15 +26,28 @@ func Models() []any {
 		&NotifyChannel{},
 		&CertTarget{},
 		&APIToken{},
+		&Invite{},
+		&ShareLink{},
+		&GroupShare{},
 	}
 }
 
-// Account owns a fleet. Every server, group, and run belongs to one account.
+// Account is a space that owns a fleet: a user's personal space or a team.
+// Every server, group, and run belongs to one account.
 type Account struct {
-	ID        int64     `gorm:"primaryKey"`
-	Name      string    `gorm:"not null;size:200"`
-	CreatedAt time.Time `gorm:"not null"`
+	ID   int64  `gorm:"primaryKey"`
+	Name string `gorm:"not null;size:200"`
+	// PersonalOf is the user whose private space this is. It is NULL for
+	// teams. Each user has exactly one personal space, and it never has
+	// other members.
+	PersonalOf *int64    `gorm:"uniqueIndex"`
+	CreatedAt  time.Time `gorm:"not null"`
+
+	PersonalUser *User `gorm:"foreignKey:PersonalOf;constraint:OnDelete:CASCADE"`
 }
+
+// Personal reports whether the account is a user's private space.
+func (a Account) Personal() bool { return a.PersonalOf != nil }
 
 // User is a person who signed in through the identity provider.
 type User struct {

@@ -11,11 +11,23 @@ import (
 
 func TestRedactPath(t *testing.T) {
 	for in, want := range map[string]string{
-		"/enroll/enr_secret":          "/enroll/[redacted]",
-		"/enroll/enr_secret/helper":   "/enroll/[redacted]/helper",
-		"/enroll/enr_secret/complete": "/enroll/[redacted]/complete",
-		"/enroll/":                    "/enroll/",
-		"/api/v1/servers":             "/api/v1/servers",
+		"/enroll/enr_secret":                    "/enroll/[redacted]",
+		"/enroll/enr_secret/helper":             "/enroll/[redacted]/helper",
+		"/enroll/enr_secret/complete":           "/enroll/[redacted]/complete",
+		"/enroll/":                              "/enroll/",
+		"/api/v1/servers":                       "/api/v1/servers",
+		"/api/v1/invites/inv_secret":            "/api/v1/invites/[redacted]",
+		"/api/v1/invites/inv_secret/accept":     "/api/v1/invites/[redacted]/accept",
+		"/api/v1/invites/":                      "/api/v1/invites/",
+		"/api/v1/shares/shr_secret":             "/api/v1/shares/[redacted]",
+		"/api/v1/shares/shr_secret/accept":      "/api/v1/shares/[redacted]/accept",
+		"/invite/inv_secret":                    "/invite/[redacted]",
+		"/share/shr_secret":                     "/share/[redacted]",
+		"/api/v1/team/invites/12":               "/api/v1/team/invites/12",
+		"/api/v1/group-shares/3":                "/api/v1/group-shares/3",
+		"/api/v1/share-links/4":                 "/api/v1/share-links/4",
+		"/api/v1/groups/2/shares":               "/api/v1/groups/2/shares",
+		"/api/v1/invites/inv_secret/accept/x/y": "/api/v1/invites/[redacted]/accept/x/y",
 	} {
 		if got := redactPath(in); got != want {
 			t.Errorf("redactPath(%q) = %q, want %q", in, got, want)

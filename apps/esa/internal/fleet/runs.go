@@ -89,26 +89,47 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		return RunView{}, invalid("kind", "must be measure, clean, update, or reboot")
 	}
 
+	// Servers may be the actor's own or shared with operate access, but a
+	// run's servers always belong to one owning account, which owns the run.
 	var group *store.Group
 	var servers []store.Server
+	var ownerID int64
 	if req.GroupID != nil {
-		var g store.Group
-		if err := s.scoped(ctx, a).Where("id = ?", *req.GroupID).Take(&g).Error; err != nil {
-			return RunView{}, mapStore(err)
+		g, acc, _, err := s.loadVisibleGroup(ctx, a, *req.GroupID)
+		if err != nil {
+			return RunView{}, err
 		}
-		group = &g
-		if err := s.scoped(ctx, a).Where("group_id = ?", g.ID).Order("name").Find(&servers).Error; err != nil {
+		if err := canOperateServer(a, acc, RoleAdmin, scope); err != nil {
+			return RunView{}, err
+		}
+		group, ownerID = &g, g.AccountID
+		if err := s.db.WithContext(ctx).Where("account_id = ? AND group_id = ?", g.AccountID, g.ID).Order("name").Find(&servers).Error; err != nil {
 			return RunView{}, err
 		}
 	} else {
 		if len(req.ServerIDs) == 0 {
 			return RunView{}, invalid("serverIds", "pick a group or at least one server")
 		}
-		if err := s.scoped(ctx, a).Where("id IN ?", req.ServerIDs).Order("name").Find(&servers).Error; err != nil {
+		if err := s.visibleServers(ctx, a).Where("servers.id IN ?", req.ServerIDs).Order("name").Find(&servers).Error; err != nil {
 			return RunView{}, err
 		}
 		if len(servers) != len(uniqueIDs(req.ServerIDs)) {
 			return RunView{}, ErrNotFound
+		}
+		ownerID = servers[0].AccountID
+		for _, srv := range servers {
+			if srv.AccountID != ownerID {
+				return RunView{}, invalid("serverIds", "pick servers of one team; a run cannot mix your servers with shared ones or servers of different teams")
+			}
+		}
+		for _, srv := range servers {
+			acc, err := s.serverAccess(ctx, a, srv)
+			if err != nil {
+				return RunView{}, err
+			}
+			if err := canOperateServer(a, acc, RoleAdmin, scope); err != nil {
+				return RunView{}, err
+			}
 		}
 	}
 	if len(servers) == 0 {
@@ -152,7 +173,7 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if a.Source == SourceSystem {
 		trigger = TriggerSchedule
 	}
-	run, err := s.createRun(ctx, a, req.Kind, string(trigger), group, servers, opts, "running")
+	run, err := s.createRun(ctx, a, ownerID, req.Kind, string(trigger), group, servers, opts, "running")
 	if err != nil {
 		return RunView{}, err
 	}
@@ -160,9 +181,12 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	return s.GetRun(ctx, a, run.ID)
 }
 
-func (s *Service) createRun(ctx context.Context, a Actor, kind RunKind, trigger string, group *store.Group, servers []store.Server, opts RunOptions, status string) (store.Run, error) {
+// createRun records a run owned by ownerID, the account that owns servers.
+// RequestedBy is the actor. When the actor works through a share, the audit
+// entry goes to the owner with via_account_id and a copy stays with the actor.
+func (s *Service) createRun(ctx context.Context, a Actor, ownerID int64, kind RunKind, trigger string, group *store.Group, servers []store.Server, opts RunOptions, status string) (store.Run, error) {
 	run := store.Run{
-		AccountID: a.AccountID, Kind: string(kind), Trigger: trigger, Status: status,
+		AccountID: ownerID, Kind: string(kind), Trigger: trigger, Status: status,
 		Options: store.MustJSON(opts), RequestedBy: store.OptionalID(a.UserID), StartedAt: s.now(),
 	}
 	if group != nil {
@@ -189,7 +213,7 @@ func (s *Service) createRun(ctx context.Context, a Actor, kind RunKind, trigger 
 		if group != nil {
 			target = group.Name
 		}
-		s.audit(ctx, q, a, "run.start", target, map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)})
+		s.auditOn(ctx, q, a, ownerID, "run.start", target, map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)})
 		return nil
 	})
 	return run, err
@@ -204,17 +228,24 @@ type RunFilter struct {
 	Limit    int
 }
 
-// ListRuns returns the newest runs first.
+// ListRuns returns the newest runs first: the account's own runs and runs
+// that touch servers shared with it.
 func (s *Service) ListRuns(ctx context.Context, a Actor, f RunFilter) ([]RunView, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
-	q := s.scoped(ctx, a).Preload("Group").Preload("Servers").Preload("Servers.Server").Order("started_at DESC, id DESC")
+	q := s.visibleRuns(ctx, a).Preload("Group").Preload("Servers").Preload("Servers.Server").Order("started_at DESC, id DESC")
 	if f.GroupID != nil {
-		q = q.Where("group_id = ?", *f.GroupID)
+		// Another account's group counts only when it is shared with the
+		// actor, so the filter cannot confirm private groups.
+		q = q.Where("runs.group_id = ? AND (runs.account_id = ? OR runs.group_id IN ("+sharedGroupIDsSQL+"))", *f.GroupID, a.AccountID, a.AccountID)
 	}
 	if f.ServerID != nil {
-		q = q.Where("id IN (?)", s.db.Model(&store.RunServer{}).Select("run_id").Where("server_id = ?", *f.ServerID))
+		// Only a server the actor can see matches, so the filter cannot
+		// confirm private servers of the owner.
+		q = q.Where("runs.id IN (?)", s.db.Model(&store.RunServer{}).Select("run_id").
+			Where("server_id = ? AND (server_id IN (SELECT id FROM servers WHERE account_id = ?) OR server_id IN ("+sharedServerIDsSQL+"))",
+				*f.ServerID, a.AccountID, a.AccountID))
 	}
 	if f.Kind != "" {
 		q = q.Where("kind = ?", f.Kind)
@@ -227,6 +258,9 @@ func (s *Service) ListRuns(ctx context.Context, a Actor, f RunFilter) ([]RunView
 	}
 	var runs []store.Run
 	if err := q.Limit(f.Limit).Find(&runs).Error; err != nil {
+		return nil, err
+	}
+	if err := s.hideUnsharedRunServers(ctx, a, runs); err != nil {
 		return nil, err
 	}
 	out := make([]RunView, 0, len(runs))
@@ -242,12 +276,58 @@ func (s *Service) GetRun(ctx context.Context, a Actor, id int64) (RunView, error
 		return RunView{}, err
 	}
 	var r store.Run
-	err := s.scoped(ctx, a).Preload("Group").Preload("Servers", func(db *gormDB) *gormDB { return db.Order("id") }).
-		Preload("Servers.Server").Where("id = ?", id).Take(&r).Error
+	err := s.visibleRuns(ctx, a).Preload("Group").Preload("Servers", func(db *gormDB) *gormDB { return db.Order("id") }).
+		Preload("Servers.Server").Where("runs.id = ?", id).Take(&r).Error
 	if err != nil {
 		return RunView{}, mapStore(err)
 	}
-	return toRunView(r), nil
+	runs := []store.Run{r}
+	if err := s.hideUnsharedRunServers(ctx, a, runs); err != nil {
+		return RunView{}, err
+	}
+	return toRunView(runs[0]), nil
+}
+
+// hideUnsharedRunServers drops, from runs of other accounts, the servers
+// that are not shared with the actor, so a receiving team never sees the
+// owner's other servers. The group is hidden unless it is shared with the
+// actor, and a finished run's summary counts only the servers kept.
+func (s *Service) hideUnsharedRunServers(ctx context.Context, a Actor, runs []store.Run) error {
+	var shared map[int64]bool
+	var groups map[int64]store.GroupShare
+	for i := range runs {
+		if runs[i].AccountID == a.AccountID {
+			continue
+		}
+		if shared == nil {
+			var err error
+			if shared, err = s.sharedServerIDs(ctx, a.AccountID); err != nil {
+				return err
+			}
+			if groups, err = s.receivedShares(ctx, a.AccountID); err != nil {
+				return err
+			}
+		}
+		// Rebuild the summary only when the runner wrote it (other summaries,
+		// like a missed schedule, name no servers).
+		_, _, _, fullSummary := runTally(RunKind(runs[i].Kind), runs[i].Servers)
+		kept := runs[i].Servers[:0]
+		for _, rs := range runs[i].Servers {
+			if shared[rs.ServerID] {
+				kept = append(kept, rs)
+			}
+		}
+		runs[i].Servers = kept
+		if g := runs[i].GroupID; g != nil {
+			if _, ok := groups[*g]; !ok {
+				runs[i].GroupID, runs[i].Group = nil, nil
+			}
+		}
+		if runs[i].Summary == fullSummary {
+			_, _, _, runs[i].Summary = runTally(RunKind(runs[i].Kind), kept)
+		}
+	}
+	return nil
 }
 
 func toRunView(r store.Run) RunView {

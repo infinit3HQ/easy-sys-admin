@@ -52,6 +52,11 @@ type GroupView struct {
 	NextUpdate  *time.Time
 	LastRuns    []RunView
 	CreatedAt   time.Time
+	// Access is own for the actor's groups, or the share's access.
+	Access Access
+	// OwnerTeam and ShareID are set when another account shares the group.
+	OwnerTeam string
+	ShareID   *int64
 }
 
 func toGroupView(g store.Group) GroupView {
@@ -140,46 +145,77 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	return nil
 }
 
-// ListGroups returns the account's groups.
+// ListGroups returns the account's groups and the groups shared with it.
 func (s *Service) ListGroups(ctx context.Context, a Actor) ([]GroupView, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
 	var groups []store.Group
-	if err := s.scoped(ctx, a).Order("name").Find(&groups).Error; err != nil {
+	if err := s.visibleGroups(ctx, a).Order("name, id").Find(&groups).Error; err != nil {
 		return nil, err
 	}
-	counts := map[int64]int{}
-	var rows []struct {
-		GroupID int64
-		N       int
+	ids := make([]int64, 0, len(groups))
+	var owners []int64
+	for _, g := range groups {
+		ids = append(ids, g.ID)
+		if g.AccountID != a.AccountID {
+			owners = append(owners, g.AccountID)
+		}
 	}
-	s.scoped(ctx, a).Model(&store.Server{}).Select("group_id, count(*) AS n").Where("group_id IS NOT NULL").Group("group_id").Scan(&rows)
-	for _, r := range rows {
-		counts[r.GroupID] = r.N
+	counts, err := s.groupServerCounts(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var received map[int64]store.GroupShare
+	var ownerNames map[int64]string
+	if len(owners) > 0 {
+		if received, err = s.receivedShares(ctx, a.AccountID); err != nil {
+			return nil, err
+		}
+		if ownerNames, err = s.accountNames(ctx, owners); err != nil {
+			return nil, err
+		}
 	}
 	out := make([]GroupView, 0, len(groups))
 	for _, g := range groups {
 		v := toGroupView(g)
 		v.ServerCount = counts[g.ID]
+		v.Access = AccessOwn
+		if g.AccountID != a.AccountID {
+			sh, ok := received[g.ID]
+			if !ok {
+				continue
+			}
+			v.Access, v.OwnerTeam, v.ShareID = Access(sh.Access), ownerNames[g.AccountID], &sh.ID
+		}
 		out = append(out, v)
 	}
 	return out, nil
 }
 
-// GetGroup returns one group with its recent runs.
+// GetGroup returns one group the actor can see, with its recent runs.
 func (s *Service) GetGroup(ctx context.Context, a Actor, id int64) (GroupView, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return GroupView{}, err
 	}
-	var g store.Group
-	if err := s.scoped(ctx, a).Where("id = ?", id).Take(&g).Error; err != nil {
-		return GroupView{}, mapStore(err)
+	g, acc, sh, err := s.loadVisibleGroup(ctx, a, id)
+	if err != nil {
+		return GroupView{}, err
 	}
 	v := toGroupView(g)
-	var n int64
-	s.scoped(ctx, a).Model(&store.Server{}).Where("group_id = ?", id).Count(&n)
-	v.ServerCount = int(n)
+	v.Access = acc
+	if sh != nil {
+		names, err := s.accountNames(ctx, []int64{g.AccountID})
+		if err != nil {
+			return GroupView{}, err
+		}
+		v.OwnerTeam, v.ShareID = names[g.AccountID], &sh.ID
+	}
+	counts, err := s.groupServerCounts(ctx, []int64{id})
+	if err != nil {
+		return GroupView{}, err
+	}
+	v.ServerCount = counts[id]
 	runs, err := s.ListRuns(ctx, a, RunFilter{GroupID: &id, Limit: 10})
 	if err != nil {
 		return GroupView{}, err

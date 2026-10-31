@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/auth"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/config"
@@ -36,7 +37,7 @@ func Mount(mux *http.ServeMux, fl *fleet.Service, sessions *auth.Sessions, authC
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			status, code, msg, field := errorStatus(err)
 			if status == http.StatusInternalServerError {
-				log.Error("api handler", "path", r.URL.Path, "err", err)
+				log.Error("api handler", "path", RedactPath(r.URL.Path), "err", err)
 			}
 			writeError(w, status, code, msg, field)
 		},
@@ -51,6 +52,28 @@ func Mount(mux *http.ServeMux, fl *fleet.Service, sessions *auth.Sessions, authC
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "No such API endpoint.", "")
 	})
+}
+
+// tokenPathPrefixes are paths whose next segment is a secret token. Enroll
+// tokens let anyone enroll a server, invite and share tokens let anyone join
+// a team or receive a group, until they are used. /invite/ and /share/ are
+// the web app's pages; they are listed in case they ever reach Go.
+var tokenPathPrefixes = []string{"/enroll/", "/api/v1/invites/", "/api/v1/shares/", "/invite/", "/share/"}
+
+// RedactPath replaces the token segment of the paths in tokenPathPrefixes
+// with [redacted], so request and error logs never carry those tokens.
+func RedactPath(p string) string {
+	for _, prefix := range tokenPathPrefixes {
+		rest, ok := strings.CutPrefix(p, prefix)
+		if !ok || rest == "" {
+			continue
+		}
+		if _, tail, found := strings.Cut(rest, "/"); found {
+			return prefix + "[redacted]/" + tail
+		}
+		return prefix + "[redacted]"
+	}
+	return p
 }
 
 func errorStatus(err error) (status int, code, msg, field string) {

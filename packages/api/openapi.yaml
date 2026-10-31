@@ -34,6 +34,18 @@ tags:
   - name: runs
   - name: alerts
   - name: settings
+  - name: teams
+    description: |
+      Every user has one personal space, private to them. Teams are spaces
+      with several members. The API calls a space an account; the current
+      account is the one the session works in (see switchAccount).
+  - name: sharing
+    description: |
+      A team can share a group, and the servers in it, with another team.
+      The owning team keeps the SSH key, the group's settings and schedules,
+      and alerts. "view" lets the other team see the servers; "operate" also
+      lets its admins start runs, act on services and containers, and read
+      logs. Runs they start are recorded in the owning team.
 
 paths:
   /auth/config:
@@ -79,6 +91,182 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /teams:
+    post:
+      operationId: createTeam
+      summary: Create a team; the caller becomes its owner (browser sessions only)
+      tags: [teams]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInput' }
+      responses:
+        '201':
+          description: The caller's membership in the new team. Switch to it with switchAccount.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountMembership' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /team:
+    get:
+      operationId: getTeam
+      summary: The current account
+      tags: [teams]
+      responses:
+        '200':
+          description: Team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateTeam
+      summary: Rename the current account (owners)
+      tags: [teams]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInput' }
+      responses:
+        '200':
+          description: The renamed team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteTeam
+      summary: Delete the current team with its servers, groups and history (owners; not the personal space)
+      tags: [teams]
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          description: The team's exact name.
+          schema: { type: string }
+      responses:
+        '204':
+          description: Deleted. Sessions working in it move to the caller's personal space.
+        default: { $ref: '#/components/responses/Error' }
+
+  /team/members:
+    get:
+      operationId: listMembers
+      summary: Members of the current account
+      tags: [teams]
+      responses:
+        '200':
+          description: Members
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemberList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /team/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      operationId: updateMember
+      summary: Change a member's role (owners). A team always keeps at least one owner.
+      tags: [teams]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateMemberRequest' }
+      responses:
+        '200':
+          description: The member
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Member' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: removeMember
+      summary: Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
+      tags: [teams]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /team/invites:
+    get:
+      operationId: listInvites
+      summary: Pending invites of the current team (owners and admins)
+      tags: [teams]
+      responses:
+        '200':
+          description: Invites
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InviteList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createInvite
+      summary: Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+      tags: [teams]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInviteRequest' }
+      responses:
+        '201':
+          description: The invite and its link
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedInvite' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /team/invites/{inviteId}:
+    parameters:
+      - name: inviteId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: revokeInvite
+      summary: Revoke a pending invite
+      tags: [teams]
+      responses:
+        '204':
+          description: Revoked
+        default: { $ref: '#/components/responses/Error' }
+
+  /invites/{token}:
+    parameters:
+      - $ref: '#/components/parameters/LinkToken'
+    get:
+      operationId: getInvite
+      summary: What an invite link offers, for the signed-in user
+      tags: [teams]
+      responses:
+        '200':
+          description: Invite preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvitePreview' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /invites/{token}/accept:
+    parameters:
+      - $ref: '#/components/parameters/LinkToken'
+    post:
+      operationId: acceptInvite
+      summary: Join the team and switch this session to it (browser sessions only)
+      tags: [teams]
+      responses:
+        '200':
+          description: The new membership
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountMembership' }
         default: { $ref: '#/components/responses/Error' }
 
   /fleet/overview:
@@ -513,6 +701,133 @@ paths:
           description: Deleted
         default: { $ref: '#/components/responses/Error' }
 
+  /groups/{groupId}/shares:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      operationId: listGroupShares
+      summary: Teams this group is shared with (admins of the owning team)
+      tags: [sharing]
+      responses:
+        '200':
+          description: Shares
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupShareList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /groups/{groupId}/share-links:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      operationId: listShareLinks
+      summary: Pending share links of a group (admins of the owning team)
+      tags: [sharing]
+      responses:
+        '200':
+          description: Share links
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShareLinkList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createShareLink
+      summary: Create a one-time link that shares the group with another team. The link is shown once.
+      tags: [sharing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateShareLinkRequest' }
+      responses:
+        '201':
+          description: The link
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedShareLink' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /share-links/{linkId}:
+    parameters:
+      - name: linkId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: revokeShareLink
+      summary: Revoke a pending share link
+      tags: [sharing]
+      responses:
+        '204':
+          description: Revoked
+        default: { $ref: '#/components/responses/Error' }
+
+  /group-shares/{shareId}:
+    parameters:
+      - name: shareId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    patch:
+      operationId: updateGroupShare
+      summary: Change a share's access (admins of the owning team)
+      tags: [sharing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateGroupShareRequest' }
+      responses:
+        '200':
+          description: The share
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupShare' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: removeGroupShare
+      summary: Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team)
+      tags: [sharing]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /shares/{token}:
+    parameters:
+      - $ref: '#/components/parameters/LinkToken'
+    get:
+      operationId: getShareLink
+      summary: What a share link offers, and which of the caller's teams can accept it
+      tags: [sharing]
+      responses:
+        '200':
+          description: Share preview
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharePreview' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /shares/{token}/accept:
+    parameters:
+      - $ref: '#/components/parameters/LinkToken'
+    post:
+      operationId: acceptShareLink
+      summary: Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+      tags: [sharing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptShareRequest' }
+      responses:
+        '200':
+          description: The new share
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupShare' }
+        default: { $ref: '#/components/responses/Error' }
+
   /runs:
     get:
       operationId: listRuns
@@ -830,6 +1145,17 @@ components:
       in: path
       required: true
       schema: { type: integer, format: int64 }
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    LinkToken:
+      name: token
+      in: path
+      required: true
+      description: The secret part of an invite or share link.
+      schema: { type: string, maxLength: 128 }
 
   responses:
     Error:
@@ -890,11 +1216,12 @@ components:
 
     AccountMembership:
       type: object
-      required: [id, name, role]
+      required: [id, name, role, personal]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         role: { $ref: '#/components/schemas/Role' }
+        personal: { type: boolean, description: "The user's own private space. It has no other members." }
 
     Me:
       type: object
@@ -916,6 +1243,169 @@ components:
       required: [accountId]
       properties:
         accountId: { type: integer, format: int64 }
+
+    TeamInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+
+    Team:
+      type: object
+      required: [id, name, personal, role, memberCount, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        personal: { type: boolean }
+        role: { $ref: '#/components/schemas/Role', description: "The caller's role." }
+        memberCount: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    Member:
+      type: object
+      required: [userId, name, email, role, joinedAt, you]
+      properties:
+        userId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        joinedAt: { type: string, format: date-time }
+        you: { type: boolean }
+
+    MemberList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Member' } }
+
+    UpdateMemberRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+
+    Invite:
+      type: object
+      required: [id, role, email, createdAt, expiresAt, createdBy]
+      properties:
+        id: { type: integer, format: int64 }
+        role: { $ref: '#/components/schemas/Role' }
+        email: { type: string, description: Only this address can accept. Empty means anyone with the link. }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        createdBy: { type: string, description: Name or email of the member who created it. }
+
+    InviteList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Invite' } }
+
+    CreateInviteRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+        email: { type: string, maxLength: 200, description: Optional. Only this address can accept. }
+
+    CreatedInvite:
+      type: object
+      required: [invite, url]
+      properties:
+        invite: { $ref: '#/components/schemas/Invite' }
+        url: { type: string, description: 'The one-time link, {ESA_PUBLIC_URL}/invite/{token}. Shown once.' }
+
+    InvitePreview:
+      type: object
+      required: [teamName, role, invitedBy, expiresAt, alreadyMember]
+      properties:
+        teamName: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        invitedBy: { type: string }
+        expiresAt: { type: string, format: date-time }
+        alreadyMember: { type: boolean }
+
+    GroupAccess:
+      type: string
+      description: "own: the group belongs to the current account. view or operate: another team shares it."
+      enum: [own, operate, view]
+
+    ShareAccess:
+      type: string
+      enum: [operate, view]
+
+    GroupShare:
+      type: object
+      required: [id, groupId, groupName, ownerTeam, team, access, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        groupId: { type: integer, format: int64 }
+        groupName: { type: string }
+        ownerTeam: { type: string, description: Name of the team that owns the group. }
+        team: { type: string, description: Name of the team it is shared with. }
+        access: { $ref: '#/components/schemas/ShareAccess' }
+        createdAt: { type: string, format: date-time }
+
+    GroupShareList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/GroupShare' } }
+
+    UpdateGroupShareRequest:
+      type: object
+      required: [access]
+      properties:
+        access: { $ref: '#/components/schemas/ShareAccess' }
+
+    ShareLink:
+      type: object
+      required: [id, access, createdAt, expiresAt, createdBy]
+      properties:
+        id: { type: integer, format: int64 }
+        access: { $ref: '#/components/schemas/ShareAccess' }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time }
+        createdBy: { type: string }
+
+    ShareLinkList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ShareLink' } }
+
+    CreateShareLinkRequest:
+      type: object
+      required: [access]
+      properties:
+        access: { $ref: '#/components/schemas/ShareAccess' }
+
+    CreatedShareLink:
+      type: object
+      required: [link, url]
+      properties:
+        link: { $ref: '#/components/schemas/ShareLink' }
+        url: { type: string, description: 'The one-time link, {ESA_PUBLIC_URL}/share/{token}. Shown once.' }
+
+    SharePreview:
+      type: object
+      required: [groupName, ownerTeam, access, serverCount, expiresAt, teams]
+      properties:
+        groupName: { type: string }
+        ownerTeam: { type: string }
+        access: { $ref: '#/components/schemas/ShareAccess' }
+        serverCount: { type: integer }
+        expiresAt: { type: string, format: date-time }
+        teams:
+          type: array
+          description: The caller's teams that can accept it (owner or admin there, not the owning team, not already shared, not a personal space).
+          items: { $ref: '#/components/schemas/AccountMembership' }
+
+    AcceptShareRequest:
+      type: object
+      required: [teamId]
+      properties:
+        teamId: { type: integer, format: int64 }
 
     ActionResult:
       type: object
@@ -958,10 +1448,12 @@ components:
 
     Server:
       type: object
-      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint]
+      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
+        access: { $ref: '#/components/schemas/GroupAccess' }
+        ownerTeam: { type: string, nullable: true, description: Set when the server is in a group another team shares. }
         host: { type: string }
         port: { type: integer }
         username: { type: string, description: 'SSH user the control plane uses, normally esa.' }
@@ -1458,10 +1950,13 @@ components:
 
     Group:
       type: object
-      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns]
+      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns, access]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
+        access: { $ref: '#/components/schemas/GroupAccess' }
+        ownerTeam: { type: string, nullable: true, description: Set when another team shares the group. }
+        shareId: { type: integer, format: int64, nullable: true, description: Set when another team shares the group; removeGroupShare takes it. }
         timezone: { type: string }
         clean: { $ref: '#/components/schemas/CleanPolicy' }
         updates: { $ref: '#/components/schemas/UpdatePolicy' }

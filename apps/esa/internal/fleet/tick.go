@@ -50,7 +50,7 @@ func (s *Service) maybeStart(ctx context.Context, g store.Group, kind RunKind, c
 		// running hours late, when nobody expects it.
 		var servers []store.Server
 		s.db.WithContext(ctx).Where("account_id = ? AND group_id = ?", g.AccountID, g.ID).Find(&servers)
-		run, err := s.createRun(ctx, a, kind, string(TriggerSchedule), &g, servers, RunOptions{}, "missed")
+		run, err := s.createRun(ctx, a, g.AccountID, kind, string(TriggerSchedule), &g, servers, RunOptions{}, "missed")
 		if err == nil {
 			fin := s.now()
 			s.db.WithContext(ctx).Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{

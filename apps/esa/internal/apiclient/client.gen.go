@@ -166,6 +166,27 @@ func (e Day) Valid() bool {
 	}
 }
 
+// Defines values for GroupAccess.
+const (
+	GroupAccessOperate GroupAccess = "operate"
+	GroupAccessOwn     GroupAccess = "own"
+	GroupAccessView    GroupAccess = "view"
+)
+
+// Valid indicates whether the value is a known member of the GroupAccess enum.
+func (e GroupAccess) Valid() bool {
+	switch e {
+	case GroupAccessOperate:
+		return true
+	case GroupAccessOwn:
+		return true
+	case GroupAccessView:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin  Role = "admin"
@@ -361,6 +382,24 @@ func (e ServerStatus) Valid() bool {
 	}
 }
 
+// Defines values for ShareAccess.
+const (
+	ShareAccessOperate ShareAccess = "operate"
+	ShareAccessView    ShareAccess = "view"
+)
+
+// Valid indicates whether the value is a known member of the ShareAccess enum.
+func (e ShareAccess) Valid() bool {
+	switch e {
+	case ShareAccessOperate:
+		return true
+	case ShareAccessView:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdatePolicyMode.
 const (
 	All      UpdatePolicyMode = "all"
@@ -412,6 +451,11 @@ type AcceptHostKeyRequest struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
+// AcceptShareRequest defines model for AcceptShareRequest.
+type AcceptShareRequest struct {
+	TeamId int64 `json:"teamId"`
+}
+
 // AccessReport defines model for AccessReport.
 type AccessReport = proto.AccessReport
 
@@ -419,7 +463,10 @@ type AccessReport = proto.AccessReport
 type AccountMembership struct {
 	Id   int64  `json:"id"`
 	Name string `json:"name"`
-	Role Role   `json:"role"`
+
+	// Personal The user's own private space. It has no other members.
+	Personal bool `json:"personal"`
+	Role     Role `json:"role"`
 }
 
 // ActionResult defines model for ActionResult.
@@ -636,12 +683,40 @@ type CreateChannelRequest struct {
 	Name   string        `json:"name"`
 }
 
+// CreateInviteRequest defines model for CreateInviteRequest.
+type CreateInviteRequest struct {
+	// Email Optional. Only this address can accept.
+	Email *string `json:"email,omitempty"`
+	Role  Role    `json:"role"`
+}
+
+// CreateShareLinkRequest defines model for CreateShareLinkRequest.
+type CreateShareLinkRequest struct {
+	Access ShareAccess `json:"access"`
+}
+
 // CreateTokenRequest defines model for CreateTokenRequest.
 type CreateTokenRequest struct {
 	// ExpiresInDays Days until the token expires. Absent means 90.
 	ExpiresInDays *int     `json:"expiresInDays,omitempty"`
 	Name          string   `json:"name"`
 	Scopes        *[]Scope `json:"scopes,omitempty"`
+}
+
+// CreatedInvite defines model for CreatedInvite.
+type CreatedInvite struct {
+	Invite Invite `json:"invite"`
+
+	// Url The one-time link, {ESA_PUBLIC_URL}/invite/{token}. Shown once.
+	Url string `json:"url"`
+}
+
+// CreatedShareLink defines model for CreatedShareLink.
+type CreatedShareLink struct {
+	Link ShareLink `json:"link"`
+
+	// Url The one-time link, {ESA_PUBLIC_URL}/share/{token}. Shown once.
+	Url string `json:"url"`
 }
 
 // CreatedToken defines model for CreatedToken.
@@ -719,17 +794,28 @@ type FleetTotals struct {
 
 // Group defines model for Group.
 type Group struct {
-	Clean       CleanPolicy  `json:"clean"`
-	CreatedAt   time.Time    `json:"createdAt"`
-	Id          int64        `json:"id"`
-	LastRuns    []Run        `json:"lastRuns"`
-	Name        string       `json:"name"`
-	NextClean   *time.Time   `json:"nextClean,omitempty"`
-	NextUpdate  *time.Time   `json:"nextUpdate,omitempty"`
-	ServerCount int          `json:"serverCount"`
-	Timezone    string       `json:"timezone"`
-	Updates     UpdatePolicy `json:"updates"`
+	// Access own: the group belongs to the current account. view or operate: another team shares it.
+	Access     GroupAccess `json:"access"`
+	Clean      CleanPolicy `json:"clean"`
+	CreatedAt  time.Time   `json:"createdAt"`
+	Id         int64       `json:"id"`
+	LastRuns   []Run       `json:"lastRuns"`
+	Name       string      `json:"name"`
+	NextClean  *time.Time  `json:"nextClean,omitempty"`
+	NextUpdate *time.Time  `json:"nextUpdate,omitempty"`
+
+	// OwnerTeam Set when another team shares the group.
+	OwnerTeam   *string `json:"ownerTeam,omitempty"`
+	ServerCount int     `json:"serverCount"`
+
+	// ShareId Set when another team shares the group; removeGroupShare takes it.
+	ShareId  *int64       `json:"shareId,omitempty"`
+	Timezone string       `json:"timezone"`
+	Updates  UpdatePolicy `json:"updates"`
 }
+
+// GroupAccess own: the group belongs to the current account. view or operate: another team shares it.
+type GroupAccess string
 
 // GroupInput defines model for GroupInput.
 type GroupInput struct {
@@ -746,6 +832,26 @@ type GroupList struct {
 	Items []Group `json:"items"`
 }
 
+// GroupShare defines model for GroupShare.
+type GroupShare struct {
+	Access    ShareAccess `json:"access"`
+	CreatedAt time.Time   `json:"createdAt"`
+	GroupId   int64       `json:"groupId"`
+	GroupName string      `json:"groupName"`
+	Id        int64       `json:"id"`
+
+	// OwnerTeam Name of the team that owns the group.
+	OwnerTeam string `json:"ownerTeam"`
+
+	// Team Name of the team it is shared with.
+	Team string `json:"team"`
+}
+
+// GroupShareList defines model for GroupShareList.
+type GroupShareList struct {
+	Items []GroupShare `json:"items"`
+}
+
 // HostStatus defines model for HostStatus.
 type HostStatus = proto.Status
 
@@ -755,6 +861,34 @@ type ImageCheck = proto.ImageCheck
 // ImageCheckList defines model for ImageCheckList.
 type ImageCheckList struct {
 	Items []ImageCheck `json:"items"`
+}
+
+// Invite defines model for Invite.
+type Invite struct {
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy Name or email of the member who created it.
+	CreatedBy string `json:"createdBy"`
+
+	// Email Only this address can accept. Empty means anyone with the link.
+	Email     string    `json:"email"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        int64     `json:"id"`
+	Role      Role      `json:"role"`
+}
+
+// InviteList defines model for InviteList.
+type InviteList struct {
+	Items []Invite `json:"items"`
+}
+
+// InvitePreview defines model for InvitePreview.
+type InvitePreview struct {
+	AlreadyMember bool      `json:"alreadyMember"`
+	ExpiresAt     time.Time `json:"expiresAt"`
+	InvitedBy     string    `json:"invitedBy"`
+	Role          Role      `json:"role"`
+	TeamName      string    `json:"teamName"`
 }
 
 // JobsReport defines model for JobsReport.
@@ -800,6 +934,21 @@ type Me struct {
 
 	// ViaToken True when the request used an API token.
 	ViaToken bool `json:"viaToken"`
+}
+
+// Member defines model for Member.
+type Member struct {
+	Email    string    `json:"email"`
+	JoinedAt time.Time `json:"joinedAt"`
+	Name     string    `json:"name"`
+	Role     Role      `json:"role"`
+	UserId   int64     `json:"userId"`
+	You      bool      `json:"you"`
+}
+
+// MemberList defines model for MemberList.
+type MemberList struct {
+	Items []Member `json:"items"`
 }
 
 // MetricPoint defines model for MetricPoint.
@@ -917,6 +1066,8 @@ type SecurityReport = proto.SecurityReport
 
 // Server defines model for Server.
 type Server struct {
+	// Access own: the group belongs to the current account. view or operate: another team shares it.
+	Access             GroupAccess      `json:"access"`
 	Arch               string           `json:"arch"`
 	CreatedAt          time.Time        `json:"createdAt"`
 	Enrollment         ServerEnrollment `json:"enrollment"`
@@ -933,7 +1084,10 @@ type Server struct {
 	LastSeenAt         *time.Time       `json:"lastSeenAt,omitempty"`
 	Metrics            *ServerMetrics   `json:"metrics,omitempty"`
 	Name               string           `json:"name"`
-	Port               int              `json:"port"`
+
+	// OwnerTeam Set when the server is in a group another team shares.
+	OwnerTeam *string `json:"ownerTeam,omitempty"`
+	Port      int     `json:"port"`
 
 	// PresentedFingerprint Fingerprint of the changed key, when hostKeyMismatch is true.
 	PresentedFingerprint string `json:"presentedFingerprint"`
@@ -988,6 +1142,35 @@ type ServiceList struct {
 // ServiceUnit defines model for ServiceUnit.
 type ServiceUnit = proto.Service
 
+// ShareAccess defines model for ShareAccess.
+type ShareAccess string
+
+// ShareLink defines model for ShareLink.
+type ShareLink struct {
+	Access    ShareAccess `json:"access"`
+	CreatedAt time.Time   `json:"createdAt"`
+	CreatedBy string      `json:"createdBy"`
+	ExpiresAt time.Time   `json:"expiresAt"`
+	Id        int64       `json:"id"`
+}
+
+// ShareLinkList defines model for ShareLinkList.
+type ShareLinkList struct {
+	Items []ShareLink `json:"items"`
+}
+
+// SharePreview defines model for SharePreview.
+type SharePreview struct {
+	Access      ShareAccess `json:"access"`
+	ExpiresAt   time.Time   `json:"expiresAt"`
+	GroupName   string      `json:"groupName"`
+	OwnerTeam   string      `json:"ownerTeam"`
+	ServerCount int         `json:"serverCount"`
+
+	// Teams The caller's teams that can accept it (owner or admin there, not the owning team, not already shared, not a personal space).
+	Teams []AccountMembership `json:"teams"`
+}
+
 // StartRunRequest defines model for StartRunRequest.
 type StartRunRequest struct {
 	GroupId *int64  `json:"groupId,omitempty"`
@@ -1001,6 +1184,21 @@ type StartRunRequest struct {
 // SwitchAccountRequest defines model for SwitchAccountRequest.
 type SwitchAccountRequest struct {
 	AccountId int64 `json:"accountId"`
+}
+
+// Team defines model for Team.
+type Team struct {
+	CreatedAt   time.Time `json:"createdAt"`
+	Id          int64     `json:"id"`
+	MemberCount int       `json:"memberCount"`
+	Name        string    `json:"name"`
+	Personal    bool      `json:"personal"`
+	Role        Role      `json:"role"`
+}
+
+// TeamInput defines model for TeamInput.
+type TeamInput struct {
+	Name string `json:"name"`
 }
 
 // Timer defines model for Timer.
@@ -1035,6 +1233,16 @@ type UpdateCounts struct {
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 	Other     int        `json:"other"`
 	Security  int        `json:"security"`
+}
+
+// UpdateGroupShareRequest defines model for UpdateGroupShareRequest.
+type UpdateGroupShareRequest struct {
+	Access ShareAccess `json:"access"`
+}
+
+// UpdateMemberRequest defines model for UpdateMemberRequest.
+type UpdateMemberRequest struct {
+	Role Role `json:"role"`
 }
 
 // UpdatePolicy defines model for UpdatePolicy.
@@ -1080,8 +1288,14 @@ type ChannelId = int64
 // GroupId defines model for GroupId.
 type GroupId = int64
 
+// LinkToken defines model for LinkToken.
+type LinkToken = string
+
 // ServerId defines model for ServerId.
 type ServerId = int64
+
+// UserId defines model for UserId.
+type UserId = int64
 
 // ListActivityParams defines parameters for ListActivity.
 type ListActivityParams struct {
@@ -1128,6 +1342,12 @@ type GetServerMetricsParams struct {
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
 
+// DeleteTeamParams defines parameters for DeleteTeam.
+type DeleteTeamParams struct {
+	// Confirm The team's exact name.
+	Confirm string `form:"confirm" json:"confirm"`
+}
+
 // UpdateAlertRuleJSONRequestBody defines body for UpdateAlertRule for application/json ContentType.
 type UpdateAlertRuleJSONRequestBody = AlertRuleInput
 
@@ -1140,11 +1360,17 @@ type CreateChannelJSONRequestBody = CreateChannelRequest
 // UpdateChannelJSONRequestBody defines body for UpdateChannel for application/json ContentType.
 type UpdateChannelJSONRequestBody = UpdateChannelRequest
 
+// UpdateGroupShareJSONRequestBody defines body for UpdateGroupShare for application/json ContentType.
+type UpdateGroupShareJSONRequestBody = UpdateGroupShareRequest
+
 // CreateGroupJSONRequestBody defines body for CreateGroup for application/json ContentType.
 type CreateGroupJSONRequestBody = GroupInput
 
 // UpdateGroupJSONRequestBody defines body for UpdateGroup for application/json ContentType.
 type UpdateGroupJSONRequestBody = GroupInput
+
+// CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
+type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
 // SwitchAccountJSONRequestBody defines body for SwitchAccount for application/json ContentType.
 type SwitchAccountJSONRequestBody = SwitchAccountRequest
@@ -1172,6 +1398,21 @@ type ReinstallHelperJSONRequestBody = ReinstallRequest
 
 // AcceptHostKeyJSONRequestBody defines body for AcceptHostKey for application/json ContentType.
 type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
+
+// AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
+type AcceptShareLinkJSONRequestBody = AcceptShareRequest
+
+// UpdateTeamJSONRequestBody defines body for UpdateTeam for application/json ContentType.
+type UpdateTeamJSONRequestBody = TeamInput
+
+// CreateInviteJSONRequestBody defines body for CreateInvite for application/json ContentType.
+type CreateInviteJSONRequestBody = CreateInviteRequest
+
+// UpdateMemberJSONRequestBody defines body for UpdateMember for application/json ContentType.
+type UpdateMemberJSONRequestBody = UpdateMemberRequest
+
+// CreateTeamJSONRequestBody defines body for CreateTeam for application/json ContentType.
+type CreateTeamJSONRequestBody = TeamInput
 
 // CreateTokenJSONRequestBody defines body for CreateToken for application/json ContentType.
 type CreateTokenJSONRequestBody = CreateTokenRequest
@@ -1356,6 +1597,25 @@ type ClientInterface interface {
 	// Corresponds with GET /fleet/overview (the `GetFleetOverview` operationId).
 	GetFleetOverview(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RemoveGroupShare Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team)
+	//
+	// Corresponds with DELETE /group-shares/{shareId} (the `RemoveGroupShare` operationId).
+	RemoveGroupShare(ctx context.Context, shareId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateGroupShareWithBody Change a share's access (admins of the owning team)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+	UpdateGroupShareWithBody(ctx context.Context, shareId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateGroupShare Change a share's access (admins of the owning team)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+	UpdateGroupShare(ctx context.Context, shareId int64, body UpdateGroupShareJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListGroups Groups in the current account
 	//
 	// Corresponds with GET /groups (the `ListGroups` operationId).
@@ -1398,6 +1658,40 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /groups/{groupId} (the `UpdateGroup` operationId).
 	UpdateGroup(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListShareLinks Pending share links of a group (admins of the owning team)
+	//
+	// Corresponds with GET /groups/{groupId}/share-links (the `ListShareLinks` operationId).
+	ListShareLinks(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateShareLinkWithBody Create a one-time link that shares the group with another team. The link is shown once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+	CreateShareLinkWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateShareLink Create a one-time link that shares the group with another team. The link is shown once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+	CreateShareLink(ctx context.Context, groupId GroupId, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListGroupShares Teams this group is shared with (admins of the owning team)
+	//
+	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
+	ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetInvite What an invite link offers, for the signed-in user
+	//
+	// Corresponds with GET /invites/{token} (the `GetInvite` operationId).
+	GetInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptInvite Join the team and switch this session to it (browser sessions only)
+	//
+	// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
+	AcceptInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe The signed-in user and their current account
 	//
@@ -1617,6 +1911,116 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /settings/ssh-key (the `GetSSHKey` operationId).
 	GetSSHKey(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeShareLink Revoke a pending share link
+	//
+	// Corresponds with DELETE /share-links/{linkId} (the `RevokeShareLink` operationId).
+	RevokeShareLink(ctx context.Context, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetShareLink What a share link offers, and which of the caller's teams can accept it
+	//
+	// Corresponds with GET /shares/{token} (the `GetShareLink` operationId).
+	GetShareLink(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptShareLinkWithBody Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+	AcceptShareLinkWithBody(ctx context.Context, token LinkToken, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcceptShareLink Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+	AcceptShareLink(ctx context.Context, token LinkToken, body AcceptShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteTeam Delete the current team with its servers, groups and history (owners; not the personal space)
+	//
+	// Corresponds with DELETE /team (the `DeleteTeam` operationId).
+	DeleteTeam(ctx context.Context, params *DeleteTeamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTeam The current account
+	//
+	// Corresponds with GET /team (the `GetTeam` operationId).
+	GetTeam(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTeamWithBody Rename the current account (owners)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+	UpdateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTeam Rename the current account (owners)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+	UpdateTeam(ctx context.Context, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListInvites Pending invites of the current team (owners and admins)
+	//
+	// Corresponds with GET /team/invites (the `ListInvites` operationId).
+	ListInvites(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateInviteWithBody Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+	CreateInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateInvite Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+	CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RevokeInvite Revoke a pending invite
+	//
+	// Corresponds with DELETE /team/invites/{inviteId} (the `RevokeInvite` operationId).
+	RevokeInvite(ctx context.Context, inviteId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMembers Members of the current account
+	//
+	// Corresponds with GET /team/members (the `ListMembers` operationId).
+	ListMembers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveMember Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
+	//
+	// Corresponds with DELETE /team/members/{userId} (the `RemoveMember` operationId).
+	RemoveMember(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMemberWithBody Change a member's role (owners). A team always keeps at least one owner.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+	UpdateMemberWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateMember Change a member's role (owners). A team always keeps at least one owner.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+	UpdateMember(ctx context.Context, userId UserId, body UpdateMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeamWithBody Create a team; the caller becomes its owner (browser sessions only)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /teams (the `CreateTeam` operationId).
+	CreateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTeam Create a team; the caller becomes its owner (browser sessions only)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /teams (the `CreateTeam` operationId).
+	CreateTeam(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListTokens Your API tokens in this account (browser sessions only)
 	//
@@ -1929,6 +2333,55 @@ func (c *Client) GetFleetOverview(ctx context.Context, reqEditors ...RequestEdit
 	return c.Client.Do(req)
 }
 
+// RemoveGroupShare Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team)
+//
+// Corresponds with DELETE /group-shares/{shareId} (the `RemoveGroupShare` operationId).
+func (c *Client) RemoveGroupShare(ctx context.Context, shareId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveGroupShareRequest(c.Server, shareId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateGroupShareWithBody Change a share's access (admins of the owning team)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+func (c *Client) UpdateGroupShareWithBody(ctx context.Context, shareId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateGroupShareRequestWithBody(c.Server, shareId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateGroupShare Change a share's access (admins of the owning team)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+func (c *Client) UpdateGroupShare(ctx context.Context, shareId int64, body UpdateGroupShareJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateGroupShareRequest(c.Server, shareId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListGroups Groups in the current account
 //
 // Corresponds with GET /groups (the `ListGroups` operationId).
@@ -2032,6 +2485,100 @@ func (c *Client) UpdateGroupWithBody(ctx context.Context, groupId GroupId, conte
 // Corresponds with PUT /groups/{groupId} (the `UpdateGroup` operationId).
 func (c *Client) UpdateGroup(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateGroupRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListShareLinks Pending share links of a group (admins of the owning team)
+//
+// Corresponds with GET /groups/{groupId}/share-links (the `ListShareLinks` operationId).
+func (c *Client) ListShareLinks(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListShareLinksRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateShareLinkWithBody Create a one-time link that shares the group with another team. The link is shown once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+func (c *Client) CreateShareLinkWithBody(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateShareLinkRequestWithBody(c.Server, groupId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateShareLink Create a one-time link that shares the group with another team. The link is shown once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+func (c *Client) CreateShareLink(ctx context.Context, groupId GroupId, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateShareLinkRequest(c.Server, groupId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListGroupShares Teams this group is shared with (admins of the owning team)
+//
+// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
+func (c *Client) ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListGroupSharesRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetInvite What an invite link offers, for the signed-in user
+//
+// Corresponds with GET /invites/{token} (the `GetInvite` operationId).
+func (c *Client) GetInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetInviteRequest(c.Server, token)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptInvite Join the team and switch this session to it (browser sessions only)
+//
+// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
+func (c *Client) AcceptInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptInviteRequest(c.Server, token)
 	if err != nil {
 		return nil, err
 	}
@@ -2601,6 +3148,296 @@ func (c *Client) CheckServerUpdates(ctx context.Context, serverId ServerId, reqE
 // Corresponds with GET /settings/ssh-key (the `GetSSHKey` operationId).
 func (c *Client) GetSSHKey(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetSSHKeyRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeShareLink Revoke a pending share link
+//
+// Corresponds with DELETE /share-links/{linkId} (the `RevokeShareLink` operationId).
+func (c *Client) RevokeShareLink(ctx context.Context, linkId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeShareLinkRequest(c.Server, linkId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetShareLink What a share link offers, and which of the caller's teams can accept it
+//
+// Corresponds with GET /shares/{token} (the `GetShareLink` operationId).
+func (c *Client) GetShareLink(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetShareLinkRequest(c.Server, token)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptShareLinkWithBody Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+func (c *Client) AcceptShareLinkWithBody(ctx context.Context, token LinkToken, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptShareLinkRequestWithBody(c.Server, token, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcceptShareLink Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+func (c *Client) AcceptShareLink(ctx context.Context, token LinkToken, body AcceptShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcceptShareLinkRequest(c.Server, token, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteTeam Delete the current team with its servers, groups and history (owners; not the personal space)
+//
+// Corresponds with DELETE /team (the `DeleteTeam` operationId).
+func (c *Client) DeleteTeam(ctx context.Context, params *DeleteTeamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteTeamRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetTeam The current account
+//
+// Corresponds with GET /team (the `GetTeam` operationId).
+func (c *Client) GetTeam(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTeamRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTeamWithBody Rename the current account (owners)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+func (c *Client) UpdateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTeamRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTeam Rename the current account (owners)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+func (c *Client) UpdateTeam(ctx context.Context, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTeamRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListInvites Pending invites of the current team (owners and admins)
+//
+// Corresponds with GET /team/invites (the `ListInvites` operationId).
+func (c *Client) ListInvites(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListInvitesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateInviteWithBody Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+func (c *Client) CreateInviteWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInviteRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateInvite Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+func (c *Client) CreateInvite(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateInviteRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RevokeInvite Revoke a pending invite
+//
+// Corresponds with DELETE /team/invites/{inviteId} (the `RevokeInvite` operationId).
+func (c *Client) RevokeInvite(ctx context.Context, inviteId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeInviteRequest(c.Server, inviteId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListMembers Members of the current account
+//
+// Corresponds with GET /team/members (the `ListMembers` operationId).
+func (c *Client) ListMembers(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMembersRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveMember Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
+//
+// Corresponds with DELETE /team/members/{userId} (the `RemoveMember` operationId).
+func (c *Client) RemoveMember(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveMemberRequest(c.Server, userId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMemberWithBody Change a member's role (owners). A team always keeps at least one owner.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+func (c *Client) UpdateMemberWithBody(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemberRequestWithBody(c.Server, userId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateMember Change a member's role (owners). A team always keeps at least one owner.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+func (c *Client) UpdateMember(ctx context.Context, userId UserId, body UpdateMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateMemberRequest(c.Server, userId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeamWithBody Create a team; the caller becomes its owner (browser sessions only)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /teams (the `CreateTeam` operationId).
+func (c *Client) CreateTeamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTeam Create a team; the caller becomes its owner (browser sessions only)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /teams (the `CreateTeam` operationId).
+func (c *Client) CreateTeam(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTeamRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3206,6 +4043,87 @@ func NewGetFleetOverviewRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewRemoveGroupShareRequest constructs an http.Request for the RemoveGroupShare method
+func NewRemoveGroupShareRequest(server string, shareId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "shareId", shareId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/group-shares/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateGroupShareRequest calls the generic UpdateGroupShare builder with application/json body
+func NewUpdateGroupShareRequest(server string, shareId int64, body UpdateGroupShareJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateGroupShareRequestWithBody(server, shareId, "application/json", bodyReader)
+}
+
+// NewUpdateGroupShareRequestWithBody constructs an http.Request for the UpdateGroupShare method, with any body, and a specified content type
+func NewUpdateGroupShareRequestWithBody(server string, shareId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "shareId", shareId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/group-shares/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListGroupsRequest constructs an http.Request for the ListGroups method
 func NewListGroupsRequest(server string) (*http.Request, error) {
 	var err error
@@ -3384,6 +4302,189 @@ func NewUpdateGroupRequestWithBody(server string, groupId GroupId, contentType s
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListShareLinksRequest constructs an http.Request for the ListShareLinks method
+func NewListShareLinksRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/groups/%s/share-links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateShareLinkRequest calls the generic CreateShareLink builder with application/json body
+func NewCreateShareLinkRequest(server string, groupId GroupId, body CreateShareLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateShareLinkRequestWithBody(server, groupId, "application/json", bodyReader)
+}
+
+// NewCreateShareLinkRequestWithBody constructs an http.Request for the CreateShareLink method, with any body, and a specified content type
+func NewCreateShareLinkRequestWithBody(server string, groupId GroupId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/groups/%s/share-links", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListGroupSharesRequest constructs an http.Request for the ListGroupShares method
+func NewListGroupSharesRequest(server string, groupId GroupId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "groupId", groupId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/groups/%s/shares", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetInviteRequest constructs an http.Request for the GetInvite method
+func NewGetInviteRequest(server string, token LinkToken) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "token", token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/invites/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAcceptInviteRequest constructs an http.Request for the AcceptInvite method
+func NewAcceptInviteRequest(server string, token LinkToken) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "token", token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/invites/%s/accept", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -4565,6 +5666,487 @@ func NewGetSSHKeyRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewRevokeShareLinkRequest constructs an http.Request for the RevokeShareLink method
+func NewRevokeShareLinkRequest(server string, linkId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "linkId", linkId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/share-links/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetShareLinkRequest constructs an http.Request for the GetShareLink method
+func NewGetShareLinkRequest(server string, token LinkToken) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "token", token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/shares/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAcceptShareLinkRequest calls the generic AcceptShareLink builder with application/json body
+func NewAcceptShareLinkRequest(server string, token LinkToken, body AcceptShareLinkJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAcceptShareLinkRequestWithBody(server, token, "application/json", bodyReader)
+}
+
+// NewAcceptShareLinkRequestWithBody constructs an http.Request for the AcceptShareLink method, with any body, and a specified content type
+func NewAcceptShareLinkRequestWithBody(server string, token LinkToken, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "token", token, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/shares/%s/accept", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteTeamRequest constructs an http.Request for the DeleteTeam method
+func NewDeleteTeamRequest(server string, params *DeleteTeamParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "confirm", params.Confirm, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetTeamRequest constructs an http.Request for the GetTeam method
+func NewGetTeamRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateTeamRequest calls the generic UpdateTeam builder with application/json body
+func NewUpdateTeamRequest(server string, body UpdateTeamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateTeamRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewUpdateTeamRequestWithBody constructs an http.Request for the UpdateTeam method, with any body, and a specified content type
+func NewUpdateTeamRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListInvitesRequest constructs an http.Request for the ListInvites method
+func NewListInvitesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/invites")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateInviteRequest calls the generic CreateInvite builder with application/json body
+func NewCreateInviteRequest(server string, body CreateInviteJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateInviteRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateInviteRequestWithBody constructs an http.Request for the CreateInvite method, with any body, and a specified content type
+func NewCreateInviteRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/invites")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRevokeInviteRequest constructs an http.Request for the RevokeInvite method
+func NewRevokeInviteRequest(server string, inviteId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "inviteId", inviteId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/invites/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListMembersRequest constructs an http.Request for the ListMembers method
+func NewListMembersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/members")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRemoveMemberRequest constructs an http.Request for the RemoveMember method
+func NewRemoveMemberRequest(server string, userId UserId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/members/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateMemberRequest calls the generic UpdateMember builder with application/json body
+func NewUpdateMemberRequest(server string, userId UserId, body UpdateMemberJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateMemberRequestWithBody(server, userId, "application/json", bodyReader)
+}
+
+// NewUpdateMemberRequestWithBody constructs an http.Request for the UpdateMember method, with any body, and a specified content type
+func NewUpdateMemberRequestWithBody(server string, userId UserId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "userId", userId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/team/members/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateTeamRequest calls the generic CreateTeam builder with application/json body
+func NewCreateTeamRequest(server string, body CreateTeamJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTeamRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateTeamRequestWithBody constructs an http.Request for the CreateTeam method, with any body, and a specified content type
+func NewCreateTeamRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/teams")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListTokensRequest constructs an http.Request for the ListTokens method
 func NewListTokensRequest(server string) (*http.Request, error) {
 	var err error
@@ -4836,6 +6418,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /fleet/overview (the `GetFleetOverview` operationId).
 	GetFleetOverviewWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetFleetOverviewResponse, error)
 
+	// RemoveGroupShareWithResponse Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /group-shares/{shareId} (the `RemoveGroupShare` operationId).
+	RemoveGroupShareWithResponse(ctx context.Context, shareId int64, reqEditors ...RequestEditorFn) (*RemoveGroupShareResponse, error)
+
+	// UpdateGroupShareWithBodyWithResponse Change a share's access (admins of the owning team)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+	UpdateGroupShareWithBodyWithResponse(ctx context.Context, shareId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateGroupShareResponse, error)
+
+	// UpdateGroupShareWithResponse Change a share's access (admins of the owning team)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+	UpdateGroupShareWithResponse(ctx context.Context, shareId int64, body UpdateGroupShareJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGroupShareResponse, error)
+
 	// ListGroupsWithResponse Groups in the current account
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4884,6 +6487,48 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /groups/{groupId} (the `UpdateGroup` operationId).
 	UpdateGroupWithResponse(ctx context.Context, groupId GroupId, body UpdateGroupJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGroupResponse, error)
+
+	// ListShareLinksWithResponse Pending share links of a group (admins of the owning team)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /groups/{groupId}/share-links (the `ListShareLinks` operationId).
+	ListShareLinksWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListShareLinksResponse, error)
+
+	// CreateShareLinkWithBodyWithResponse Create a one-time link that shares the group with another team. The link is shown once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+	CreateShareLinkWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error)
+
+	// CreateShareLinkWithResponse Create a one-time link that shares the group with another team. The link is shown once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+	CreateShareLinkWithResponse(ctx context.Context, groupId GroupId, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error)
+
+	// ListGroupSharesWithResponse Teams this group is shared with (admins of the owning team)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
+	ListGroupSharesWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListGroupSharesResponse, error)
+
+	// GetInviteWithResponse What an invite link offers, for the signed-in user
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /invites/{token} (the `GetInvite` operationId).
+	GetInviteWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*GetInviteResponse, error)
+
+	// AcceptInviteWithResponse Join the team and switch this session to it (browser sessions only)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
+	AcceptInviteWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*AcceptInviteResponse, error)
 
 	// GetMeWithResponse The signed-in user and their current account
 	//
@@ -5137,6 +6782,132 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /settings/ssh-key (the `GetSSHKey` operationId).
 	GetSSHKeyWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSSHKeyResponse, error)
+
+	// RevokeShareLinkWithResponse Revoke a pending share link
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /share-links/{linkId} (the `RevokeShareLink` operationId).
+	RevokeShareLinkWithResponse(ctx context.Context, linkId int64, reqEditors ...RequestEditorFn) (*RevokeShareLinkResponse, error)
+
+	// GetShareLinkWithResponse What a share link offers, and which of the caller's teams can accept it
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /shares/{token} (the `GetShareLink` operationId).
+	GetShareLinkWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*GetShareLinkResponse, error)
+
+	// AcceptShareLinkWithBodyWithResponse Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+	AcceptShareLinkWithBodyWithResponse(ctx context.Context, token LinkToken, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptShareLinkResponse, error)
+
+	// AcceptShareLinkWithResponse Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+	AcceptShareLinkWithResponse(ctx context.Context, token LinkToken, body AcceptShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptShareLinkResponse, error)
+
+	// DeleteTeamWithResponse Delete the current team with its servers, groups and history (owners; not the personal space)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /team (the `DeleteTeam` operationId).
+	DeleteTeamWithResponse(ctx context.Context, params *DeleteTeamParams, reqEditors ...RequestEditorFn) (*DeleteTeamResponse, error)
+
+	// GetTeamWithResponse The current account
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /team (the `GetTeam` operationId).
+	GetTeamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTeamResponse, error)
+
+	// UpdateTeamWithBodyWithResponse Rename the current account (owners)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+	UpdateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error)
+
+	// UpdateTeamWithResponse Rename the current account (owners)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+	UpdateTeamWithResponse(ctx context.Context, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error)
+
+	// ListInvitesWithResponse Pending invites of the current team (owners and admins)
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /team/invites (the `ListInvites` operationId).
+	ListInvitesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInvitesResponse, error)
+
+	// CreateInviteWithBodyWithResponse Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+	CreateInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error)
+
+	// CreateInviteWithResponse Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+	CreateInviteWithResponse(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error)
+
+	// RevokeInviteWithResponse Revoke a pending invite
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /team/invites/{inviteId} (the `RevokeInvite` operationId).
+	RevokeInviteWithResponse(ctx context.Context, inviteId int64, reqEditors ...RequestEditorFn) (*RevokeInviteResponse, error)
+
+	// ListMembersWithResponse Members of the current account
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /team/members (the `ListMembers` operationId).
+	ListMembersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMembersResponse, error)
+
+	// RemoveMemberWithResponse Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /team/members/{userId} (the `RemoveMember` operationId).
+	RemoveMemberWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*RemoveMemberResponse, error)
+
+	// UpdateMemberWithBodyWithResponse Change a member's role (owners). A team always keeps at least one owner.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+	UpdateMemberWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemberResponse, error)
+
+	// UpdateMemberWithResponse Change a member's role (owners). A team always keeps at least one owner.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+	UpdateMemberWithResponse(ctx context.Context, userId UserId, body UpdateMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemberResponse, error)
+
+	// CreateTeamWithBodyWithResponse Create a team; the caller becomes its owner (browser sessions only)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /teams (the `CreateTeam` operationId).
+	CreateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error)
+
+	// CreateTeamWithResponse Create a team; the caller becomes its owner (browser sessions only)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /teams (the `CreateTeam` operationId).
+	CreateTeamWithResponse(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error)
 
 	// ListTokensWithResponse Your API tokens in this account (browser sessions only)
 	//
@@ -5818,6 +7589,95 @@ func (r GetFleetOverviewResponse) ContentType() string {
 	return ""
 }
 
+type RemoveGroupShareResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RemoveGroupShareResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveGroupShareResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveGroupShareResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveGroupShareResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveGroupShareResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateGroupShareResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GroupShare
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateGroupShareResponse) GetJSON200() *GroupShare {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateGroupShareResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateGroupShareResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateGroupShareResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateGroupShareResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateGroupShareResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListGroupsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6045,6 +7905,246 @@ func (r UpdateGroupResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r UpdateGroupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListShareLinksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ShareLinkList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListShareLinksResponse) GetJSON200() *ShareLinkList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListShareLinksResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListShareLinksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListShareLinksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListShareLinksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListShareLinksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedShareLink
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateShareLinkResponse) GetJSON201() *CreatedShareLink {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListGroupSharesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GroupShareList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListGroupSharesResponse) GetJSON200() *GroupShareList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListGroupSharesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListGroupSharesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListGroupSharesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListGroupSharesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListGroupSharesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InvitePreview
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetInviteResponse) GetJSON200() *InvitePreview {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetInviteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AcceptInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccountMembership
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AcceptInviteResponse) GetJSON200() *AccountMembership {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AcceptInviteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AcceptInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AcceptInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcceptInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AcceptInviteResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7292,6 +9392,602 @@ func (r GetSSHKeyResponse) ContentType() string {
 	return ""
 }
 
+type RevokeShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SharePreview
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetShareLinkResponse) GetJSON200() *SharePreview {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AcceptShareLinkResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GroupShare
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AcceptShareLinkResponse) GetJSON200() *GroupShare {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AcceptShareLinkResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AcceptShareLinkResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AcceptShareLinkResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcceptShareLinkResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AcceptShareLinkResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Team
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetTeamResponse) GetJSON200() *Team {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Team
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateTeamResponse) GetJSON200() *Team {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListInvitesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InviteList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListInvitesResponse) GetJSON200() *InviteList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListInvitesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListInvitesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListInvitesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListInvitesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListInvitesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *CreatedInvite
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateInviteResponse) GetJSON201() *CreatedInvite {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateInviteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RevokeInviteResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeInviteResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeInviteResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeInviteResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeInviteResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListMembersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemberList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMembersResponse) GetJSON200() *MemberList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListMembersResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMembersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMembersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMembersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMembersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RemoveMemberResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveMemberResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveMemberResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateMemberResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Member
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateMemberResponse) GetJSON200() *Member {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r UpdateMemberResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateMemberResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateMemberResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateMemberResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateMemberResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateTeamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *AccountMembership
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateTeamResponse) GetJSON201() *AccountMembership {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateTeamResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateTeamResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateTeamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateTeamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateTeamResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListTokensResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7663,6 +10359,45 @@ func (c *ClientWithResponses) GetFleetOverviewWithResponse(ctx context.Context, 
 	return ParseGetFleetOverviewResponse(rsp)
 }
 
+// RemoveGroupShareWithResponse Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /group-shares/{shareId} (the `RemoveGroupShare` operationId).
+func (c *ClientWithResponses) RemoveGroupShareWithResponse(ctx context.Context, shareId int64, reqEditors ...RequestEditorFn) (*RemoveGroupShareResponse, error) {
+	rsp, err := c.RemoveGroupShare(ctx, shareId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveGroupShareResponse(rsp)
+}
+
+// UpdateGroupShareWithBodyWithResponse Change a share's access (admins of the owning team)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+func (c *ClientWithResponses) UpdateGroupShareWithBodyWithResponse(ctx context.Context, shareId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateGroupShareResponse, error) {
+	rsp, err := c.UpdateGroupShareWithBody(ctx, shareId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateGroupShareResponse(rsp)
+}
+
+// UpdateGroupShareWithResponse Change a share's access (admins of the owning team)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /group-shares/{shareId} (the `UpdateGroupShare` operationId).
+func (c *ClientWithResponses) UpdateGroupShareWithResponse(ctx context.Context, shareId int64, body UpdateGroupShareJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateGroupShareResponse, error) {
+	rsp, err := c.UpdateGroupShare(ctx, shareId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateGroupShareResponse(rsp)
+}
+
 // ListGroupsWithResponse Groups in the current account
 //
 // Returns a wrapper object for the known response body format(s).
@@ -7752,6 +10487,84 @@ func (c *ClientWithResponses) UpdateGroupWithResponse(ctx context.Context, group
 		return nil, err
 	}
 	return ParseUpdateGroupResponse(rsp)
+}
+
+// ListShareLinksWithResponse Pending share links of a group (admins of the owning team)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /groups/{groupId}/share-links (the `ListShareLinks` operationId).
+func (c *ClientWithResponses) ListShareLinksWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListShareLinksResponse, error) {
+	rsp, err := c.ListShareLinks(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListShareLinksResponse(rsp)
+}
+
+// CreateShareLinkWithBodyWithResponse Create a one-time link that shares the group with another team. The link is shown once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+func (c *ClientWithResponses) CreateShareLinkWithBodyWithResponse(ctx context.Context, groupId GroupId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error) {
+	rsp, err := c.CreateShareLinkWithBody(ctx, groupId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateShareLinkResponse(rsp)
+}
+
+// CreateShareLinkWithResponse Create a one-time link that shares the group with another team. The link is shown once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /groups/{groupId}/share-links (the `CreateShareLink` operationId).
+func (c *ClientWithResponses) CreateShareLinkWithResponse(ctx context.Context, groupId GroupId, body CreateShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateShareLinkResponse, error) {
+	rsp, err := c.CreateShareLink(ctx, groupId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateShareLinkResponse(rsp)
+}
+
+// ListGroupSharesWithResponse Teams this group is shared with (admins of the owning team)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
+func (c *ClientWithResponses) ListGroupSharesWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListGroupSharesResponse, error) {
+	rsp, err := c.ListGroupShares(ctx, groupId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListGroupSharesResponse(rsp)
+}
+
+// GetInviteWithResponse What an invite link offers, for the signed-in user
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /invites/{token} (the `GetInvite` operationId).
+func (c *ClientWithResponses) GetInviteWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*GetInviteResponse, error) {
+	rsp, err := c.GetInvite(ctx, token, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetInviteResponse(rsp)
+}
+
+// AcceptInviteWithResponse Join the team and switch this session to it (browser sessions only)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
+func (c *ClientWithResponses) AcceptInviteWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*AcceptInviteResponse, error) {
+	rsp, err := c.AcceptInvite(ctx, token, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptInviteResponse(rsp)
 }
 
 // GetMeWithResponse The signed-in user and their current account
@@ -8215,6 +11028,240 @@ func (c *ClientWithResponses) GetSSHKeyWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseGetSSHKeyResponse(rsp)
+}
+
+// RevokeShareLinkWithResponse Revoke a pending share link
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /share-links/{linkId} (the `RevokeShareLink` operationId).
+func (c *ClientWithResponses) RevokeShareLinkWithResponse(ctx context.Context, linkId int64, reqEditors ...RequestEditorFn) (*RevokeShareLinkResponse, error) {
+	rsp, err := c.RevokeShareLink(ctx, linkId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeShareLinkResponse(rsp)
+}
+
+// GetShareLinkWithResponse What a share link offers, and which of the caller's teams can accept it
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /shares/{token} (the `GetShareLink` operationId).
+func (c *ClientWithResponses) GetShareLinkWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*GetShareLinkResponse, error) {
+	rsp, err := c.GetShareLink(ctx, token, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetShareLinkResponse(rsp)
+}
+
+// AcceptShareLinkWithBodyWithResponse Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+func (c *ClientWithResponses) AcceptShareLinkWithBodyWithResponse(ctx context.Context, token LinkToken, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AcceptShareLinkResponse, error) {
+	rsp, err := c.AcceptShareLinkWithBody(ctx, token, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptShareLinkResponse(rsp)
+}
+
+// AcceptShareLinkWithResponse Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /shares/{token}/accept (the `AcceptShareLink` operationId).
+func (c *ClientWithResponses) AcceptShareLinkWithResponse(ctx context.Context, token LinkToken, body AcceptShareLinkJSONRequestBody, reqEditors ...RequestEditorFn) (*AcceptShareLinkResponse, error) {
+	rsp, err := c.AcceptShareLink(ctx, token, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcceptShareLinkResponse(rsp)
+}
+
+// DeleteTeamWithResponse Delete the current team with its servers, groups and history (owners; not the personal space)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /team (the `DeleteTeam` operationId).
+func (c *ClientWithResponses) DeleteTeamWithResponse(ctx context.Context, params *DeleteTeamParams, reqEditors ...RequestEditorFn) (*DeleteTeamResponse, error) {
+	rsp, err := c.DeleteTeam(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteTeamResponse(rsp)
+}
+
+// GetTeamWithResponse The current account
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /team (the `GetTeam` operationId).
+func (c *ClientWithResponses) GetTeamWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetTeamResponse, error) {
+	rsp, err := c.GetTeam(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTeamResponse(rsp)
+}
+
+// UpdateTeamWithBodyWithResponse Rename the current account (owners)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+func (c *ClientWithResponses) UpdateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error) {
+	rsp, err := c.UpdateTeamWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTeamResponse(rsp)
+}
+
+// UpdateTeamWithResponse Rename the current account (owners)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /team (the `UpdateTeam` operationId).
+func (c *ClientWithResponses) UpdateTeamWithResponse(ctx context.Context, body UpdateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTeamResponse, error) {
+	rsp, err := c.UpdateTeam(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTeamResponse(rsp)
+}
+
+// ListInvitesWithResponse Pending invites of the current team (owners and admins)
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /team/invites (the `ListInvites` operationId).
+func (c *ClientWithResponses) ListInvitesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInvitesResponse, error) {
+	rsp, err := c.ListInvites(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListInvitesResponse(rsp)
+}
+
+// CreateInviteWithBodyWithResponse Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+func (c *ClientWithResponses) CreateInviteWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error) {
+	rsp, err := c.CreateInviteWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInviteResponse(rsp)
+}
+
+// CreateInviteWithResponse Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /team/invites (the `CreateInvite` operationId).
+func (c *ClientWithResponses) CreateInviteWithResponse(ctx context.Context, body CreateInviteJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateInviteResponse, error) {
+	rsp, err := c.CreateInvite(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateInviteResponse(rsp)
+}
+
+// RevokeInviteWithResponse Revoke a pending invite
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /team/invites/{inviteId} (the `RevokeInvite` operationId).
+func (c *ClientWithResponses) RevokeInviteWithResponse(ctx context.Context, inviteId int64, reqEditors ...RequestEditorFn) (*RevokeInviteResponse, error) {
+	rsp, err := c.RevokeInvite(ctx, inviteId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeInviteResponse(rsp)
+}
+
+// ListMembersWithResponse Members of the current account
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /team/members (the `ListMembers` operationId).
+func (c *ClientWithResponses) ListMembersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMembersResponse, error) {
+	rsp, err := c.ListMembers(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMembersResponse(rsp)
+}
+
+// RemoveMemberWithResponse Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /team/members/{userId} (the `RemoveMember` operationId).
+func (c *ClientWithResponses) RemoveMemberWithResponse(ctx context.Context, userId UserId, reqEditors ...RequestEditorFn) (*RemoveMemberResponse, error) {
+	rsp, err := c.RemoveMember(ctx, userId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveMemberResponse(rsp)
+}
+
+// UpdateMemberWithBodyWithResponse Change a member's role (owners). A team always keeps at least one owner.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+func (c *ClientWithResponses) UpdateMemberWithBodyWithResponse(ctx context.Context, userId UserId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateMemberResponse, error) {
+	rsp, err := c.UpdateMemberWithBody(ctx, userId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemberResponse(rsp)
+}
+
+// UpdateMemberWithResponse Change a member's role (owners). A team always keeps at least one owner.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /team/members/{userId} (the `UpdateMember` operationId).
+func (c *ClientWithResponses) UpdateMemberWithResponse(ctx context.Context, userId UserId, body UpdateMemberJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateMemberResponse, error) {
+	rsp, err := c.UpdateMember(ctx, userId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateMemberResponse(rsp)
+}
+
+// CreateTeamWithBodyWithResponse Create a team; the caller becomes its owner (browser sessions only)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /teams (the `CreateTeam` operationId).
+func (c *ClientWithResponses) CreateTeamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error) {
+	rsp, err := c.CreateTeamWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamResponse(rsp)
+}
+
+// CreateTeamWithResponse Create a team; the caller becomes its owner (browser sessions only)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /teams (the `CreateTeam` operationId).
+func (c *ClientWithResponses) CreateTeamWithResponse(ctx context.Context, body CreateTeamJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTeamResponse, error) {
+	rsp, err := c.CreateTeam(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTeamResponse(rsp)
 }
 
 // ListTokensWithResponse Your API tokens in this account (browser sessions only)
@@ -8719,6 +11766,68 @@ func ParseGetFleetOverviewResponse(rsp *http.Response) (*GetFleetOverviewRespons
 	return response, nil
 }
 
+// ParseRemoveGroupShareResponse parses an HTTP response from a RemoveGroupShareWithResponse call
+func ParseRemoveGroupShareResponse(rsp *http.Response) (*RemoveGroupShareResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveGroupShareResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateGroupShareResponse parses an HTTP response from a UpdateGroupShareWithResponse call
+func ParseUpdateGroupShareResponse(rsp *http.Response) (*UpdateGroupShareResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateGroupShareResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GroupShare
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListGroupsResponse parses an HTTP response from a ListGroupsWithResponse call
 func ParseListGroupsResponse(rsp *http.Response) (*ListGroupsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -8863,6 +11972,171 @@ func ParseUpdateGroupResponse(rsp *http.Response) (*UpdateGroupResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Group
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListShareLinksResponse parses an HTTP response from a ListShareLinksWithResponse call
+func ParseListShareLinksResponse(rsp *http.Response) (*ListShareLinksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListShareLinksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ShareLinkList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateShareLinkResponse parses an HTTP response from a CreateShareLinkWithResponse call
+func ParseCreateShareLinkResponse(rsp *http.Response) (*CreateShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedShareLink
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListGroupSharesResponse parses an HTTP response from a ListGroupSharesWithResponse call
+func ParseListGroupSharesResponse(rsp *http.Response) (*ListGroupSharesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListGroupSharesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GroupShareList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetInviteResponse parses an HTTP response from a GetInviteWithResponse call
+func ParseGetInviteResponse(rsp *http.Response) (*GetInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InvitePreview
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAcceptInviteResponse parses an HTTP response from a AcceptInviteWithResponse call
+func ParseAcceptInviteResponse(rsp *http.Response) (*AcceptInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcceptInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccountMembership
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -9721,6 +12995,419 @@ func ParseGetSSHKeyResponse(rsp *http.Response) (*GetSSHKeyResponse, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeShareLinkResponse parses an HTTP response from a RevokeShareLinkWithResponse call
+func ParseRevokeShareLinkResponse(rsp *http.Response) (*RevokeShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetShareLinkResponse parses an HTTP response from a GetShareLinkWithResponse call
+func ParseGetShareLinkResponse(rsp *http.Response) (*GetShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SharePreview
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAcceptShareLinkResponse parses an HTTP response from a AcceptShareLinkWithResponse call
+func ParseAcceptShareLinkResponse(rsp *http.Response) (*AcceptShareLinkResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcceptShareLinkResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GroupShare
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteTeamResponse parses an HTTP response from a DeleteTeamWithResponse call
+func ParseDeleteTeamResponse(rsp *http.Response) (*DeleteTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTeamResponse parses an HTTP response from a GetTeamWithResponse call
+func ParseGetTeamResponse(rsp *http.Response) (*GetTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateTeamResponse parses an HTTP response from a UpdateTeamWithResponse call
+func ParseUpdateTeamResponse(rsp *http.Response) (*UpdateTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Team
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListInvitesResponse parses an HTTP response from a ListInvitesWithResponse call
+func ParseListInvitesResponse(rsp *http.Response) (*ListInvitesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListInvitesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InviteList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateInviteResponse parses an HTTP response from a CreateInviteWithResponse call
+func ParseCreateInviteResponse(rsp *http.Response) (*CreateInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest CreatedInvite
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRevokeInviteResponse parses an HTTP response from a RevokeInviteWithResponse call
+func ParseRevokeInviteResponse(rsp *http.Response) (*RevokeInviteResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeInviteResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListMembersResponse parses an HTTP response from a ListMembersWithResponse call
+func ParseListMembersResponse(rsp *http.Response) (*ListMembersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMembersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemberList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveMemberResponse parses an HTTP response from a RemoveMemberWithResponse call
+func ParseRemoveMemberResponse(rsp *http.Response) (*RemoveMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateMemberResponse parses an HTTP response from a UpdateMemberWithResponse call
+func ParseUpdateMemberResponse(rsp *http.Response) (*UpdateMemberResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateMemberResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Member
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateTeamResponse parses an HTTP response from a CreateTeamWithResponse call
+func ParseCreateTeamResponse(rsp *http.Response) (*CreateTeamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateTeamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest AccountMembership
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

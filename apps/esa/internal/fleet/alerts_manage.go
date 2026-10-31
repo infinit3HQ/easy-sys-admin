@@ -25,7 +25,8 @@ type AlertView struct {
 	ResolvedAt   *time.Time
 }
 
-// ListAlerts returns open alerts, or the newest alerts when includeResolved is set.
+// ListAlerts returns open alerts, or the newest alerts when includeResolved
+// is set: the account's own, plus alerts on servers shared with it.
 func (s *Service) ListAlerts(ctx context.Context, a Actor, includeResolved bool, limit int) ([]AlertView, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
@@ -33,7 +34,8 @@ func (s *Service) ListAlerts(ctx context.Context, a Actor, includeResolved bool,
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	q := s.scoped(ctx, a).Preload("Server").Order("COALESCE(fired_at, pending_since) DESC").Limit(limit)
+	q := s.db.WithContext(ctx).Where("(alerts.account_id = ? OR alerts.server_id IN ("+sharedServerIDsSQL+"))", a.AccountID, a.AccountID).
+		Preload("Server").Order("COALESCE(fired_at, pending_since) DESC").Limit(limit)
 	if !includeResolved {
 		q = q.Where("resolved_at IS NULL")
 	}

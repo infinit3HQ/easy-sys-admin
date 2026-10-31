@@ -35,10 +35,17 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 	return u, notFound(err)
 }
 
-// CreateAccount inserts a new account.
+// CreateAccount inserts a new team account.
 func (q *Queries) CreateAccount(ctx context.Context, name string, now time.Time) (Account, error) {
 	a := Account{Name: name, CreatedAt: now}
-	err := q.with(ctx).Create(&a).Error
+	err := q.with(ctx).Omit(clause.Associations).Create(&a).Error
+	return a, err
+}
+
+// CreatePersonalAccount inserts a user's personal space.
+func (q *Queries) CreatePersonalAccount(ctx context.Context, userID int64, name string, now time.Time) (Account, error) {
+	a := Account{Name: name, PersonalOf: &userID, CreatedAt: now}
+	err := q.with(ctx).Omit(clause.Associations).Create(&a).Error
 	return a, err
 }
 
@@ -112,4 +119,29 @@ func (q *Queries) InsertAudit(ctx context.Context, e AuditEntry) error {
 		e.Detail = "{}"
 	}
 	return q.with(ctx).Omit(clause.Associations).Create(&e).Error
+}
+
+// MoveSessionsOff moves sessions working in accountID to another account
+// their user belongs to: the user's personal space first, then their oldest
+// other membership. Sessions with nowhere to go are deleted. userID limits
+// the move to one user's sessions; 0 moves every user's.
+func (q *Queries) MoveSessionsOff(ctx context.Context, accountID, userID int64) error {
+	err := q.with(ctx).Exec(`
+		UPDATE sessions s SET account_id = fb.account_id
+		FROM (
+		  SELECT DISTINCT ON (m.user_id) m.user_id, m.account_id
+		  FROM memberships m
+		  JOIN accounts acc ON acc.id = m.account_id
+		  WHERE m.account_id <> ?
+		    AND m.user_id IN (SELECT user_id FROM sessions WHERE account_id = ?)
+		  ORDER BY m.user_id, COALESCE(acc.personal_of = m.user_id, false) DESC, acc.created_at, acc.id
+		) fb
+		WHERE s.account_id = ? AND s.user_id = fb.user_id AND (?::bigint = 0 OR s.user_id = ?)`,
+		accountID, accountID, accountID, userID, userID).Error
+	if err != nil {
+		return err
+	}
+	return q.with(ctx).
+		Where("account_id = ? AND (?::bigint = 0 OR user_id = ?)", accountID, userID, userID).
+		Delete(&Session{}).Error
 }

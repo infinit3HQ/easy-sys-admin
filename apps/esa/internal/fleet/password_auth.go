@@ -61,8 +61,8 @@ func hasUsers(db *gorm.DB) (bool, error) {
 	return exists, err
 }
 
-// SignUpPassword creates an email and password user with an account of
-// their own. When sign-up is off it only succeeds for the first user.
+// SignUpPassword creates an email and password user with a personal space.
+// When sign-up is off it only succeeds for the first user.
 func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (SignInResult, error) {
 	email, err := NormalizeEmail(email)
 	if err != nil {
@@ -121,7 +121,7 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 		if r.RowsAffected == 0 {
 			return ErrEmailTaken
 		}
-		acc, err := q.CreateAccount(ctx, defaultAccountName(u), now)
+		acc, err := q.CreatePersonalAccount(ctx, u.ID, defaultAccountName(u), now)
 		if err != nil {
 			return err
 		}
@@ -167,7 +167,12 @@ func (s *Service) SignInPassword(ctx context.Context, email, pw string) (SignInR
 		return SignInResult{}, ErrSignInNotAllowed
 	}
 	s.db.WithContext(ctx).Model(&store.User{}).Where("id = ?", u.ID).Update("last_login_at", s.now())
-	m, err := s.FirstMembership(ctx, u.ID)
+	var m store.Membership
+	err = s.store.InTx(ctx, func(q *store.Queries) error {
+		var err error
+		m, err = s.ensurePersonal(ctx, q, u, SourceWeb)
+		return err
+	})
 	if err != nil {
 		return SignInResult{}, err
 	}

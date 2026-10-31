@@ -78,7 +78,7 @@ func TestAccountIsolation(t *testing.T) {
 	if err := s.storeLogin(ctx, s.store.Queries, srv.ID, remote.LoginAuth{User: "root", Password: "bobs-secret-password"}); err != nil {
 		t.Fatal(err)
 	}
-	run, err := s.createRun(ctx, bob, RunMeasure, "manual", nil, []store.Server{srv}, RunOptions{}, "succeeded")
+	run, err := s.createRun(ctx, bob, bob.AccountID, RunMeasure, "manual", nil, []store.Server{srv}, RunOptions{}, "succeeded")
 	if err != nil {
 		t.Fatal(err)
 	}

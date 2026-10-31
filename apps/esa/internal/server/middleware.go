@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/api"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/config"
 )
 
@@ -32,7 +33,7 @@ func recoverPanics(log *slog.Logger) middleware {
 					if v == http.ErrAbortHandler {
 						panic(v)
 					}
-					log.Error("panic in handler", "path", r.URL.Path, "panic", v, "stack", string(debug.Stack()))
+					log.Error("panic in handler", "path", redactPath(r.URL.Path), "panic", v, "stack", string(debug.Stack()))
 					http.Error(w, "internal error", http.StatusInternalServerError)
 				}
 			}()
@@ -55,7 +56,7 @@ func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter 
 
 // logRequests logs method, path, status, and duration. It never logs query
 // strings, because OIDC callbacks carry the authorization code there, and
-// it hides enroll tokens in paths.
+// it hides enroll, invite, and share tokens in paths.
 func logRequests(log *slog.Logger) middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -74,19 +75,8 @@ func logRequests(log *slog.Logger) middleware {
 	}
 }
 
-// redactPath replaces the enroll token in /enroll/{token}/... paths, because
-// the token lets anyone enroll a server until it is used.
-func redactPath(p string) string {
-	rest, ok := strings.CutPrefix(p, "/enroll/")
-	if !ok || rest == "" {
-		return p
-	}
-	_, tail, found := strings.Cut(rest, "/")
-	if found {
-		return "/enroll/[redacted]/" + tail
-	}
-	return "/enroll/[redacted]"
-}
+// redactPath hides secret tokens in request paths (see api.RedactPath).
+func redactPath(p string) string { return api.RedactPath(p) }
 
 // maxBodyBytes caps request bodies for the API, sign-in forms, and enroll.
 const maxBodyBytes = 1 << 20

@@ -10,25 +10,33 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// call runs a helper action on a server in the actor's account.
+// call runs a helper action on a server the actor can see, own or shared.
+// Callers that act on the server check canOperateServer first and use
+// callServer instead.
 func (s *Service) call(ctx context.Context, a Actor, serverID int64, timeout time.Duration, out any, action string, args ...string) (store.Server, error) {
-	srv, err := s.loadServer(ctx, a, serverID)
+	srv, _, err := s.loadVisibleServer(ctx, a, serverID)
 	if err != nil {
 		return srv, err
 	}
+	return srv, s.callServer(ctx, srv, timeout, out, action, args...)
+}
+
+// callServer runs a helper action on an already authorised server. The SSH
+// key is always the owning account's.
+func (s *Service) callServer(ctx context.Context, srv store.Server, timeout time.Duration, out any, action string, args ...string) error {
 	if err := s.blockedByHostKey(ctx, srv); err != nil {
-		return srv, err
+		return err
 	}
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
-		return srv, err
+		return err
 	}
 	cctx, cancel := context.WithTimeout(s.netCtx(ctx), timeout)
 	defer cancel()
 	if err := s.pool.Call(cctx, ep, out, action, args...); err != nil {
-		return srv, s.hostErr(ctx, srv, err)
+		return s.hostErr(ctx, srv, err)
 	}
-	return srv, nil
+	return nil
 }
 
 func (s *Service) blockedByHostKey(ctx context.Context, srv store.Server) error {
@@ -64,22 +72,27 @@ func (s *Service) Containers(ctx context.Context, a Actor, serverID int64) ([]pr
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
-	srv, err := s.loadServer(ctx, a, serverID)
+	srv, _, err := s.loadVisibleServer(ctx, a, serverID)
 	if err != nil {
 		return nil, err
 	}
 	var out []proto.Container
-	_, err = s.call(ctx, a, serverID, time.Minute, &out, "containers", protectArgs(srv)...)
+	err = s.callServer(ctx, srv, time.Minute, &out, "containers", protectArgs(srv)...)
 	return out, err
 }
 
-// ImageCheck compares container images with their registries.
+// ImageCheck compares container images with their registries. On a shared
+// server it needs an operate share, like checking package updates.
 func (s *Service) ImageCheck(ctx context.Context, a Actor, serverID int64) ([]proto.ImageCheck, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
+	srv, err := s.operableServer(ctx, a, serverID, RoleViewer, ScopeRead)
+	if err != nil {
+		return nil, err
+	}
 	var out []proto.ImageCheck
-	_, err := s.call(ctx, a, serverID, 5*time.Minute, &out, "image-check")
+	err = s.callServer(ctx, srv, 5*time.Minute, &out, "image-check")
 	return out, err
 }
 
@@ -107,10 +120,14 @@ func (s *Service) Logs(ctx context.Context, a Actor, serverID int64, q LogQuery)
 	if q.Grep != "" {
 		args = append(args, "--grep", q.Grep)
 	}
+	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeLogs)
+	if err != nil {
+		return nil, err
+	}
 	var out []proto.LogLine
-	srv, err := s.call(ctx, a, serverID, time.Minute, &out, "logs", args...)
+	err = s.callServer(ctx, srv, time.Minute, &out, "logs", args...)
 	if err == nil {
-		s.audit(ctx, nil, a, "server.read_logs", srv.Name, map[string]any{"unit": q.Unit, "container": q.Container})
+		s.auditOn(ctx, nil, a, srv.AccountID, "server.read_logs", srv.Name, map[string]any{"unit": q.Unit, "container": q.Container})
 	}
 	return out, err
 }
@@ -140,11 +157,15 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return proto.JobsReport{}, err
 	}
+	srv, acc, err := s.loadVisibleServer(ctx, a, serverID)
+	if err != nil {
+		return proto.JobsReport{}, err
+	}
 	var out proto.JobsReport
-	_, err := s.call(ctx, a, serverID, time.Minute, &out, "jobs")
+	err = s.callServer(ctx, srv, time.Minute, &out, "jobs")
 	// Cron command lines often hold secrets (tokens, passwords in URLs), so
 	// they need the same access as logs. Schedules stay visible.
-	if a.can(RoleAdmin, ScopeLogs) != nil {
+	if canOperateServer(a, acc, RoleAdmin, ScopeLogs) != nil {
 		for i := range out.Cron {
 			out.Cron[i].Command = ""
 		}
@@ -158,7 +179,7 @@ func (s *Service) CheckUpdates(ctx context.Context, a Actor, serverID int64) (Se
 	if err := a.can(RoleAdmin, ScopeActions); err != nil {
 		return ServerView{}, err
 	}
-	srv, err := s.loadServer(ctx, a, serverID)
+	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
 		return ServerView{}, err
 	}
@@ -177,8 +198,12 @@ func (s *Service) ServiceAction(ctx context.Context, a Actor, serverID int64, un
 	if err := a.can(RoleAdmin, ScopeActions); err != nil {
 		return err
 	}
-	srv, err := s.call(ctx, a, serverID, 2*time.Minute, nil, "service", "--unit", unit, "--action", action)
-	s.audit(ctx, nil, a, "service."+action, srv.Name+"/"+unit, map[string]any{"ok": err == nil})
+	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
+	if err != nil {
+		return err
+	}
+	err = s.callServer(ctx, srv, 2*time.Minute, nil, "service", "--unit", unit, "--action", action)
+	s.auditOn(ctx, nil, a, srv.AccountID, "service."+action, srv.Name+"/"+unit, map[string]any{"ok": err == nil})
 	return err
 }
 
@@ -188,13 +213,13 @@ func (s *Service) ContainerAction(ctx context.Context, a Actor, serverID int64, 
 	if err := a.can(RoleAdmin, ScopeActions); err != nil {
 		return err
 	}
-	srv, err := s.loadServer(ctx, a, serverID)
+	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
 		return err
 	}
 	args := append([]string{"--name", name, "--action", action, "--confirm", confirm}, protectArgs(srv)...)
-	_, err = s.call(ctx, a, serverID, 2*time.Minute, nil, "container", args...)
-	s.audit(ctx, nil, a, "container."+action, srv.Name+"/"+name, map[string]any{"ok": err == nil})
+	err = s.callServer(ctx, srv, 2*time.Minute, nil, "container", args...)
+	s.auditOn(ctx, nil, a, srv.AccountID, "container."+action, srv.Name+"/"+name, map[string]any{"ok": err == nil})
 	return err
 }
 
@@ -203,7 +228,7 @@ func (s *Service) ContainerUpdate(ctx context.Context, a Actor, serverID int64, 
 	if err := a.can(RoleAdmin, ScopeActions); err != nil {
 		return "", err
 	}
-	srv, err := s.loadServer(ctx, a, serverID)
+	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
 		return "", err
 	}
@@ -211,7 +236,7 @@ func (s *Service) ContainerUpdate(ctx context.Context, a Actor, serverID int64, 
 		Output string `json:"output"`
 	}
 	args := append([]string{"--name", name, "--confirm", confirm}, protectArgs(srv)...)
-	_, err = s.call(ctx, a, serverID, 15*time.Minute, &out, "container-update", args...)
-	s.audit(ctx, nil, a, "container.update", srv.Name+"/"+name, map[string]any{"ok": err == nil})
+	err = s.callServer(ctx, srv, 15*time.Minute, &out, "container-update", args...)
+	s.auditOn(ctx, nil, a, srv.AccountID, "container.update", srv.Name+"/"+name, map[string]any{"ok": err == nil})
 	return out.Output, err
 }

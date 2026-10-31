@@ -274,7 +274,7 @@ func (s *Service) Metrics(ctx context.Context, a Actor, serverID int64, window t
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
-	if _, err := s.loadServer(ctx, a, serverID); err != nil {
+	if _, _, err := s.loadVisibleServer(ctx, a, serverID); err != nil {
 		return nil, err
 	}
 	since := s.now().Add(-window)

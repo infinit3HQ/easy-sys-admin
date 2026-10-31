@@ -55,6 +55,156 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a team; the caller becomes its owner (browser sessions only) */
+        post: operations["createTeam"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The current account */
+        get: operations["getTeam"];
+        put?: never;
+        post?: never;
+        /** Delete the current team with its servers, groups and history (owners; not the personal space) */
+        delete: operations["deleteTeam"];
+        options?: never;
+        head?: never;
+        /** Rename the current account (owners) */
+        patch: operations["updateTeam"];
+        trace?: never;
+    };
+    "/team/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members of the current account */
+        get: operations["listMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a member (owners), or leave the team (your own user id). The last owner cannot leave. */
+        delete: operations["removeMember"];
+        options?: never;
+        head?: never;
+        /** Change a member's role (owners). A team always keeps at least one owner. */
+        patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/team/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending invites of the current team (owners and admins) */
+        get: operations["listInvites"];
+        put?: never;
+        /** Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once. */
+        post: operations["createInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/team/invites/{inviteId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inviteId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending invite */
+        delete: operations["revokeInvite"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        /** What an invite link offers, for the signed-in user */
+        get: operations["getInvite"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join the team and switch this session to it (browser sessions only) */
+        post: operations["acceptInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/fleet/overview": {
         parameters: {
             query?: never;
@@ -459,6 +609,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/groups/{groupId}/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        /** Teams this group is shared with (admins of the owning team) */
+        get: operations["listGroupShares"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{groupId}/share-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        /** Pending share links of a group (admins of the owning team) */
+        get: operations["listShareLinks"];
+        put?: never;
+        /** Create a one-time link that shares the group with another team. The link is shown once. */
+        post: operations["createShareLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/share-links/{linkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                linkId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending share link */
+        delete: operations["revokeShareLink"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/group-shares/{shareId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shareId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team) */
+        delete: operations["removeGroupShare"];
+        options?: never;
+        head?: never;
+        /** Change a share's access (admins of the owning team) */
+        patch: operations["updateGroupShare"];
+        trace?: never;
+    };
+    "/shares/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        /** What a share link offers, and which of the caller's teams can accept it */
+        get: operations["getShareLink"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shares/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only) */
+        post: operations["acceptShareLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs": {
         parameters: {
             query?: never;
@@ -763,6 +1031,8 @@ export interface components {
             id: number;
             name: string;
             role: components["schemas"]["Role"];
+            /** @description The user's own private space. It has no other members. */
+            personal: boolean;
         };
         Me: {
             user: components["schemas"]["User"];
@@ -776,6 +1046,132 @@ export interface components {
         SwitchAccountRequest: {
             /** Format: int64 */
             accountId: number;
+        };
+        TeamInput: {
+            name: string;
+        };
+        Team: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            personal: boolean;
+            /** @description The caller's role. */
+            role: components["schemas"]["Role"];
+            memberCount: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Member: {
+            /** Format: int64 */
+            userId: number;
+            name: string;
+            email: string;
+            role: components["schemas"]["Role"];
+            /** Format: date-time */
+            joinedAt: string;
+            you: boolean;
+        };
+        MemberList: {
+            items: components["schemas"]["Member"][];
+        };
+        UpdateMemberRequest: {
+            role: components["schemas"]["Role"];
+        };
+        Invite: {
+            /** Format: int64 */
+            id: number;
+            role: components["schemas"]["Role"];
+            /** @description Only this address can accept. Empty means anyone with the link. */
+            email: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description Name or email of the member who created it. */
+            createdBy: string;
+        };
+        InviteList: {
+            items: components["schemas"]["Invite"][];
+        };
+        CreateInviteRequest: {
+            role: components["schemas"]["Role"];
+            /** @description Optional. Only this address can accept. */
+            email?: string;
+        };
+        CreatedInvite: {
+            invite: components["schemas"]["Invite"];
+            /** @description The one-time link, {ESA_PUBLIC_URL}/invite/{token}. Shown once. */
+            url: string;
+        };
+        InvitePreview: {
+            teamName: string;
+            role: components["schemas"]["Role"];
+            invitedBy: string;
+            /** Format: date-time */
+            expiresAt: string;
+            alreadyMember: boolean;
+        };
+        /**
+         * @description own: the group belongs to the current account. view or operate: another team shares it.
+         * @enum {string}
+         */
+        GroupAccess: "own" | "operate" | "view";
+        /** @enum {string} */
+        ShareAccess: "operate" | "view";
+        GroupShare: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            groupId: number;
+            groupName: string;
+            /** @description Name of the team that owns the group. */
+            ownerTeam: string;
+            /** @description Name of the team it is shared with. */
+            team: string;
+            access: components["schemas"]["ShareAccess"];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        GroupShareList: {
+            items: components["schemas"]["GroupShare"][];
+        };
+        UpdateGroupShareRequest: {
+            access: components["schemas"]["ShareAccess"];
+        };
+        ShareLink: {
+            /** Format: int64 */
+            id: number;
+            access: components["schemas"]["ShareAccess"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            createdBy: string;
+        };
+        ShareLinkList: {
+            items: components["schemas"]["ShareLink"][];
+        };
+        CreateShareLinkRequest: {
+            access: components["schemas"]["ShareAccess"];
+        };
+        CreatedShareLink: {
+            link: components["schemas"]["ShareLink"];
+            /** @description The one-time link, {ESA_PUBLIC_URL}/share/{token}. Shown once. */
+            url: string;
+        };
+        SharePreview: {
+            groupName: string;
+            ownerTeam: string;
+            access: components["schemas"]["ShareAccess"];
+            serverCount: number;
+            /** Format: date-time */
+            expiresAt: string;
+            /** @description The caller's teams that can accept it (owner or admin there, not the owning team, not already shared, not a personal space). */
+            teams: components["schemas"]["AccountMembership"][];
+        };
+        AcceptShareRequest: {
+            /** Format: int64 */
+            teamId: number;
         };
         ActionResult: {
             ok: boolean;
@@ -818,6 +1214,9 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            access: components["schemas"]["GroupAccess"];
+            /** @description Set when the server is in a group another team shares. */
+            ownerTeam?: string | null;
             host: string;
             port: number;
             /** @description SSH user the control plane uses, normally esa. */
@@ -1222,6 +1621,14 @@ export interface components {
             /** Format: int64 */
             id: number;
             name: string;
+            access: components["schemas"]["GroupAccess"];
+            /** @description Set when another team shares the group. */
+            ownerTeam?: string | null;
+            /**
+             * Format: int64
+             * @description Set when another team shares the group; removeGroupShare takes it.
+             */
+            shareId?: number | null;
             timezone: string;
             clean: components["schemas"]["CleanPolicy"];
             updates: components["schemas"]["UpdatePolicy"];
@@ -1473,6 +1880,9 @@ export interface components {
         ServerId: number;
         GroupId: number;
         ChannelId: number;
+        UserId: number;
+        /** @description The secret part of an invite or share link. */
+        LinkToken: string;
     };
     requestBodies: never;
     headers: never;
@@ -1542,6 +1952,283 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamInput"];
+            };
+        };
+        responses: {
+            /** @description The caller's membership in the new team. Switch to it with switchAccount. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountMembership"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteTeam: {
+        parameters: {
+            query: {
+                /** @description The team's exact name. */
+                confirm: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. Sessions working in it move to the caller's personal space. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamInput"];
+            };
+        };
+        responses: {
+            /** @description The renamed team */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Members */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberRequest"];
+            };
+        };
+        responses: {
+            /** @description The member */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invites */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description The invite and its link */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedInvite"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                inviteId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Invite preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePreview"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new membership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountMembership"];
                 };
             };
             default: components["responses"]["Error"];
@@ -2177,6 +2864,200 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listGroupShares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Shares */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupShareList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listShareLinks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share links */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareLinkList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createShareLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                groupId: components["parameters"]["GroupId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShareLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description The link */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedShareLink"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeShareLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                linkId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    removeGroupShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shareId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateGroupShare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                shareId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateGroupShareRequest"];
+            };
+        };
+        responses: {
+            /** @description The share */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupShare"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getShareLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharePreview"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptShareLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The secret part of an invite or share link. */
+                token: components["parameters"]["LinkToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptShareRequest"];
+            };
+        };
+        responses: {
+            /** @description The new share */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupShare"];
+                };
             };
             default: components["responses"]["Error"];
         };

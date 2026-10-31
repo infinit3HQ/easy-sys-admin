@@ -44,16 +44,37 @@ func (s *Service) Membership(ctx context.Context, userID, accountID int64) (stor
 	return m, err
 }
 
-// FirstMembership returns the user's oldest membership, or ErrForbidden if they have none.
+// FirstMembership returns the account a session should default to: the
+// user's personal space, or their oldest membership when they have no
+// personal space. It returns ErrForbidden if they have no membership.
 func (s *Service) FirstMembership(ctx context.Context, userID int64) (store.Membership, error) {
 	ms, err := s.store.ListMemberships(ctx, userID)
 	if err != nil {
 		return store.Membership{}, err
 	}
+	return defaultMembership(ms, userID)
+}
+
+// defaultMembership picks the personal space from ms, else the first
+// (oldest) entry.
+func defaultMembership(ms []store.Membership, userID int64) (store.Membership, error) {
+	if m, ok := personalMembership(ms, userID); ok {
+		return m, nil
+	}
 	if len(ms) == 0 {
 		return store.Membership{}, ErrForbidden
 	}
 	return ms[0], nil
+}
+
+// personalMembership returns the user's membership in their own personal space.
+func personalMembership(ms []store.Membership, userID int64) (store.Membership, bool) {
+	for _, m := range ms {
+		if p := m.Account.PersonalOf; p != nil && *p == userID {
+			return m, true
+		}
+	}
+	return store.Membership{}, false
 }
 
 // RecordAccountSwitch writes the audit entry for a session moving to another account.
