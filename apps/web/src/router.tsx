@@ -5,6 +5,16 @@ import { getGlobalStartContext } from '@tanstack/react-start'
 import { routeTree } from './routeTree.gen'
 import { ApiError } from '#/lib/api'
 
+// The per-request CSP nonce from src/start.ts; undefined in the browser.
+// The explicit return type keeps the router's type independent of the
+// start context type, which itself refers to the router (a type cycle).
+function requestNonce(): string | undefined {
+  const ctx: unknown = getGlobalStartContext()
+  if (typeof ctx !== 'object' || ctx === null || !('nonce' in ctx))
+    return undefined
+  return typeof ctx.nonce === 'string' ? ctx.nonce : undefined
+}
+
 export function getRouter() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -25,8 +35,7 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
-    // The per-request CSP nonce from src/start.ts; undefined in the browser.
-    ssr: { nonce: getGlobalStartContext()?.nonce },
+    ssr: { nonce: requestNonce() },
     defaultErrorComponent: ({ error }) => (
       <div className="m-8 rounded border border-fail/40 bg-fail/10 p-6 font-mono text-sm text-fail">
         {error instanceof Error ? error.message : String(error)}
