@@ -1,0 +1,46 @@
+packages:
+  - apps/*
+  - packages/*
+
+# One version of each shared dependency for the whole repo.
+# Packages reference these with "catalog:".
+catalog:
+  '@fontsource-variable/big-shoulders': ^5.3.0
+  '@fontsource-variable/instrument-sans': ^5.3.0
+  '@fontsource-variable/martian-mono': ^5.3.0
+  '@redocly/cli': ^2.72.1
+  '@tailwindcss/vite': ^4.1.18
+  '@tanstack/devtools-vite': 0.8.6
+  '@tanstack/eslint-config': 0.4.0
+  '@tanstack/react-devtools': 0.10.14
+  '@tanstack/react-router': 1.170.46
+  '@tanstack/react-router-devtools': 1.167.2
+  '@tanstack/react-start': 1.169.4
+  '@tanstack/router-cli': ^1.132.0
+  '@types/node': ^26.6.6
+  '@types/react': ^19.2.0
+  '@types/react-dom': ^19.2.0
+  '@vitejs/plugin-react': ^6.0.1
+  eslint: ^10.14.0
+  nitro: 3.0.260610-beta
+  openapi-fetch: ^0.17.0
+  openapi-typescript: ^7.13.0
+  prettier: ^3.8.1
+  react: ^19.2.0
+  react-dom: ^19.2.0
+  tailwindcss: ^4.1.18
+  turbo: ^2.11.10
+  typescript: ^6.0.2
+  vite: ^8.0.0
+
+# Dependencies allowed to run install scripts. Everything else is blocked.
+allowBuilds:
+  esbuild: true
+  lightningcss: true
+  # The prebuilt native binding ships as an optional dependency, so its postinstall is not needed.
+  unrs-resolver: false
+
+peerDependencyRules:
+  allowedVersions:
+    # openapi-typescript only uses the compiler API, which is unchanged in TypeScript 6.
+    openapi-typescript>typescript: '6'

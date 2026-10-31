@@ -1,0 +1,9 @@
+extends:
+  - recommended
+
+rules:
+  # The API is served from the same origin as the app, so a relative server URL is correct.
+  no-server-example.com: off
+  no-empty-servers: error
+  # Public endpoints such as /auth/config have no error response.
+  operation-4xx-response: warn

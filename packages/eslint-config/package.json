@@ -1,0 +1,15 @@
+{
+  "name": "@esa/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./index.js"
+  },
+  "dependencies": {
+    "@tanstack/eslint-config": "catalog:"
+  },
+  "peerDependencies": {
+    "eslint": "^10.0.0"
+  }
+}

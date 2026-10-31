@@ -1,0 +1,3 @@
+cloud.google.com/go/compute v1.41.0 h1:S+HvMIzBUAFK/73wxkrA4/GwvM7R9d+egGZvih4kp+M=
+github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=
+github.com/hashicorp/golang-lru v0.5.1 h1:0hERBMJE1eitiLkihrMvRVBYAkpHzc/J3QdDN+dAcgU=

@@ -1,0 +1,27 @@
+{
+  "name": "@esa/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenAPI contract of the control plane and the typed TypeScript client generated from it.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi.yaml": "./openapi.yaml"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi.yaml --output src/schema.gen.ts",
+    "lint": "redocly lint openapi.yaml && eslint .",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "openapi-fetch": "catalog:"
+  },
+  "devDependencies": {
+    "@esa/eslint-config": "workspace:*",
+    "@esa/tsconfig": "workspace:*",
+    "@redocly/cli": "catalog:",
+    "eslint": "catalog:",
+    "openapi-typescript": "catalog:",
+    "typescript": "catalog:"
+  }
+}

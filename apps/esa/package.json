@@ -1,0 +1,17 @@
+{
+  "name": "@esa/esa",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Go control plane, server helper, and CLI. This file only lets pnpm and Turborepo run the Go tasks.",
+  "scripts": {
+    "generate": "go generate ./...",
+    "build": "go build -trimpath -o bin/esa ./cmd/esa",
+    "dev": "node --env-file-if-exists=../../.env --run serve",
+    "serve": "go run ./cmd/esa serve",
+    "lint": "go vet ./... && gofmt -l . | (! grep .)",
+    "test": "go test ./..."
+  },
+  "dependencies": {
+    "@esa/api": "workspace:*"
+  }
+}

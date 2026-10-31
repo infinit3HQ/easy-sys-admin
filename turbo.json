@@ -1,0 +1,29 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalEnv": ["NODE_ENV"],
+  "tasks": {
+    "generate": {
+      "dependsOn": ["^generate"],
+      "outputs": ["src/**/*.gen.ts", "internal/**/*.gen.go"]
+    },
+    "build": {
+      "dependsOn": ["^build", "generate"],
+      "outputs": [".output/**", "bin/**"]
+    },
+    "lint": {
+      "dependsOn": ["generate"]
+    },
+    "typecheck": {
+      "dependsOn": ["^generate", "generate"]
+    },
+    "test": {
+      "dependsOn": ["generate"]
+    },
+    "dev": {
+      "dependsOn": ["generate"],
+      "cache": false,
+      "persistent": true
+    }
+  }
+}
