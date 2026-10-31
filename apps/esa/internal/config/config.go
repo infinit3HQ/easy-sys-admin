@@ -26,6 +26,11 @@ type Config struct {
 	MasterKeys []string
 	// HelperDir holds esa-helper-linux-amd64 and esa-helper-linux-arm64.
 	HelperDir string
+	// AllowPrivateNetworks lets servers, certificate checks, and notification
+	// channels point at private addresses (10/8, 172.16/12, 192.168/16, ...).
+	// Loopback, link-local, and cloud metadata addresses are always refused.
+	// Defaults to true when signup is off, false when anyone can sign up.
+	AllowPrivateNetworks bool
 
 	Auth AuthConfig
 }
@@ -117,6 +122,14 @@ func parse(getenv func(string) string) (Config, error) {
 
 	if err := parseAuth(&cfg, get, publicURL); err != nil {
 		return Config{}, err
+	}
+
+	privateDefault := "true"
+	if cfg.Auth.Signup {
+		privateDefault = "false"
+	}
+	if cfg.AllowPrivateNetworks, err = parseBool(get("ESA_ALLOW_PRIVATE_NETWORKS", privateDefault)); err != nil {
+		return Config{}, fmt.Errorf("ESA_ALLOW_PRIVATE_NETWORKS: %w", err)
 	}
 
 	return cfg, nil

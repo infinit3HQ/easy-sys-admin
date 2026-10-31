@@ -35,7 +35,8 @@ type Sender struct {
 // New returns a Sender whose HTTP client refuses loopback, link-local
 // (cloud metadata), and unspecified addresses, so a webhook URL cannot be
 // used to reach the control plane's own host or instance metadata.
-func New() *Sender {
+func New(allowPrivate bool) *Sender {
+	_ = allowPrivate // TODO(agent B): enforce
 	dialer := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {

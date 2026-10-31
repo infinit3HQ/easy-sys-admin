@@ -54,8 +54,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	defer stopBackground()
 
 	fl := fleet.New(bgCtx, fleet.Deps{
-		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(),
-		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Logger: log,
+		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(cfg.AllowPrivateNetworks),
+		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails,
+		AllowPrivateNetworks: cfg.AllowPrivateNetworks, Logger: log,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
 	oidc := map[string]*auth.OIDC{}

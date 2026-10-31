@@ -45,7 +45,10 @@ type Deps struct {
 	PublicURL *url.URL
 	// AllowedEmails limits sign-in to these lowercase addresses. Empty allows everyone.
 	AllowedEmails []string
-	Logger        *slog.Logger
+	// AllowPrivateNetworks lets SSH, certificate, and notification targets be
+	// private addresses. Loopback, link-local, and metadata are always refused.
+	AllowPrivateNetworks bool
+	Logger               *slog.Logger
 }
 
 // Service implements every fleet operation.
@@ -58,8 +61,10 @@ type Service struct {
 	notifier  Notifier
 	publicURL *url.URL
 	allowed   map[string]bool
-	log       *slog.Logger
-	now       func() time.Time
+	// allowPrivate mirrors Deps.AllowPrivateNetworks.
+	allowPrivate bool
+	log          *slog.Logger
+	now          func() time.Time
 
 	// baseCtx outlives requests; background runs use it.
 	baseCtx context.Context
@@ -84,7 +89,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 	}
 	return &Service{
 		store: d.Store, db: d.Store.DB(), box: d.Box, pool: d.Pool, helpers: d.Helpers,
-		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, log: log,
+		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, allowPrivate: d.AllowPrivateNetworks, log: log,
 		now: func() time.Time { return time.Now().UTC() }, baseCtx: baseCtx,
 		signers: map[int64]*accountSigner{},
 	}
