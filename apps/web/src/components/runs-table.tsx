@@ -4,7 +4,14 @@ import { bytes } from '#/lib/format'
 import { Ago } from '#/components/time'
 import { Empty, RunStatus } from '#/components/kit'
 import { Card } from '#/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 function target(r: Run) {
   return r.groupName ?? r.servers.map((s) => s.serverName).join(', ')
@@ -14,30 +21,54 @@ function Result({ r }: { r: Run }) {
   return (
     <>
       {r.summary || '…'}
-      {r.kind === 'clean' && r.bytesFreed > 0 && <span className="ml-2 text-ok">{bytes(r.bytesFreed)}</span>}
+      {r.kind === 'clean' && r.bytesFreed > 0 && (
+        <span className="ml-2 text-ok">{bytes(r.bytesFreed)}</span>
+      )}
     </>
   )
 }
 
-/** Runs as a table on wide screens and as a list of cards on phones. */
-export function RunsTable({ runs, empty = 'No runs yet' }: { runs: Array<Run>; empty?: string }) {
+/**
+ * Runs as a table when there is room and as a list of cards when there is
+ * not. It measures its container, not the screen, because it also sits in
+ * the narrower left column of the group page.
+ */
+export function RunsTable({
+  runs,
+  empty = 'No runs yet',
+}: {
+  runs: Array<Run>
+  empty?: string
+}) {
   if (runs.length === 0) return <Empty title={empty} />
   return (
-    <>
-      <Card className="md:hidden">
+    <div className="@container">
+      <Card className="@3xl:hidden">
         <ul className="divide-y divide-line/60">
           {runs.map((r) => (
             <li key={r.id}>
-              <Link to="/app/runs/$runId" params={{ runId: r.id }} className="block px-4 py-3 transition-colors active:bg-panel-2">
+              <Link
+                to="/app/runs/$runId"
+                params={{ runId: r.id }}
+                className="block px-4 py-3 transition-colors active:bg-panel-2"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <span className="font-mono text-xs text-amber">#{r.id}</span>
-                    <span className="font-mono text-xs text-ink uppercase">{r.kind}</span>
-                    <span className="font-mono text-[10px] text-faint">{r.trigger}</span>
+                    <span className="font-mono text-xs text-amber">
+                      #{r.id}
+                    </span>
+                    <span className="font-mono text-xs text-ink uppercase">
+                      {r.kind}
+                    </span>
+                    <span className="font-mono text-[10px] text-faint">
+                      {r.trigger}
+                    </span>
                   </span>
                   <RunStatus status={r.status} />
                 </div>
-                <div className="mt-1 truncate text-xs text-ink-2">{target(r)}</div>
+                <div className="mt-1 truncate text-xs text-ink-2">
+                  {target(r)}
+                </div>
                 <div className="mt-1 flex items-baseline justify-between gap-3 font-mono text-[11px] text-muted-foreground">
                   <span className="min-w-0 truncate">
                     <Result r={r} />
@@ -51,29 +82,42 @@ export function RunsTable({ runs, empty = 'No runs yet' }: { runs: Array<Run>; e
           ))}
         </ul>
       </Card>
-      <Card className="hidden md:flex">
+      <Card className="hidden @3xl:flex">
         <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
-              {['Run', 'Kind', 'Target', 'Status', 'Result', 'Started'].map((h, i) => (
-                <TableHead key={h} className={i === 0 ? 'pl-4' : i === 5 ? 'pr-4' : undefined}>
-                  {h}
-                </TableHead>
-              ))}
+              {['Run', 'Kind', 'Target', 'Status', 'Result', 'Started'].map(
+                (h, i) => (
+                  <TableHead
+                    key={h}
+                    className={i === 0 ? 'pl-4' : i === 5 ? 'pr-4' : undefined}
+                  >
+                    {h}
+                  </TableHead>
+                ),
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {runs.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="pl-4">
-                  <Link to="/app/runs/$runId" params={{ runId: r.id }} className="font-mono text-xs text-amber hover:underline">
+                  <Link
+                    to="/app/runs/$runId"
+                    params={{ runId: r.id }}
+                    className="font-mono text-xs text-amber hover:underline"
+                  >
                     #{r.id}
                   </Link>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-ink uppercase">{r.kind}</TableCell>
+                <TableCell className="font-mono text-xs text-ink uppercase">
+                  {r.kind}
+                </TableCell>
                 <TableCell className="text-xs text-ink-2">
                   {target(r)}
-                  <span className="ml-2 font-mono text-[10px] text-faint">{r.trigger}</span>
+                  <span className="ml-2 font-mono text-[10px] text-faint">
+                    {r.trigger}
+                  </span>
                 </TableCell>
                 <TableCell>
                   <RunStatus status={r.status} />
@@ -89,6 +133,6 @@ export function RunsTable({ runs, empty = 'No runs yet' }: { runs: Array<Run>; e
           </TableBody>
         </Table>
       </Card>
-    </>
+    </div>
   )
 }

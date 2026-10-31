@@ -75,7 +75,8 @@ function Landing() {
       <Agents />
       <Install />
       <footer className="border-t px-4 py-10 font-mono text-[11px] text-muted-foreground sm:px-6 md:px-12">
-        easy-sys-admin · self-hosted · Go control plane, TanStack Start board, MCP for agents
+        easy-sys-admin · self-hosted · Go control plane, TanStack Start board,
+        MCP for agents
       </footer>
     </div>
   )
@@ -86,7 +87,9 @@ function Nav() {
     <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b bg-bg/80 px-4 backdrop-blur-md sm:px-6 md:px-12">
       <Link to="/" className="flex items-center gap-2.5">
         <img src="/favicon.svg" alt="" className="size-6" />
-        <span className="font-display text-lg font-bold tracking-wide uppercase sm:text-xl">easy-sys-admin</span>
+        <span className="font-display text-lg font-bold tracking-wide uppercase sm:text-xl">
+          easy-sys-admin
+        </span>
       </Link>
       <nav className="flex items-center gap-6 font-mono text-xs text-ink-2">
         <a href="#watch" className="hidden hover:text-ink sm:inline">
@@ -98,7 +101,12 @@ function Nav() {
         <a href="#agents" className="hidden hover:text-ink sm:inline">
           MCP
         </a>
-        <Button asChild size="sm" variant="outline" className="border-amber text-amber hover:bg-amber hover:text-bg">
+        <Button
+          asChild
+          size="sm"
+          variant="outline"
+          className="border-amber text-amber hover:bg-amber hover:text-bg"
+        >
           <Link to="/app">
             <span className="hidden sm:inline">Open the board</span>
             <span className="sm:hidden">Board</span>
@@ -113,7 +121,9 @@ function Hero() {
   return (
     <section className="relative grid gap-10 px-4 pt-12 pb-16 sm:px-6 sm:pt-16 sm:pb-20 md:px-12 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-12">
       <div className="animate-rise">
-        <p className="label mb-6 !text-amber">Fleet control room · self-hosted</p>
+        <p className="label mb-6 !text-amber">
+          Fleet control room · self-hosted
+        </p>
         <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
           One board
           <br />
@@ -122,8 +132,10 @@ function Hero() {
           <span className="text-amber">whole fleet.</span>
         </h1>
         <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-2 sm:mt-8 sm:text-lg">
-          See every server on one page, refreshed each minute. Put servers in groups, set when their disks get cleaned and their packages patched, and stop
-          logging in to each machine. AI agents read the same data over MCP.
+          See every server on one page, refreshed each minute. Put servers in
+          groups, set when their disks get cleaned and their packages patched,
+          and stop logging in to each machine. AI agents read the same data over
+          MCP.
         </p>
         <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap">
           <Button asChild size="lg">
@@ -149,7 +161,10 @@ function Board() {
     return () => clearInterval(t)
   }, [])
   return (
-    <div className="panel animate-rise overflow-hidden shadow-[0_40px_120px_-40px_rgb(255_176_0/0.25)]" style={{ animationDelay: '120ms' }}>
+    <div
+      className="panel animate-rise overflow-hidden shadow-[0_40px_120px_-40px_rgb(255_176_0/0.25)]"
+      style={{ animationDelay: '120ms' }}
+    >
       <div className="flex items-center justify-between border-b px-4 py-2.5">
         <span className="label">Fleet · demo data</span>
         <span className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
@@ -158,7 +173,10 @@ function Board() {
       </div>
       <div className="divide-y divide-line">
         {demo.map((s, i) => {
-          const wobble = s.status === 'unreachable' ? 0 : Math.round(Math.sin((tick + i) * 1.7) * 4)
+          const wobble =
+            s.status === 'unreachable'
+              ? 0
+              : Math.round(Math.sin((tick + i) * 1.7) * 4)
           return (
             <div
               key={s.name}
@@ -169,9 +187,13 @@ function Board() {
               <div className="min-w-0">
                 <div className="flex items-baseline gap-2">
                   <span className="font-mono text-sm text-ink">{s.name}</span>
-                  <span className="hidden font-mono text-[10px] tracking-wider text-faint uppercase sm:inline">{s.group}</span>
+                  <span className="hidden font-mono text-[10px] tracking-wider text-faint uppercase sm:inline">
+                    {s.group}
+                  </span>
                 </div>
-                <div className="truncate font-mono text-[11px] text-muted-foreground">{s.note}</div>
+                <div className="truncate font-mono text-[11px] text-muted-foreground">
+                  {s.note}
+                </div>
               </div>
               <div className="w-24 space-y-1.5 sm:w-28">
                 <MiniBar label="cpu" value={Math.max(0, s.cpu + wobble)} />
@@ -189,39 +211,87 @@ function MiniBar({ label, value }: { label: string; value: number }) {
   const c = value >= 95 ? 'bg-fail' : value >= 85 ? 'bg-warn' : 'bg-ink-2'
   return (
     <div className="flex items-center gap-2">
-      <span className="w-7 font-mono text-[9px] uppercase text-faint">{label}</span>
+      <span className="w-7 font-mono text-[9px] uppercase text-faint">
+        {label}
+      </span>
       <div className="h-1 flex-1 bg-line">
-        <div className={cn('h-full transition-[width] duration-1000', c)} style={{ width: `${value}%` }} />
+        <div
+          className={cn('h-full transition-[width] duration-1000', c)}
+          style={{ width: `${value}%` }}
+        />
       </div>
     </div>
   )
 }
 
 const watches = [
-  ['Status', 'CPU, memory, load, every real disk and its inodes, uptime, network. Polled each minute, kept 90 days.'],
-  ['Updates', 'Pending packages split into security and the rest. Upgrades run as their own systemd job, so a dropped SSH session cannot kill apt halfway.'],
-  ['Cleanups', 'Idle Docker build cache and stale VS Code server copies, on the group schedule. A server running a build is skipped.'],
-  ['Services', 'Every systemd unit, failed ones first. Start, stop, restart. sshd and Docker cannot be stopped from here.'],
-  ['Containers', 'State, health, restarts, and whether the registry has a newer image. Pull and recreate one compose service at a time.'],
-  ['Logs', 'Journal per unit and container output, filtered by priority and text.'],
-  ['Access', 'Who has a login shell, which SSH keys they carry, who is in sudo and docker, recent logins, failed attempts.'],
-  ['Security', 'Listening ports and their processes, firewall, CrowdSec and fail2ban, unattended-upgrades.'],
+  [
+    'Status',
+    'CPU, memory, load, every real disk and its inodes, uptime, network. Polled each minute, kept 90 days.',
+  ],
+  [
+    'Updates',
+    'Pending packages split into security and the rest. Upgrades run as their own systemd job, so a dropped SSH session cannot kill apt halfway.',
+  ],
+  [
+    'Cleanups',
+    'Idle Docker build cache and stale VS Code server copies, on the group schedule. A server running a build is skipped.',
+  ],
+  [
+    'Services',
+    'Every systemd unit, failed ones first. Start, stop, restart. sshd and Docker cannot be stopped from here.',
+  ],
+  [
+    'Containers',
+    'State, health, restarts, and whether the registry has a newer image. Pull and recreate one compose service at a time.',
+  ],
+  [
+    'Logs',
+    'Journal per unit and container output, filtered by priority and text.',
+  ],
+  [
+    'Access',
+    'Who has a login shell, which SSH keys they carry, who is in sudo and docker, recent logins, failed attempts.',
+  ],
+  [
+    'Security',
+    'Listening ports and their processes, firewall, CrowdSec and fail2ban, unattended-upgrades.',
+  ],
   [
     'Alerts',
     'Disk, memory, unreachable, failed units, unhealthy containers, expiring certificates, failed runs. To ntfy, Discord, Slack, a webhook, or email.',
   ],
 ]
 
+/** "01", set in the heading's own face and size so it sits on the same baseline. */
+function StepNumber({ n }: { n: number }) {
+  return (
+    <span
+      aria-hidden
+      className="font-display text-2xl font-semibold text-amber/70 tabular-nums"
+    >
+      {String(n).padStart(2, '0')}
+    </span>
+  )
+}
+
 function Watches() {
   return (
-    <section id="watch" className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12">
-      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">What it watches</h2>
+    <section
+      id="watch"
+      className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12"
+    >
+      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+        What it watches
+      </h2>
       <div className="mt-10 grid gap-px overflow-hidden rounded-md border bg-line sm:mt-12 sm:grid-cols-2 lg:grid-cols-3">
         {watches.map(([title, body], i) => (
           <div key={title} className="bg-bg p-5 sm:p-6">
             <div className="flex items-baseline gap-3">
-              <span className="font-mono text-[10px] text-amber">{String(i + 1).padStart(2, '0')}</span>
-              <h3 className="font-display text-2xl font-semibold uppercase tracking-wide">{title}</h3>
+              <StepNumber n={i + 1} />
+              <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
+                {title}
+              </h3>
             </div>
             <p className="mt-3 text-sm leading-relaxed text-ink-2">{body}</p>
           </div>
@@ -242,7 +312,10 @@ const rules = [
 
 function Touch() {
   return (
-    <section id="safety" className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-2 lg:gap-12">
+    <section
+      id="safety"
+      className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-2 lg:gap-12"
+    >
       <div>
         <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
           One binary.
@@ -250,10 +323,15 @@ function Touch() {
           One sudo line.
         </h2>
         <p className="mt-6 max-w-lg leading-relaxed text-ink-2">
-          Each server gets a small helper and a system user that may run only that helper. The control plane logs in with its own key over SSH, pins the host
-          key it saw the first time, and refuses to talk to a machine that presents a different one. No agent listens on your servers.
+          Each server gets a small helper and a system user that may run only
+          that helper. The control plane logs in with its own key over SSH, pins
+          the host key it saw the first time, and refuses to talk to a machine
+          that presents a different one. No agent listens on your servers.
         </p>
-        <CopyBlock className="mt-8 max-w-lg" value={'esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *'} />
+        <CopyBlock
+          className="mt-8 max-w-lg"
+          value={'esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *'}
+        />
       </div>
       <div className="panel p-5 sm:p-6">
         <div className="label mb-4">Rules with no switch</div>
@@ -281,16 +359,24 @@ function Agents() {
   }
 }`
   return (
-    <section id="agents" className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-[1fr_1.1fr] lg:gap-12">
+    <section
+      id="agents"
+      className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-[1fr_1.1fr] lg:gap-12"
+    >
       <div>
-        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">Agents read the fleet</h2>
+        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+          Agents read the fleet
+        </h2>
         <p className="mt-6 max-w-lg leading-relaxed text-ink-2">
-          The MCP endpoint gives an agent the same view you have: fleet summary, per-server status, updates, services, containers, security and access reports,
-          run history, alerts. It uses an API token you create, so it can do what that token&apos;s scopes allow and nothing more. Every call lands in the
-          activity log, marked MCP.
+          The MCP endpoint gives an agent the same view you have: fleet summary,
+          per-server status, updates, services, containers, security and access
+          reports, run history, alerts. It uses an API token you create, so it
+          can do what that token&apos;s scopes allow and nothing more. Every
+          call lands in the activity log, marked MCP.
         </p>
         <p className="mt-4 font-mono text-xs text-muted-foreground">
-          “Which servers are low on disk?” · “What failed last night?” · “Any containers with newer images?”
+          “Which servers are low on disk?” · “What failed last night?” · “Any
+          containers with newer images?”
         </p>
       </div>
       <CopyBlock value={snippet} />
@@ -300,28 +386,46 @@ function Agents() {
 
 function Install() {
   return (
-    <section id="install" className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12">
-      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">Run it</h2>
-      <div className="mt-10 grid min-w-0 gap-6 lg:grid-cols-3">
+    <section
+      id="install"
+      className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12"
+    >
+      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+        Run it
+      </h2>
+      {/* One step per row: the commands run to about 60 characters, so three
+          narrow columns would hide half of each line behind a scroll. */}
+      <ol className="mt-10 max-w-5xl divide-y divide-line-2 border-y border-line-2">
         {(
           [
-            ['Start', 'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d'],
+            [
+              'Start',
+              'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
+            ],
             [
               'Add a server',
               '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
             ],
-            ['Use the CLI', 'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production'],
+            [
+              'Use the CLI',
+              'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
+            ],
           ] as const
         ).map(([t, code], i) => (
-          <div key={t} className="min-w-0">
-            <div className="mb-3 flex items-baseline gap-3">
-              <span className="font-mono text-[10px] text-amber">{i + 1}</span>
-              <h3 className="font-display text-2xl font-semibold uppercase">{t}</h3>
+          <li
+            key={t}
+            className="grid min-w-0 gap-3 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8"
+          >
+            <div className="flex items-baseline gap-3 md:pt-2">
+              <StepNumber n={i + 1} />
+              <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
+                {t}
+              </h3>
             </div>
             <CopyBlock value={code} />
-          </div>
+          </li>
         ))}
-      </div>
+      </ol>
     </section>
   )
 }

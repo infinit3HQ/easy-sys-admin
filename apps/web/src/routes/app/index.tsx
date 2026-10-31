@@ -3,7 +3,7 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { PlusIcon } from 'lucide-react'
 import type { Server } from '@esa/api'
 import { q } from '#/lib/queries'
-import { duration, pct } from '#/lib/format'
+import { duration, pct, plural } from '#/lib/format'
 import { Ago } from '#/components/time'
 import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
 import { Button } from '#/components/ui/button'
@@ -35,7 +35,7 @@ function Board() {
       </PageHeader>
 
       <Card className="mb-6 grid animate-rise grid-cols-3 gap-x-4 gap-y-5 p-4 sm:p-5 lg:grid-cols-6" style={{ animationDelay: '60ms' }}>
-        <Stat label="Servers" value={t.servers} sub={`${t.groups} groups`} />
+        <Stat label="Servers" value={t.servers} sub={plural(t.groups, 'group')} />
         <Stat label="OK" value={t.ok} tone={t.ok ? 'ok' : undefined} />
         <Stat label="Warning" value={t.warning} tone={t.warning ? 'warn' : undefined} />
         <Stat label="Failing" value={t.failing} tone={t.failing ? 'fail' : undefined} />
@@ -105,11 +105,12 @@ function why(s: Server): string {
 
 function Updates({ s }: { s: Server }) {
   if (!s.updates) return <span className="text-faint">—</span>
+  const { security, other } = s.updates
+  if (!security && !other) return <span className="text-faint">none</span>
   return (
-    <span>
-      <span className={s.updates.security ? 'text-warn' : 'text-ink-2'}>{s.updates.security} sec</span>
-      <span className="text-faint"> · </span>
-      <span className="text-ink-2">{s.updates.other}</span>
+    <span title={`${security} security, ${other} other`}>
+      <span className="text-ink-2">{security + other}</span>
+      {security > 0 && <span className="text-warn"> · {security} security</span>}
     </span>
   )
 }
