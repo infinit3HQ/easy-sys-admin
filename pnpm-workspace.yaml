@@ -24,7 +24,7 @@ catalog:
   '@types/react': ^19.2.0
   '@types/react-dom': ^19.2.0
   '@vitejs/plugin-react': ^6.0.1
-  eslint: ^10.14.0
+  eslint: 10.13.0
   nitro: 3.0.260610-beta
   openapi-fetch: ^0.17.0
   openapi-typescript: ^7.13.0
@@ -48,3 +48,12 @@ peerDependencyRules:
   allowedVersions:
     # openapi-typescript only uses the compiler API, which is unchanged in TypeScript 6.
     openapi-typescript>typescript: '6'
+
+# pnpm refuses packages published less than a day ago (minimumReleaseAge).
+# These pins keep the lockfile on releases that have passed that window.
+overrides:
+  electron-to-chromium: 1.5.468
+  node-releases: 2.0.62
+  seroval: 1.7.5
+  tslib: 2.8.1
+  ws: 8.22.0
