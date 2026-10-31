@@ -94,6 +94,9 @@ func (s *Store) Close() {
 // Ping checks the database is reachable.
 func (s *Store) Ping(ctx context.Context) error { return s.pool.Ping(ctx) }
 
+// DB returns the GORM handle for the fleet service's own queries.
+func (s *Store) DB() *gorm.DB { return s.db }
+
 // InTx runs fn in a transaction. The transaction commits if fn returns nil
 // and rolls back otherwise, including on panic.
 func (s *Store) InTx(ctx context.Context, fn func(q *Queries) error) error {
@@ -104,6 +107,9 @@ func (s *Store) InTx(ctx context.Context, fn func(q *Queries) error) error {
 
 // with returns a session bound to ctx.
 func (q *Queries) with(ctx context.Context) *gorm.DB { return q.db.WithContext(ctx) }
+
+// Raw returns the underlying GORM handle (the transaction inside InTx).
+func (q *Queries) Raw() *gorm.DB { return q.db }
 
 // notFound maps gorm.ErrRecordNotFound to ErrNotFound.
 func notFound(err error) error {

@@ -122,3 +122,10 @@ func (e *BadRequestError) Error() string { return e.Reason }
 type BusyError struct{ Reason string }
 
 func (e *BusyError) Error() string { return e.Reason }
+
+// ValidJournalSize reports whether s is a journal size the helper accepts.
+// The control plane uses it to validate group settings up front.
+func ValidJournalSize(s string) bool { return validJournalSize(s) }
+
+// ValidPackageName reports whether s is a package name the helper accepts.
+func ValidPackageName(s string) bool { return pkgNameRe.MatchString(s) }

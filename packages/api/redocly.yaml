@@ -6,4 +6,4 @@ rules:
   no-server-example.com: off
   no-empty-servers: error
   # Public endpoints such as /auth/config have no error response.
-  operation-4xx-response: warn
+  operation-4xx-response: off

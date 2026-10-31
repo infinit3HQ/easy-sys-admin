@@ -1,0 +1,135 @@
+package store
+
+import (
+	"time"
+)
+
+// Run is one maintenance job across one or more servers.
+type Run struct {
+	ID        int64  `gorm:"primaryKey"`
+	AccountID int64  `gorm:"not null;index:runs_account_started,priority:1"`
+	GroupID   *int64 `gorm:"index"`
+	// Kind is measure | clean | update | reboot.
+	Kind string `gorm:"not null;check:runs_kind_check,kind IN ('measure','clean','update','reboot')"`
+	// Trigger is schedule | manual | api | mcp.
+	Trigger string `gorm:"not null"`
+	// Status is running | succeeded | failed | partial | missed.
+	Status      string `gorm:"not null;default:'running'"`
+	Options     JSON   `gorm:"type:jsonb;not null;default:'{}'"`
+	RequestedBy *int64
+	StartedAt   time.Time `gorm:"not null;index:runs_account_started,priority:2,sort:desc"`
+	FinishedAt  *time.Time
+	Summary     string `gorm:"not null;default:''"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Group   *Group  `gorm:"constraint:OnDelete:SET NULL"`
+	Servers []RunServer
+}
+
+// RunServer is one server's part of a run.
+type RunServer struct {
+	ID       int64 `gorm:"primaryKey"`
+	RunID    int64 `gorm:"not null;index"`
+	ServerID int64 `gorm:"not null;index"`
+	// Status is queued | running | succeeded | failed | skipped.
+	Status     string `gorm:"not null;default:'queued'"`
+	Detail     JSON   `gorm:"type:jsonb;not null;default:'{}'"`
+	Error      string `gorm:"not null;default:''"`
+	BytesFreed int64  `gorm:"not null;default:0"`
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+
+	Run    Run    `gorm:"constraint:OnDelete:CASCADE"`
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// AlertRule is one alert condition for an account.
+type AlertRule struct {
+	ID        int64 `gorm:"primaryKey"`
+	AccountID int64 `gorm:"not null;uniqueIndex:alert_rules_account_kind_key,priority:1"`
+	// Kind is disk | inode | memory | unreachable | failed_unit | container | reboot_required | cert_expiry | run_failed.
+	Kind      string  `gorm:"not null;uniqueIndex:alert_rules_account_kind_key,priority:2"`
+	Enabled   bool    `gorm:"not null;default:true"`
+	Threshold float64 `gorm:"not null;default:0"`
+	// ForMinutes is how long the condition must hold before it fires.
+	ForMinutes int       `gorm:"not null;default:0"`
+	CreatedAt  time.Time `gorm:"not null"`
+	UpdatedAt  time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// Alert is one firing (or resolved) condition. Subject identifies what it
+// is about inside the server, for example a mount point or unit name.
+type Alert struct {
+	ID           int64     `gorm:"primaryKey"`
+	AccountID    int64     `gorm:"not null;index:alerts_account_open,priority:1"`
+	RuleID       int64     `gorm:"not null;index"`
+	ServerID     *int64    `gorm:"index"`
+	Kind         string    `gorm:"not null"`
+	Subject      string    `gorm:"not null;default:''"`
+	Severity     string    `gorm:"not null;default:'warning'"`
+	Message      string    `gorm:"not null"`
+	PendingSince time.Time `gorm:"not null"`
+	FiredAt      *time.Time
+	ResolvedAt   *time.Time `gorm:"index:alerts_account_open,priority:2"`
+	Notified     bool       `gorm:"not null;default:false"`
+
+	Account Account   `gorm:"constraint:OnDelete:CASCADE"`
+	Rule    AlertRule `gorm:"constraint:OnDelete:CASCADE"`
+	Server  *Server   `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// NotifyChannel is where alerts are sent. ConfigEnc holds the URL, token,
+// or SMTP settings, sealed with crypto.Box.
+type NotifyChannel struct {
+	ID        int64  `gorm:"primaryKey"`
+	AccountID int64  `gorm:"not null;index"`
+	Name      string `gorm:"not null;size:100"`
+	// Kind is ntfy | webhook | discord | slack | email.
+	Kind       string `gorm:"not null;check:notify_channels_kind_check,kind IN ('ntfy','webhook','discord','slack','email')"`
+	ConfigEnc  string `gorm:"not null"`
+	Enabled    bool   `gorm:"not null;default:true"`
+	LastError  string `gorm:"not null;default:''"`
+	LastSentAt *time.Time
+	CreatedAt  time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// CertTarget is a TLS endpoint whose certificate expiry is checked daily.
+type CertTarget struct {
+	ID        int64  `gorm:"primaryKey"`
+	AccountID int64  `gorm:"not null;uniqueIndex:cert_targets_account_host_key,priority:1"`
+	Hostname  string `gorm:"not null;uniqueIndex:cert_targets_account_host_key,priority:2"`
+	Port      int    `gorm:"not null;default:443;uniqueIndex:cert_targets_account_host_key,priority:3"`
+	ExpiresAt *time.Time
+	Issuer    string `gorm:"not null;default:''"`
+	LastError string `gorm:"not null;default:''"`
+	CheckedAt *time.Time
+	CreatedAt time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// APIToken authenticates the CLI and MCP clients. Only the SHA-256 of the
+// token is stored; Prefix is the first characters, shown in the UI.
+type APIToken struct {
+	ID         int64  `gorm:"primaryKey"`
+	UserID     int64  `gorm:"not null;index"`
+	AccountID  int64  `gorm:"not null"`
+	Name       string `gorm:"not null;size:100"`
+	Scopes     JSON   `gorm:"type:jsonb;not null;default:'[]'"`
+	TokenHash  []byte `gorm:"not null;uniqueIndex"`
+	Prefix     string `gorm:"not null"`
+	LastUsedAt *time.Time
+	ExpiresAt  *time.Time
+	RevokedAt  *time.Time
+	CreatedAt  time.Time `gorm:"not null"`
+
+	User    User    `gorm:"constraint:OnDelete:CASCADE"`
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// TableName avoids GORM's "a_p_i_tokens".
+func (APIToken) TableName() string { return "api_tokens" }

@@ -11,6 +11,21 @@ func Models() []any {
 		&Membership{},
 		&Session{},
 		&AuditEntry{},
+		&AccountKey{},
+		&Group{},
+		&Server{},
+		&ServerCredential{},
+		&EnrollToken{},
+		&ServerState{},
+		&MetricSample{},
+		&MetricHourly{},
+		&Run{},
+		&RunServer{},
+		&AlertRule{},
+		&Alert{},
+		&NotifyChannel{},
+		&CertTarget{},
+		&APIToken{},
 	}
 }
 

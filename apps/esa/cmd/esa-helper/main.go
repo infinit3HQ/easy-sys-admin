@@ -39,6 +39,7 @@ write actions:
   container --name C --action start|stop|restart [--confirm NAME] [--protect a,b]
   container-update --name C [--confirm NAME] [--protect a,b]
   reboot
+  uninstall   remove the esa user, its sudo rule, and this helper
 `
 
 func main() {
@@ -179,6 +180,8 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 		return h.Jobs(ctx)
 	case "reboot":
 		return map[string]bool{"scheduled": true}, h.Reboot(ctx)
+	case "uninstall":
+		return map[string]bool{"scheduled": true}, h.Uninstall(ctx)
 	}
 	return nil, &hostops.BadRequestError{Reason: "unknown action " + action}
 }

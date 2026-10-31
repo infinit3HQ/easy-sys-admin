@@ -31,6 +31,11 @@ type Config struct {
 	PublicURL *url.URL
 	// LogFormat is "text" or "json".
 	LogFormat string
+	// MasterKeys encrypt secrets at rest. The first seals new secrets; all
+	// of them open existing ones, so keys can be rotated.
+	MasterKeys []string
+	// HelperDir holds esa-helper-linux-amd64 and esa-helper-linux-arm64.
+	HelperDir string
 
 	Auth AuthConfig
 }
@@ -87,6 +92,15 @@ func parse(getenv func(string) string) (Config, error) {
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("ESA_DATABASE_URL is required, for example postgres://esa:secret@localhost:5432/esa")
 	}
+	for _, k := range strings.Split(get("ESA_MASTER_KEY", ""), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			cfg.MasterKeys = append(cfg.MasterKeys, k)
+		}
+	}
+	if len(cfg.MasterKeys) == 0 {
+		return Config{}, errors.New("ESA_MASTER_KEY is required: 32 random bytes, base64-encoded (openssl rand -base64 32)")
+	}
+	cfg.HelperDir = get("ESA_HELPER_DIR", "./bin")
 
 	publicURL, err := url.Parse(get("ESA_PUBLIC_URL", "http://localhost:3000"))
 	if err != nil || (publicURL.Scheme != "http" && publicURL.Scheme != "https") || publicURL.Host == "" {

@@ -10,10 +10,10 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/auth"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/config"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
-	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
 // Handlers implements StrictServerInterface on top of the fleet service.
+// Handlers return fleet errors as-is; errorStatus maps them to HTTP.
 type Handlers struct {
 	fleet    *fleet.Service
 	sessions *auth.Sessions
@@ -23,105 +23,125 @@ type Handlers struct {
 
 var _ StrictServerInterface = (*Handlers)(nil)
 
+var errUnauthenticated = errors.New("unauthenticated")
+
 // Mount registers /api/v1/* on mux. Requests must already have passed
-// through the session middleware.
+// through the bearer and session middlewares.
 func Mount(mux *http.ServeMux, fl *fleet.Service, sessions *auth.Sessions, authCfg config.AuthConfig, log *slog.Logger) {
 	h := &Handlers{fleet: fl, sessions: sessions, auth: authCfg, log: log}
 	strict := NewStrictHandlerWithOptions(h, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeError(w, http.StatusBadRequest, "bad_request", "The request body is not valid JSON for this endpoint.")
+			writeError(w, http.StatusBadRequest, "bad_request", "The request body is not valid JSON for this endpoint.", "")
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			log.Error("api handler", "path", r.URL.Path, "err", err)
-			writeError(w, http.StatusInternalServerError, "internal", "Something went wrong on the control plane.")
+			status, code, msg, field := errorStatus(err)
+			if status == http.StatusInternalServerError {
+				log.Error("api handler", "path", r.URL.Path, "err", err)
+			}
+			writeError(w, status, code, msg, field)
 		},
 	})
 	HandlerWithOptions(strict, StdHTTPServerOptions{
 		BaseURL:    "/api/v1",
 		BaseRouter: mux,
 		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+			writeError(w, http.StatusBadRequest, "bad_request", err.Error(), "")
 		},
 	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotFound, "not_found", "No such API endpoint.")
+		writeError(w, http.StatusNotFound, "not_found", "No such API endpoint.", "")
 	})
 }
 
-// GetAuthConfig tells the sign-in page which button to show.
-func (h *Handlers) GetAuthConfig(context.Context, GetAuthConfigRequestObject) (GetAuthConfigResponseObject, error) {
-	return GetAuthConfig200JSONResponse{
-		Mode:         AuthConfigMode(h.auth.Mode),
-		ProviderName: h.auth.ProviderName,
-	}, nil
+func errorStatus(err error) (status int, code, msg, field string) {
+	var verr *fleet.ValidationError
+	var conflict *fleet.ConflictError
+	var unavail *fleet.UnavailableError
+	switch {
+	case errors.Is(err, errUnauthenticated):
+		return http.StatusUnauthorized, "unauthorized", "Sign in, or send an API token.", ""
+	case errors.As(err, &verr):
+		return http.StatusBadRequest, "bad_request", verr.Message, verr.Field
+	case errors.Is(err, fleet.ErrForbidden):
+		return http.StatusForbidden, "forbidden", "Your role or token does not allow this.", ""
+	case errors.Is(err, fleet.ErrNotFound):
+		return http.StatusNotFound, "not_found", "Not found.", ""
+	case errors.As(err, &conflict):
+		return http.StatusConflict, "conflict", conflict.Message, ""
+	case errors.As(err, &unavail):
+		return http.StatusBadGateway, "unavailable", unavail.Message, ""
+	case errors.Is(err, context.DeadlineExceeded):
+		return http.StatusGatewayTimeout, "unavailable", "The server took too long to answer.", ""
+	}
+	return http.StatusInternalServerError, "internal", "Something went wrong on the control plane.", ""
 }
 
-// GetMe returns the session's user and accounts.
-func (h *Handlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
-	actor, ok := fleet.ActorFrom(ctx)
+func writeError(w http.ResponseWriter, status int, code, message, field string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(Error{Error: ErrorDetail{Code: code, Message: message, Field: optional(field)}})
+}
+
+func actor(ctx context.Context) (fleet.Actor, error) {
+	a, ok := fleet.ActorFrom(ctx)
 	if !ok {
-		return GetMe401JSONResponse{unauthorized()}, nil
+		return fleet.Actor{}, errUnauthenticated
 	}
-	me, err := h.fleet.Me(ctx, actor)
-	if errors.Is(err, fleet.ErrForbidden) || errors.Is(err, store.ErrNotFound) {
-		return GetMe401JSONResponse{unauthorized()}, nil
-	}
+	return a, nil
+}
+
+// ---- Session ---------------------------------------------------------------------
+
+func (h *Handlers) GetAuthConfig(context.Context, GetAuthConfigRequestObject) (GetAuthConfigResponseObject, error) {
+	return GetAuthConfig200JSONResponse{Mode: AuthConfigMode(h.auth.Mode), ProviderName: h.auth.ProviderName}, nil
+}
+
+func (h *Handlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {
+	a, err := actor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return GetMe200JSONResponse(toMe(me)), nil
+	me, err := h.fleet.Me(ctx, a)
+	if err != nil {
+		if errors.Is(err, fleet.ErrForbidden) {
+			return nil, errUnauthenticated
+		}
+		return nil, err
+	}
+	return GetMe200JSONResponse(toMe(me, a)), nil
 }
 
-// SwitchAccount moves the session to another of the user's accounts.
 func (h *Handlers) SwitchAccount(ctx context.Context, req SwitchAccountRequestObject) (SwitchAccountResponseObject, error) {
-	actor, ok := fleet.ActorFrom(ctx)
-	if !ok {
-		return SwitchAccount401JSONResponse{unauthorized()}, nil
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if a.TokenID != 0 {
+		return nil, &fleet.ValidationError{Field: "accountId", Message: "API tokens belong to one account; create a token in the other account instead"}
 	}
 	if req.Body == nil || req.Body.AccountId <= 0 {
-		return SwitchAccount400JSONResponse{BadRequestJSONResponse(errorBody("bad_request", "accountId is required."))}, nil
+		return nil, &fleet.ValidationError{Field: "accountId", Message: "is required"}
 	}
 	to, err := h.sessions.SwitchAccount(ctx, req.Body.AccountId)
-	if errors.Is(err, fleet.ErrForbidden) {
-		return SwitchAccount403JSONResponse{ForbiddenJSONResponse(errorBody("forbidden", "You are not a member of that account."))}, nil
-	}
 	if err != nil {
 		return nil, err
 	}
-	actor.AccountID, actor.Role = to.Account.ID, fleet.Role(to.Role)
-	me, err := h.fleet.Me(ctx, actor)
+	a.AccountID, a.Role = to.Account.ID, fleet.Role(to.Role)
+	me, err := h.fleet.Me(ctx, a)
 	if err != nil {
 		return nil, err
 	}
-	return SwitchAccount200JSONResponse(toMe(me)), nil
+	return SwitchAccount200JSONResponse(toMe(me, a)), nil
 }
 
-// GetFleetOverview returns the overview of the session's account.
 func (h *Handlers) GetFleetOverview(ctx context.Context, _ GetFleetOverviewRequestObject) (GetFleetOverviewResponseObject, error) {
-	actor, ok := fleet.ActorFrom(ctx)
-	if !ok {
-		return GetFleetOverview401JSONResponse{unauthorized()}, nil
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
 	}
-	ov, err := h.fleet.Overview(ctx, actor)
-	if errors.Is(err, fleet.ErrForbidden) {
-		return GetFleetOverview401JSONResponse{unauthorized()}, nil
-	}
+	ov, err := h.fleet.Overview(ctx, a)
 	if err != nil {
 		return nil, err
 	}
 	return GetFleetOverview200JSONResponse(toOverview(ov)), nil
-}
-
-func unauthorized() UnauthorizedJSONResponse {
-	return UnauthorizedJSONResponse(errorBody("unauthorized", "Sign in to continue."))
-}
-
-func errorBody(code, message string) Error {
-	return Error{Error: ErrorDetail{Code: code, Message: message}}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(errorBody(code, message))
 }

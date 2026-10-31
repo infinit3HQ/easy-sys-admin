@@ -1,47 +1,209 @@
 package api
 
 import (
+	"encoding/json"
+
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// Conversions from fleet types to generated API types. Keeping them here
-// means the fleet package never depends on the wire format.
+// Conversions from fleet views to generated API types. The fleet package
+// never depends on the wire format; this file is the only bridge.
+
+func deref[T any](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
+}
+
+func optional[T comparable](v T) *T {
+	var zero T
+	if v == zero {
+		return nil
+	}
+	return &v
+}
+
+func nonNil[T any](xs []T) []T {
+	if xs == nil {
+		return []T{}
+	}
+	return xs
+}
+
+func mapSlice[A, B any](xs []A, f func(A) B) []B {
+	out := make([]B, 0, len(xs))
+	for _, x := range xs {
+		out = append(out, f(x))
+	}
+	return out
+}
 
 func toMembership(m store.Membership) AccountMembership {
 	return AccountMembership{Id: m.Account.ID, Name: m.Account.Name, Role: Role(m.Role)}
 }
 
-func toMe(me fleet.Me) Me {
-	accounts := make([]AccountMembership, 0, len(me.Accounts))
-	for _, m := range me.Accounts {
-		accounts = append(accounts, toMembership(m))
-	}
-	return Me{
+func toMe(me fleet.Me, a fleet.Actor) Me {
+	out := Me{
 		User:     User{Id: me.User.ID, Email: me.User.Email, Name: me.User.Name},
 		Account:  toMembership(me.Current),
-		Accounts: accounts,
+		Accounts: mapSlice(me.Accounts, toMembership),
+		ViaToken: a.TokenID != 0,
 	}
+	if a.TokenID != 0 {
+		scopes := make([]Scope, 0, len(a.Scopes))
+		for _, s := range a.Scopes {
+			scopes = append(scopes, Scope(s))
+		}
+		out.Scopes = &scopes
+	}
+	return out
+}
+
+func toServer(v fleet.ServerView) Server {
+	s := Server{
+		Id: v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
+		GroupId: v.GroupID, GroupName: optional(v.GroupName), Enrollment: ServerEnrollment(v.Enrollment),
+		HostKeyFingerprint: v.HostKeyFingerprint, HelperVersion: v.HelperVersion, Arch: v.Arch,
+		HostsControlPlane: v.HostsControlPlane, ProtectedContainers: nonNil(v.ProtectedContainers),
+		HasStoredLogin: v.HasStoredLogin, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
+		Reasons: nonNil(v.Reasons), LastSeenAt: v.LastSeenAt, LastError: v.LastError,
+		HostKeyMismatch: v.HostKeyMismatch, PresentedFingerprint: v.PresentedFingerprint,
+	}
+	if snap := v.Snapshot; snap != nil {
+		m := ServerMetrics{
+			CpuPercent: snap.CPUPercent, Load1: snap.Load1, UptimeSeconds: snap.UptimeSeconds,
+			RebootRequired: snap.RebootRequired, FailedUnits: len(snap.FailedUnits), Os: snap.OS, Kernel: snap.Kernel,
+		}
+		if snap.MemTotal > 0 {
+			m.MemPercent = round1(100 * float64(snap.MemUsed) / float64(snap.MemTotal))
+		}
+		for _, d := range snap.Disks {
+			if d.Total > 0 {
+				if p := round1(100 * float64(d.Used) / float64(d.Total)); p > m.DiskPercent {
+					m.DiskPercent = p
+				}
+			}
+		}
+		if snap.Docker != nil {
+			m.ContainersRunning = snap.Docker.Running
+			m.ContainersUnhealthy = snap.Docker.Unhealthy + snap.Docker.Restarting
+		}
+		s.Metrics = &m
+	}
+	if v.Updates != nil {
+		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt}
+	}
+	return s
+}
+
+func round1(f float64) float64 { return float64(int64(f*10+0.5)) / 10 }
+
+func toServerDetail(v fleet.ServerView) ServerDetail {
+	return ServerDetail{Server: toServer(v), Snapshot: v.Snapshot, PendingUpdates: v.Updates}
 }
 
 func toOverview(ov fleet.Overview) FleetOverview {
-	servers := make([]ServerSummary, 0, len(ov.Servers))
-	for _, s := range ov.Servers {
-		row := ServerSummary{Id: s.ID, Name: s.Name, Host: s.Host, Status: ServerStatus(s.Status)}
-		if s.GroupName != "" {
-			row.GroupName = &s.GroupName
-		}
-		if !s.LastSeenAt.IsZero() {
-			row.LastSeenAt = &s.LastSeenAt
-		}
-		servers = append(servers, row)
-	}
 	t := ov.Totals
 	return FleetOverview{
 		Totals: FleetTotals{
-			Servers: t.Servers, Groups: t.Groups, Ok: t.OK,
-			Warning: t.Warning, Failing: t.Failing, Unreachable: t.Unreachable,
+			Servers: t.Servers, Groups: t.Groups, Ok: t.OK, Warning: t.Warning,
+			Failing: t.Failing, Unreachable: t.Unreachable, Pending: t.Pending,
 		},
-		Servers: servers,
+		Servers: mapSlice(ov.Servers, toServer),
+	}
+}
+
+func toEnrollment(e fleet.Enrollment) Enrollment {
+	return Enrollment{Server: toServer(e.Server), Command: e.Command, ScriptUrl: e.ScriptURL, ExpiresAt: e.ExpiresAt}
+}
+
+func toDays(ds []string) []Day {
+	out := make([]Day, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, Day(d))
+	}
+	return out
+}
+
+func toGroup(g fleet.GroupView) Group {
+	return Group{
+		Id: g.ID, Name: g.Name, Timezone: g.Timezone, ServerCount: g.ServerCount, CreatedAt: g.CreatedAt,
+		NextClean: g.NextClean, NextUpdate: g.NextUpdate, LastRuns: mapSlice(g.LastRuns, toRun),
+		Clean: CleanPolicy{
+			Enabled: g.Clean.Enabled, Days: toDays(g.Clean.Days), Time: g.Clean.Time, BuildCache: g.Clean.BuildCache,
+			Vscode: g.Clean.VSCode, Journal: g.Clean.Journal, JournalSize: g.Clean.JournalSize,
+		},
+		Updates: UpdatePolicy{
+			Enabled: g.Updates.Enabled, Mode: UpdatePolicyMode(g.Updates.Mode), Days: toDays(g.Updates.Days),
+			Time: g.Updates.Time, Hold: nonNil(g.Updates.Hold), RebootIfRequired: g.Updates.RebootIfRequired,
+		},
+	}
+}
+
+func toRun(r fleet.RunView) Run {
+	return Run{
+		Id: r.ID, Kind: RunKind(r.Kind), Trigger: RunTrigger(r.Trigger), Status: RunStatus(r.Status),
+		GroupId: r.GroupID, GroupName: optional(r.GroupName), Options: r.Options, StartedAt: r.StartedAt,
+		FinishedAt: r.FinishedAt, Summary: r.Summary, BytesFreed: r.BytesFreed,
+		Servers: mapSlice(r.Servers, func(s fleet.RunServerView) RunServer {
+			return RunServer{
+				ServerId: s.ServerID, ServerName: s.ServerName, Status: RunServerStatus(s.Status), Error: s.Error,
+				BytesFreed: s.BytesFreed, Detail: jsonObject(s.Detail), StartedAt: s.StartedAt, FinishedAt: s.FinishedAt,
+			}
+		}),
+	}
+}
+
+func jsonObject(j store.JSON) map[string]any {
+	out := map[string]any{}
+	if len(j) > 0 {
+		_ = json.Unmarshal(j, &out)
+	}
+	return out
+}
+
+func toAlert(a fleet.AlertView) Alert {
+	return Alert{
+		Id: a.ID, Kind: a.Kind, ServerId: a.ServerID, ServerName: optional(a.ServerName), Subject: a.Subject,
+		Severity: AlertSeverity(a.Severity), Message: a.Message, PendingSince: a.PendingSince, FiredAt: a.FiredAt, ResolvedAt: a.ResolvedAt,
+	}
+}
+
+func toAlertRule(r fleet.AlertRuleView) AlertRule {
+	return AlertRule{Id: r.ID, Kind: AlertRuleKind(r.Kind), Enabled: r.Enabled, Threshold: r.Threshold, ForMinutes: r.ForMinutes}
+}
+
+func toChannel(c fleet.ChannelView) Channel {
+	return Channel{
+		Id: c.ID, Name: c.Name, Kind: ChannelKind(c.Kind), Enabled: c.Enabled, Target: c.Target,
+		LastError: c.LastError, LastSentAt: c.LastSentAt, CreatedAt: c.CreatedAt,
+	}
+}
+
+func toCert(c fleet.CertView) Cert {
+	return Cert{
+		Id: c.ID, Hostname: c.Hostname, Port: c.Port, ExpiresAt: c.ExpiresAt, DaysLeft: c.DaysLeft,
+		Issuer: c.Issuer, LastError: c.LastError, CheckedAt: c.CheckedAt,
+	}
+}
+
+func toToken(t fleet.TokenView) Token {
+	scopes := make([]Scope, 0, len(t.Scopes))
+	for _, s := range t.Scopes {
+		scopes = append(scopes, Scope(s))
+	}
+	return Token{
+		Id: t.ID, Name: t.Name, Scopes: scopes, Prefix: t.Prefix, LastUsedAt: t.LastUsedAt,
+		ExpiresAt: t.ExpiresAt, RevokedAt: t.RevokedAt, CreatedAt: t.CreatedAt,
+	}
+}
+
+func toActivity(e fleet.ActivityEntry) ActivityEntry {
+	return ActivityEntry{
+		Id: e.ID, Action: e.Action, Target: e.Target, Source: ActivityEntrySource(e.Source),
+		UserName: e.UserName, Detail: jsonObject(e.Detail), CreatedAt: e.CreatedAt,
 	}
 }

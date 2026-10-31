@@ -1,14 +1,20 @@
 openapi: 3.0.3
 info:
   title: easy-sys-admin control plane API
-  version: 0.1.0
+  version: 1.0.0
   description: |
-    JSON API of the control plane (`esa serve`). The web app, the CLI, and the
-    MCP server all read and write through this API.
+    JSON API of the control plane (`esa serve`). The web app, the `esa` CLI,
+    and the MCP server all go through it.
 
-    Browser sessions authenticate with the session cookie set by `/auth/callback`.
-    In production the cookie is named `__Host-esa_session`; on plain-HTTP local
-    development it is `esa_session`.
+    Browsers authenticate with the session cookie set by `/auth/callback`.
+    The CLI and MCP clients send `Authorization: Bearer esa_...` with a token
+    from Settings > API tokens. A token can do at most what its user's role
+    allows, limited further by its scopes (`read`, `logs:read`, `actions`,
+    `admin`).
+
+    Every error has the shape `{"error": {"code": "...", "message": "..."}}`.
+    Codes: `bad_request` (400), `unauthorized` (401), `forbidden` (403),
+    `not_found` (404), `conflict` (409), `unavailable` (502).
   license:
     name: Proprietary
 servers:
@@ -16,21 +22,33 @@ servers:
 
 security:
   - sessionCookie: []
+  - bearerToken: []
+
+tags:
+  - name: session
+  - name: fleet
+  - name: servers
+  - name: server-live
+    description: Live data read from a server through esa-helper.
+  - name: groups
+  - name: runs
+  - name: alerts
+  - name: settings
 
 paths:
   /auth/config:
     get:
       operationId: getAuthConfig
       summary: How users sign in to this install
-      tags: [auth]
+      tags: [session]
       security: []
       responses:
         '200':
           description: Sign-in configuration
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/AuthConfig'
+              schema: { $ref: '#/components/schemas/AuthConfig' }
+        default: { $ref: '#/components/responses/Error' }
 
   /me:
     get:
@@ -42,50 +60,748 @@ paths:
           description: Current session
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Me'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
 
   /me/account:
     put:
       operationId: switchAccount
-      summary: Change the account this session works in
+      summary: Change the account this browser session works in
       tags: [session]
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/SwitchAccountRequest'
+            schema: { $ref: '#/components/schemas/SwitchAccountRequest' }
       responses:
         '200':
           description: Session after the switch
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Me'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+              schema: { $ref: '#/components/schemas/Me' }
+        default: { $ref: '#/components/responses/Error' }
 
   /fleet/overview:
     get:
       operationId: getFleetOverview
-      summary: Every server in the current account with its latest status
+      summary: Every server in the current account with its latest status, worst first
       tags: [fleet]
       responses:
         '200':
           description: Fleet overview
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/FleetOverview'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
+              schema: { $ref: '#/components/schemas/FleetOverview' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/probe:
+    post:
+      operationId: probeServer
+      summary: Read a server's SSH host key without logging in
+      description: Show the fingerprint to the person adding the server so they can compare it before any credential is sent.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeRequest' }
+      responses:
+        '200':
+          description: The presented host key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProbeResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers:
+    post:
+      operationId: addServer
+      summary: Add a server with a one-time sudo login (installs esa-helper)
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddServerRequest' }
+      responses:
+        '201':
+          description: The new server
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/enrollments:
+    post:
+      operationId: createEnrollment
+      summary: Register a server and get a one-time enroll command to paste on it
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EnrollRequest' }
+      responses:
+        '201':
+          description: The pending server and its enroll command
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrollment' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServer
+      summary: One server with its latest snapshot and pending updates
+      tags: [servers]
+      responses:
+        '200':
+          description: Server detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerDetail' }
+        default: { $ref: '#/components/responses/Error' }
+    patch:
+      operationId: updateServer
+      summary: Rename a server, move it to another group, or change its protection settings
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateServerRequest' }
+      responses:
+        '200':
+          description: The updated server
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteServer
+      summary: Remove a server from esa
+      tags: [servers]
+      parameters:
+        - name: uninstall
+          in: query
+          description: Also remove the esa user, its sudo rule, and esa-helper from the server.
+          schema: { type: boolean, default: false }
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/enrollment:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: renewEnrollment
+      summary: Issue a new enroll command for a pending server
+      tags: [servers]
+      responses:
+        '200':
+          description: A fresh enroll command
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Enrollment' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/host-key:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: acceptHostKey
+      summary: Accept the new host key a server presented
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AcceptHostKeyRequest' }
+      responses:
+        '200':
+          description: The server, working again
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/helper:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: reinstallHelper
+      summary: Reinstall or update esa-helper with a sudo login (or the stored one)
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReinstallRequest' }
+      responses:
+        '200':
+          description: The server with the new helper version
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/metrics:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerMetrics
+      summary: Chart points for CPU, memory, disk, and load
+      tags: [servers]
+      parameters:
+        - name: window
+          in: query
+          schema: { type: string, enum: [1h, 24h, 7d, 30d, 90d], default: 24h }
+      responses:
+        '200':
+          description: Points, oldest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MetricsResponse' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/updates/check:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: checkServerUpdates
+      summary: Refresh package lists on the server (apt-get update) and list pending updates
+      tags: [server-live]
+      responses:
+        '200':
+          description: The server with fresh update data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServerDetail' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/services:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: listServices
+      summary: systemd services on the server, failed first
+      tags: [server-live]
+      responses:
+        '200':
+          description: Services
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/services/{unit}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+      - name: unit
+        in: path
+        required: true
+        schema: { type: string, example: nginx.service }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [start, stop, restart] }
+    post:
+      operationId: serviceAction
+      summary: Start, stop, or restart a service. Protected units cannot be stopped.
+      tags: [server-live]
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/containers:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: listContainers
+      summary: Docker containers on the server
+      tags: [server-live]
+      responses:
+        '200':
+          description: Containers
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ContainerList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/containers/image-check:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: checkContainerImages
+      summary: Compare each container's image with its registry
+      tags: [server-live]
+      responses:
+        '200':
+          description: One result per container
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImageCheckList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/containers/{name}/{action}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+      - name: name
+        in: path
+        required: true
+        schema: { type: string }
+      - name: action
+        in: path
+        required: true
+        schema: { type: string, enum: [start, stop, restart, update] }
+    post:
+      operationId: containerAction
+      summary: Start, stop, restart, or update (pull and recreate) one container
+      description: Protected containers need `confirm` set to the container's name.
+      tags: [server-live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContainerActionRequest' }
+      responses:
+        '200':
+          description: Done
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/logs:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerLogs
+      summary: Journal lines of a unit, or log lines of a container (needs logs:read)
+      tags: [server-live]
+      parameters:
+        - { name: unit, in: query, schema: { type: string } }
+        - { name: container, in: query, schema: { type: string } }
+        - { name: lines, in: query, schema: { type: integer, default: 200, minimum: 1, maximum: 1000 } }
+        - { name: priority, in: query, description: 'Journal priority 0 (emerg) to 7 (debug); -1 for all', schema: { type: integer, default: -1, minimum: -1, maximum: 7 } }
+        - { name: grep, in: query, schema: { type: string, maxLength: 200 } }
+      responses:
+        '200':
+          description: Log lines, oldest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LogList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/access:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerAccess
+      summary: Users with a login shell, SSH keys, sudo and docker group members, recent logins
+      tags: [server-live]
+      responses:
+        '200':
+          description: Access report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccessReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/security:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerSecurity
+      summary: Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades
+      tags: [server-live]
+      responses:
+        '200':
+          description: Security report
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecurityReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/jobs:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerJobs
+      summary: Cron entries and systemd timers
+      tags: [server-live]
+      responses:
+        '200':
+          description: Scheduled jobs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/JobsReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /groups:
+    get:
+      operationId: listGroups
+      summary: Groups in the current account
+      tags: [groups]
+      responses:
+        '200':
+          description: Groups
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GroupList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createGroup
+      summary: Create a group
+      tags: [groups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupInput' }
+      responses:
+        '201':
+          description: The new group
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /groups/{groupId}:
+    parameters:
+      - $ref: '#/components/parameters/GroupId'
+    get:
+      operationId: getGroup
+      summary: One group with its last runs
+      tags: [groups]
+      responses:
+        '200':
+          description: Group
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: updateGroup
+      summary: Replace a group's settings
+      tags: [groups]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupInput' }
+      responses:
+        '200':
+          description: The updated group
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Group' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteGroup
+      summary: Delete a group; its servers stay, without a group
+      tags: [groups]
+      responses:
+        '204':
+          description: Deleted
+        default: { $ref: '#/components/responses/Error' }
+
+  /runs:
+    get:
+      operationId: listRuns
+      summary: Maintenance runs, newest first
+      tags: [runs]
+      parameters:
+        - { name: groupId, in: query, schema: { type: integer, format: int64 } }
+        - { name: serverId, in: query, schema: { type: integer, format: int64 } }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/RunKind' } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        '200':
+          description: Runs
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RunList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: startRun
+      summary: Start a measure, clean, update, or reboot run on a group or on servers
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StartRunRequest' }
+      responses:
+        '202':
+          description: The run, started in the background
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /runs/{runId}:
+    parameters:
+      - name: runId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    get:
+      operationId: getRun
+      summary: One run with each server's result
+      tags: [runs]
+      responses:
+        '200':
+          description: Run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /alerts:
+    get:
+      operationId: listAlerts
+      summary: Open alerts, or recent alerts including resolved ones
+      tags: [alerts]
+      parameters:
+        - { name: all, in: query, schema: { type: boolean, default: false } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 500 } }
+      responses:
+        '200':
+          description: Alerts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /alerts/rules:
+    get:
+      operationId: listAlertRules
+      summary: Alert rules of the account
+      tags: [alerts]
+      responses:
+        '200':
+          description: Rules
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRuleList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /alerts/rules/{kind}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        schema: { type: string }
+    put:
+      operationId: updateAlertRule
+      summary: Change one alert rule
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AlertRuleInput' }
+      responses:
+        '200':
+          description: The updated rule
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AlertRule' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /channels:
+    get:
+      operationId: listChannels
+      summary: Notification channels (secrets are never returned)
+      tags: [alerts]
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChannelList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createChannel
+      summary: Add a notification channel (owner only)
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateChannelRequest' }
+      responses:
+        '201':
+          description: The new channel
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Channel' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /channels/{channelId}:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    patch:
+      operationId: updateChannel
+      summary: Turn a channel on or off
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateChannelRequest' }
+      responses:
+        '204':
+          description: Updated
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteChannel
+      summary: Delete a channel
+      tags: [alerts]
+      responses:
+        '204':
+          description: Deleted
+        default: { $ref: '#/components/responses/Error' }
+
+  /channels/{channelId}/test:
+    parameters:
+      - $ref: '#/components/parameters/ChannelId'
+    post:
+      operationId: testChannel
+      summary: Send a test notification
+      tags: [alerts]
+      responses:
+        '200':
+          description: Sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActionResult' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /certs:
+    get:
+      operationId: listCerts
+      summary: TLS certificates checked daily, soonest expiry first
+      tags: [alerts]
+      responses:
+        '200':
+          description: Certificates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CertList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: addCert
+      summary: Add a hostname to check
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AddCertRequest' }
+      responses:
+        '201':
+          description: The checked certificate
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cert' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /certs/{certId}:
+    parameters:
+      - name: certId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteCert
+      summary: Stop checking a hostname
+      tags: [alerts]
+      responses:
+        '204':
+          description: Deleted
+        default: { $ref: '#/components/responses/Error' }
+
+  /tokens:
+    get:
+      operationId: listTokens
+      summary: Your API tokens in this account (browser sessions only)
+      tags: [settings]
+      responses:
+        '200':
+          description: Tokens
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createToken
+      summary: Create an API token for the CLI or an MCP client. The secret is shown once.
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTokenRequest' }
+      responses:
+        '201':
+          description: The token and its secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreatedToken' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /tokens/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: revokeToken
+      summary: Revoke a token
+      tags: [settings]
+      responses:
+        '204':
+          description: Revoked
+        default: { $ref: '#/components/responses/Error' }
+
+  /activity:
+    get:
+      operationId: listActivity
+      summary: Audit log of the account, newest first (admins)
+      tags: [settings]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 500 } }
+      responses:
+        '200':
+          description: Audit entries
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /settings/ssh-key:
+    get:
+      operationId: getSSHKey
+      summary: The public key the control plane logs in to servers with
+      tags: [settings]
+      responses:
+        '200':
+          description: Public key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SSHKey' }
+        default: { $ref: '#/components/responses/Error' }
 
 components:
   securitySchemes:
@@ -93,161 +809,914 @@ components:
       type: apiKey
       in: cookie
       name: esa_session
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: An API token (esa_...) from Settings > API tokens.
+
+  parameters:
+    ServerId:
+      name: serverId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    GroupId:
+      name: groupId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    ChannelId:
+      name: channelId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
 
   responses:
-    BadRequest:
-      description: The request is malformed
+    Error:
+      description: Error
       content:
         application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Unauthorized:
-      description: No valid session
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    Forbidden:
-      description: The session may not do this
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+          schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
     Error:
       type: object
       required: [error]
       properties:
-        error:
-          $ref: '#/components/schemas/ErrorDetail'
+        error: { $ref: '#/components/schemas/ErrorDetail' }
 
     ErrorDetail:
       type: object
       required: [code, message]
       properties:
-        code:
-          type: string
-          description: Stable machine-readable code.
-          example: unauthorized
-        message:
-          type: string
-          description: Human-readable explanation.
-          example: Sign in to continue.
+        code: { type: string, description: Stable machine-readable code., example: not_found }
+        message: { type: string, description: Human-readable explanation. }
+        field: { type: string, description: The input field a bad_request is about. }
 
     AuthConfig:
       type: object
       required: [mode, providerName]
       properties:
-        mode:
-          type: string
-          enum: [oidc, dev]
-          description: '`dev` is a local-only login that needs no identity provider.'
-        providerName:
-          type: string
-          example: Authentik
+        mode: { type: string, enum: [oidc, dev], description: '`dev` is a local-only login without an identity provider.' }
+        providerName: { type: string, example: Authentik }
 
     Role:
       type: string
       enum: [owner, admin, viewer]
 
+    Scope:
+      type: string
+      enum: [read, 'logs:read', actions, admin]
+
     User:
       type: object
       required: [id, email, name]
       properties:
-        id:
-          type: integer
-          format: int64
-        email:
-          type: string
-        name:
-          type: string
+        id: { type: integer, format: int64 }
+        email: { type: string }
+        name: { type: string }
 
     AccountMembership:
       type: object
       required: [id, name, role]
       properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        role:
-          $ref: '#/components/schemas/Role'
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
 
     Me:
       type: object
-      required: [user, account, accounts]
+      required: [user, account, accounts, viaToken]
       properties:
-        user:
-          $ref: '#/components/schemas/User'
-        account:
-          $ref: '#/components/schemas/AccountMembership'
+        user: { $ref: '#/components/schemas/User' }
+        account: { $ref: '#/components/schemas/AccountMembership' }
         accounts:
           type: array
-          description: Every account the user belongs to, including the current one.
-          items:
-            $ref: '#/components/schemas/AccountMembership'
+          items: { $ref: '#/components/schemas/AccountMembership' }
+        viaToken: { type: boolean, description: True when the request used an API token. }
+        scopes:
+          type: array
+          description: The token's scopes; absent for browser sessions.
+          items: { $ref: '#/components/schemas/Scope' }
 
     SwitchAccountRequest:
       type: object
       required: [accountId]
       properties:
-        accountId:
-          type: integer
-          format: int64
+        accountId: { type: integer, format: int64 }
+
+    ActionResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        output: { type: string }
+
+    # ---- Servers ---------------------------------------------------------------
 
     ServerStatus:
       type: string
-      description: |
-        `pending` means the server was added but never answered a poll yet.
+      description: '`pending` means the server never answered a poll yet.'
       enum: [ok, warning, failing, unreachable, pending]
 
-    ServerSummary:
+    ServerMetrics:
       type: object
-      required: [id, name, host, status]
+      description: Headline numbers from the latest snapshot.
+      required: [cpuPercent, memPercent, diskPercent, load1, uptimeSeconds, rebootRequired, failedUnits, containersRunning, containersUnhealthy, os, kernel]
       properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        host:
-          type: string
-        groupName:
-          type: string
+        cpuPercent: { type: number, format: double }
+        memPercent: { type: number, format: double }
+        diskPercent: { type: number, format: double, description: Use of the fullest real filesystem. }
+        load1: { type: number, format: double }
+        uptimeSeconds: { type: integer, format: int64 }
+        rebootRequired: { type: boolean }
+        failedUnits: { type: integer }
+        containersRunning: { type: integer }
+        containersUnhealthy: { type: integer }
+        os: { type: string }
+        kernel: { type: string }
+
+    UpdateCounts:
+      type: object
+      required: [security, other]
+      properties:
+        security: { type: integer }
+        other: { type: integer }
+        checkedAt: { type: string, format: date-time, nullable: true }
+
+    Server:
+      type: object
+      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        username: { type: string, description: 'SSH user the control plane uses, normally esa.' }
+        groupId: { type: integer, format: int64, nullable: true }
+        groupName: { type: string, nullable: true }
+        enrollment: { type: string, enum: [pending, ready] }
+        hostKeyFingerprint: { type: string }
+        helperVersion: { type: string }
+        arch: { type: string }
+        hostsControlPlane: { type: boolean }
+        protectedContainers:
+          type: array
+          description: Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec).
+          items: { type: string }
+        hasStoredLogin: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        status: { $ref: '#/components/schemas/ServerStatus' }
+        reasons: { type: array, items: { type: string } }
+        lastSeenAt: { type: string, format: date-time, nullable: true }
+        lastError: { type: string }
+        hostKeyMismatch: { type: boolean }
+        presentedFingerprint: { type: string, description: 'Fingerprint of the changed key, when hostKeyMismatch is true.' }
+        metrics:
+          type: object
+          allOf: [{ $ref: '#/components/schemas/ServerMetrics' }]
           nullable: true
-        status:
-          $ref: '#/components/schemas/ServerStatus'
-        lastSeenAt:
-          type: string
-          format: date-time
+        updates:
+          type: object
+          allOf: [{ $ref: '#/components/schemas/UpdateCounts' }]
+          nullable: true
+
+    ServerDetail:
+      type: object
+      required: [server]
+      properties:
+        server: { $ref: '#/components/schemas/Server' }
+        snapshot:
+          type: object
+          allOf: [{ $ref: '#/components/schemas/HostStatus' }]
+          nullable: true
+        pendingUpdates:
+          type: object
+          allOf: [{ $ref: '#/components/schemas/PendingUpdates' }]
           nullable: true
 
     FleetTotals:
       type: object
-      required: [servers, groups, ok, warning, failing, unreachable]
+      required: [servers, groups, ok, warning, failing, unreachable, pending]
       properties:
-        servers:
-          type: integer
-        groups:
-          type: integer
-        ok:
-          type: integer
-        warning:
-          type: integer
-        failing:
-          type: integer
-        unreachable:
-          type: integer
+        servers: { type: integer }
+        groups: { type: integer }
+        ok: { type: integer }
+        warning: { type: integer }
+        failing: { type: integer }
+        unreachable: { type: integer }
+        pending: { type: integer }
 
     FleetOverview:
       type: object
       required: [totals, servers]
       properties:
-        totals:
-          $ref: '#/components/schemas/FleetTotals'
+        totals: { $ref: '#/components/schemas/FleetTotals' }
         servers:
           type: array
-          items:
-            $ref: '#/components/schemas/ServerSummary'
+          items: { $ref: '#/components/schemas/Server' }
+
+    ProbeRequest:
+      type: object
+      required: [host]
+      properties:
+        host: { type: string }
+        port: { type: integer, default: 22 }
+
+    ProbeResult:
+      type: object
+      required: [hostKey, fingerprint, keyType]
+      properties:
+        hostKey: { type: string, description: The key in authorized_keys format. Send it back in AddServerRequest.hostKey. }
+        fingerprint: { type: string, example: 'SHA256:qot5ge7vEVWKuojCBUpon6nuWfbMwSf/vOR0+G6shiw' }
+        keyType: { type: string, example: ssh-ed25519 }
+
+    Login:
+      type: object
+      description: A one-time sudo-capable login. Used to install esa-helper, then discarded unless keepLogin is set.
+      required: [username]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password, description: Login password; also used for sudo when the user is not root. }
+        privateKey: { type: string, format: password, description: PEM or OpenSSH private key. }
+        passphrase: { type: string, format: password }
+
+    AddServerRequest:
+      type: object
+      required: [name, host, hostKey, login]
+      properties:
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer, default: 22 }
+        groupId: { type: integer, format: int64, nullable: true }
+        hostKey: { type: string, description: The accepted key from probeServer. }
+        login: { $ref: '#/components/schemas/Login' }
+        keepLogin: { type: boolean, default: false, description: Store the login encrypted for later helper updates (owners only). }
+        hostsControlPlane: { type: boolean, default: false }
+
+    EnrollRequest:
+      type: object
+      required: [name, host]
+      properties:
+        name: { type: string }
+        host: { type: string }
+        port: { type: integer, default: 22 }
+        groupId: { type: integer, format: int64, nullable: true }
+        hostsControlPlane: { type: boolean, default: false }
+
+    Enrollment:
+      type: object
+      required: [server, command, scriptUrl, expiresAt]
+      properties:
+        server: { $ref: '#/components/schemas/Server' }
+        command: { type: string, example: 'curl -fsSL https://esa.example.com/enroll/enr_... | sudo sh' }
+        scriptUrl: { type: string }
+        expiresAt: { type: string, format: date-time }
+
+    UpdateServerRequest:
+      type: object
+      properties:
+        name: { type: string }
+        groupId: { type: integer, format: int64, nullable: true, description: Move to this group. Send clearGroup to remove from its group. }
+        clearGroup: { type: boolean }
+        hostsControlPlane: { type: boolean }
+        protectedContainers: { type: array, items: { type: string } }
+
+    AcceptHostKeyRequest:
+      type: object
+      required: [fingerprint]
+      properties:
+        fingerprint: { type: string, description: 'Must equal the presented fingerprint, to confirm what you checked.' }
+
+    ReinstallRequest:
+      type: object
+      properties:
+        login: { $ref: '#/components/schemas/Login' }
+
+    MetricPoint:
+      type: object
+      required: [at, cpuPercent, memPercent, diskPercent, load1]
+      properties:
+        at: { type: string, format: date-time }
+        cpuPercent: { type: number, format: double }
+        memPercent: { type: number, format: double }
+        diskPercent: { type: number, format: double }
+        load1: { type: number, format: double }
+
+    MetricsResponse:
+      type: object
+      required: [window, points]
+      properties:
+        window: { type: string }
+        points:
+          type: array
+          items: { $ref: '#/components/schemas/MetricPoint' }
+
+    ContainerActionRequest:
+      type: object
+      properties:
+        confirm: { type: string, description: The container's name; required for protected containers. }
+
+    # ---- Data reported by esa-helper ---------------------------------------------
+    # These map one-to-one to the Go types in apps/esa/internal/hostops/proto.
+
+    HostStatus:
+      x-go-type: proto.Status
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [collectedAt, hostname, os, kernel, arch, bootTime, uptimeSeconds, cpuCount, cpuPercent, load1, load5, load15, memTotal, memUsed, memAvailable, swapTotal, swapUsed, disks, net, timeSynced, rebootRequired, failedUnits]
+      properties:
+        collectedAt: { type: string, format: date-time }
+        hostname: { type: string }
+        os: { type: string }
+        kernel: { type: string }
+        arch: { type: string }
+        bootTime: { type: string, format: date-time }
+        uptimeSeconds: { type: integer, format: int64 }
+        cpuCount: { type: integer }
+        cpuPercent: { type: number, format: double }
+        load1: { type: number, format: double }
+        load5: { type: number, format: double }
+        load15: { type: number, format: double }
+        memTotal: { type: integer, format: int64 }
+        memUsed: { type: integer, format: int64 }
+        memAvailable: { type: integer, format: int64 }
+        swapTotal: { type: integer, format: int64 }
+        swapUsed: { type: integer, format: int64 }
+        disks: { type: array, items: { $ref: '#/components/schemas/Disk' } }
+        net: { type: array, items: { $ref: '#/components/schemas/NetIf' } }
+        timeSynced: { type: boolean }
+        rebootRequired: { type: boolean }
+        rebootPackages: { type: array, items: { type: string } }
+        failedUnits: { type: array, items: { type: string } }
+        docker: { $ref: '#/components/schemas/DockerSummary' }
+
+    Disk:
+      x-go-type: proto.Disk
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [mount, device, fsType, total, used, avail, inodesTotal, inodesUsed]
+      properties:
+        mount: { type: string }
+        device: { type: string }
+        fsType: { type: string }
+        total: { type: integer, format: int64 }
+        used: { type: integer, format: int64 }
+        avail: { type: integer, format: int64 }
+        inodesTotal: { type: integer, format: int64 }
+        inodesUsed: { type: integer, format: int64 }
+
+    NetIf:
+      x-go-type: proto.NetIf
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [name, rxBytes, txBytes]
+      properties:
+        name: { type: string }
+        rxBytes: { type: integer, format: int64 }
+        txBytes: { type: integer, format: int64 }
+
+    DockerSummary:
+      x-go-type: proto.DockerSummary
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [version, running, exited, restarting, unhealthy, total, imagesBytes, buildCacheBytes, volumesBytes, containersBytes]
+      properties:
+        version: { type: string }
+        running: { type: integer }
+        exited: { type: integer }
+        restarting: { type: integer }
+        unhealthy: { type: integer }
+        total: { type: integer }
+        imagesBytes: { type: integer, format: int64 }
+        buildCacheBytes: { type: integer, format: int64 }
+        volumesBytes: { type: integer, format: int64 }
+        containersBytes: { type: integer, format: int64 }
+
+    PendingUpdates:
+      x-go-type: proto.PendingUpdates
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [packages, security, other, held, listsUpdatedAt]
+      properties:
+        packages: { type: array, items: { $ref: '#/components/schemas/PendingPackage' } }
+        security: { type: integer }
+        other: { type: integer }
+        held: { type: array, items: { type: string } }
+        listsUpdatedAt: { type: string, format: date-time }
+
+    PendingPackage:
+      x-go-type: proto.PendingPackage
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [name, from, to, archive, security]
+      properties:
+        name: { type: string }
+        from: { type: string }
+        to: { type: string }
+        archive: { type: string }
+        security: { type: boolean }
+
+    ServiceUnit:
+      x-go-type: proto.Service
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [unit, description, load, active, sub, enabled, memoryBytes, protected]
+      properties:
+        unit: { type: string }
+        description: { type: string }
+        load: { type: string }
+        active: { type: string }
+        sub: { type: string }
+        enabled: { type: string }
+        memoryBytes: { type: integer, format: int64 }
+        since: { type: string, format: date-time }
+        protected: { type: boolean }
+
+    ServiceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ServiceUnit' } }
+
+    Container:
+      x-go-type: proto.Container
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [id, name, image, imageId, state, status, restartCount, restartPolicy, createdAt, ports, protected]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        image: { type: string }
+        imageId: { type: string }
+        state: { type: string }
+        status: { type: string }
+        health: { type: string }
+        restartCount: { type: integer }
+        restartPolicy: { type: string }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: string, format: date-time }
+        ports: { type: array, items: { type: string } }
+        composeProject: { type: string }
+        composeService: { type: string }
+        protected: { type: boolean }
+
+    ContainerList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Container' } }
+
+    ImageCheck:
+      x-go-type: proto.ImageCheck
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [container, image, localDigest, remoteDigest, updateAvailable]
+      properties:
+        container: { type: string }
+        image: { type: string }
+        localDigest: { type: string }
+        remoteDigest: { type: string }
+        updateAvailable: { type: boolean }
+        error: { type: string }
+
+    ImageCheckList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ImageCheck' } }
+
+    LogLine:
+      x-go-type: proto.LogLine
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [time, priority, message]
+      properties:
+        time: { type: string, format: date-time }
+        priority: { type: integer }
+        message: { type: string }
+        stream: { type: string }
+
+    LogList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LogLine' } }
+
+    AccessReport:
+      x-go-type: proto.AccessReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [users, groups, logins, failedSsh24h, passwordAuth, permitRootLogin]
+      properties:
+        users: { type: array, items: { $ref: '#/components/schemas/LocalUser' } }
+        groups:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+        logins: { type: array, items: { $ref: '#/components/schemas/LoginRecord' } }
+        failedSsh24h: { type: integer }
+        passwordAuth: { type: boolean }
+        permitRootLogin: { type: string }
+
+    LocalUser:
+      x-go-type: proto.LocalUser
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [name, uid, home, shell, authorizedKeys]
+      properties:
+        name: { type: string }
+        uid: { type: integer }
+        home: { type: string }
+        shell: { type: string }
+        authorizedKeys: { type: array, items: { $ref: '#/components/schemas/AuthorizedKey' } }
+
+    AuthorizedKey:
+      x-go-type: proto.AuthorizedKey
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [type, fingerprint, comment]
+      properties:
+        type: { type: string }
+        fingerprint: { type: string }
+        comment: { type: string }
+
+    LoginRecord:
+      x-go-type: proto.Login
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [user, from, at]
+      properties:
+        user: { type: string }
+        from: { type: string }
+        at: { type: string, format: date-time }
+
+    SecurityReport:
+      x-go-type: proto.SecurityReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [listening, firewall, crowdsec, fail2ban, unattendedUpgrades]
+      properties:
+        listening: { type: array, items: { $ref: '#/components/schemas/Listener' } }
+        firewall: { type: string }
+        crowdsec: { type: string }
+        fail2ban: { type: string }
+        unattendedUpgrades: { type: boolean }
+
+    Listener:
+      x-go-type: proto.Listener
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [proto, address, port, process]
+      properties:
+        proto: { type: string }
+        address: { type: string }
+        port: { type: integer }
+        process: { type: string }
+
+    JobsReport:
+      x-go-type: proto.JobsReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [cron, timers]
+      properties:
+        cron: { type: array, items: { $ref: '#/components/schemas/CronEntry' } }
+        timers: { type: array, items: { $ref: '#/components/schemas/Timer' } }
+
+    CronEntry:
+      x-go-type: proto.CronEntry
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [source, user, schedule, command]
+      properties:
+        source: { type: string }
+        user: { type: string }
+        schedule: { type: string }
+        command: { type: string }
+
+    Timer:
+      x-go-type: proto.Timer
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [unit, activates, result, failed]
+      properties:
+        unit: { type: string }
+        activates: { type: string }
+        next: { type: string, format: date-time }
+        last: { type: string, format: date-time }
+        result: { type: string }
+        failed: { type: boolean }
+
+    # ---- Groups and runs ------------------------------------------------------------
+
+    Day:
+      type: string
+      enum: [sun, mon, tue, wed, thu, fri, sat]
+
+    CleanPolicy:
+      type: object
+      required: [enabled, days, time, buildCache, vscode, journal, journalSize]
+      properties:
+        enabled: { type: boolean, description: Run cleanups on the schedule. }
+        days: { type: array, items: { $ref: '#/components/schemas/Day' } }
+        time: { type: string, example: '03:30', description: HH:MM in the group's timezone. }
+        buildCache: { type: boolean, description: Prune idle Docker build cache. }
+        vscode: { type: boolean, description: Remove old VS Code server copies. }
+        journal: { type: boolean, description: Cap the systemd journal. }
+        journalSize: { type: string, example: 200M }
+
+    UpdatePolicy:
+      type: object
+      required: [enabled, mode, days, time, hold, rebootIfRequired]
+      properties:
+        enabled: { type: boolean }
+        mode: { type: string, enum: [security, all] }
+        days: { type: array, items: { $ref: '#/components/schemas/Day' } }
+        time: { type: string, example: '04:00' }
+        hold: { type: array, items: { type: string }, description: Packages never upgraded by esa. }
+        rebootIfRequired: { type: boolean, description: Reboot one server at a time after updates when the server asks for it. Never the control plane host. }
+
+    GroupInput:
+      type: object
+      required: [name, timezone, clean, updates]
+      properties:
+        name: { type: string }
+        timezone: { type: string, example: Asia/Colombo }
+        clean: { $ref: '#/components/schemas/CleanPolicy' }
+        updates: { $ref: '#/components/schemas/UpdatePolicy' }
+
+    Group:
+      type: object
+      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        timezone: { type: string }
+        clean: { $ref: '#/components/schemas/CleanPolicy' }
+        updates: { $ref: '#/components/schemas/UpdatePolicy' }
+        serverCount: { type: integer }
+        nextClean: { type: string, format: date-time, nullable: true }
+        nextUpdate: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        lastRuns: { type: array, items: { $ref: '#/components/schemas/Run' } }
+
+    GroupList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Group' } }
+
+    RunKind:
+      type: string
+      enum: [measure, clean, update, reboot]
+
+    RunOptions:
+      x-go-type: fleet.RunOptions
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet }
+      type: object
+      properties:
+        buildCache: { type: boolean }
+        vscode: { type: boolean }
+        journal: { type: boolean }
+        journalSize: { type: string }
+        updateMode: { type: string, enum: [security, all] }
+        hold: { type: array, items: { type: string } }
+        rebootIfRequired: { type: boolean }
+
+    StartRunRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { $ref: '#/components/schemas/RunKind' }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverIds: { type: array, items: { type: integer, format: int64 } }
+        options:
+          type: object
+          allOf: [{ $ref: '#/components/schemas/RunOptions' }]
+          nullable: true
+          description: Overrides the group's settings. Omit to use them.
+
+    RunServer:
+      type: object
+      required: [serverId, serverName, status, error, bytesFreed, detail]
+      properties:
+        serverId: { type: integer, format: int64 }
+        serverName: { type: string }
+        status: { type: string, enum: [queued, running, succeeded, failed, skipped] }
+        error: { type: string }
+        bytesFreed: { type: integer, format: int64 }
+        detail:
+          type: object
+          additionalProperties: true
+          description: Cleanup report, upgrade result, or reboot outcome.
+        startedAt: { type: string, format: date-time, nullable: true }
+        finishedAt: { type: string, format: date-time, nullable: true }
+
+    Run:
+      type: object
+      required: [id, kind, trigger, status, options, startedAt, summary, bytesFreed, servers]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { $ref: '#/components/schemas/RunKind' }
+        trigger: { type: string, enum: [schedule, manual, api, mcp] }
+        status: { type: string, enum: [running, succeeded, failed, partial, skipped, missed] }
+        groupId: { type: integer, format: int64, nullable: true }
+        groupName: { type: string, nullable: true }
+        options: { $ref: '#/components/schemas/RunOptions' }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true }
+        summary: { type: string }
+        bytesFreed: { type: integer, format: int64 }
+        servers: { type: array, items: { $ref: '#/components/schemas/RunServer' } }
+
+    RunList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Run' } }
+
+    # ---- Alerts, channels, certificates ---------------------------------------------
+
+    Alert:
+      type: object
+      required: [id, kind, subject, severity, message, pendingSince]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string }
+        serverId: { type: integer, format: int64, nullable: true }
+        serverName: { type: string, nullable: true }
+        subject: { type: string }
+        severity: { type: string, enum: [info, warning, critical] }
+        message: { type: string }
+        pendingSince: { type: string, format: date-time }
+        firedAt: { type: string, format: date-time, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+
+    AlertList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Alert' } }
+
+    AlertRule:
+      type: object
+      required: [id, kind, enabled, threshold, forMinutes]
+      properties:
+        id: { type: integer, format: int64 }
+        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key] }
+        enabled: { type: boolean }
+        threshold: { type: number, format: double, description: 'Percent for disk, inode, and memory; days for cert_expiry; unused otherwise.' }
+        forMinutes: { type: integer, description: How long the condition must hold before the alert fires. }
+
+    AlertRuleList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/AlertRule' } }
+
+    AlertRuleInput:
+      type: object
+      required: [enabled, threshold, forMinutes]
+      properties:
+        enabled: { type: boolean }
+        threshold: { type: number, format: double }
+        forMinutes: { type: integer }
+
+    ChannelKind:
+      type: string
+      enum: [ntfy, webhook, discord, slack, email]
+
+    ChannelConfig:
+      x-go-type: fleet.ChannelConfig
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet }
+      type: object
+      description: 'ntfy: url (with topic) and optional token. webhook: url and optional secret for an X-Esa-Signature HMAC. discord and slack: the incoming webhook url. email: smtpHost, smtpPort, username, password, from, to.'
+      properties:
+        url: { type: string }
+        token: { type: string, format: password }
+        secret: { type: string, format: password }
+        smtpHost: { type: string }
+        smtpPort: { type: integer }
+        username: { type: string }
+        password: { type: string, format: password }
+        from: { type: string }
+        to: { type: array, items: { type: string } }
+
+    Channel:
+      type: object
+      required: [id, name, kind, enabled, target, lastError, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/ChannelKind' }
+        enabled: { type: boolean }
+        target: { type: string, description: 'A description safe to show, without secrets.' }
+        lastError: { type: string }
+        lastSentAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    ChannelList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Channel' } }
+
+    CreateChannelRequest:
+      type: object
+      required: [name, kind, config]
+      properties:
+        name: { type: string }
+        kind: { $ref: '#/components/schemas/ChannelKind' }
+        config: { $ref: '#/components/schemas/ChannelConfig' }
+
+    UpdateChannelRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+
+    Cert:
+      type: object
+      required: [id, hostname, port, issuer, lastError]
+      properties:
+        id: { type: integer, format: int64 }
+        hostname: { type: string }
+        port: { type: integer }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        daysLeft: { type: integer, nullable: true }
+        issuer: { type: string }
+        lastError: { type: string }
+        checkedAt: { type: string, format: date-time, nullable: true }
+
+    CertList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Cert' } }
+
+    AddCertRequest:
+      type: object
+      required: [hostname]
+      properties:
+        hostname: { type: string }
+        port: { type: integer, default: 443 }
+
+    # ---- Settings ----------------------------------------------------------------------
+
+    Token:
+      type: object
+      required: [id, name, scopes, prefix, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
+        prefix: { type: string, description: 'The first characters of the secret, to recognise it.' }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+
+    TokenList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Token' } }
+
+    CreateTokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
+        expiresInDays: { type: integer, minimum: 0, maximum: 3650, description: 0 or absent means no expiry. }
+
+    CreatedToken:
+      type: object
+      required: [token, secret]
+      properties:
+        token: { $ref: '#/components/schemas/Token' }
+        secret: { type: string, description: Shown only in this response. }
+
+    ActivityEntry:
+      type: object
+      required: [id, action, target, source, userName, detail, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        action: { type: string }
+        target: { type: string }
+        source: { type: string, enum: [web, api, mcp, system] }
+        userName: { type: string }
+        detail: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+
+    ActivityList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ActivityEntry' } }
+
+    SSHKey:
+      type: object
+      required: [publicKey, fingerprint]
+      properties:
+        publicKey: { type: string }
+        fingerprint: { type: string }

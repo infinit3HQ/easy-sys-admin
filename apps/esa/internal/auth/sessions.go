@@ -109,6 +109,10 @@ func (m *Sessions) SwitchAccount(ctx context.Context, accountID int64) (store.Me
 // through without an actor; handlers decide whether that is allowed.
 func (m *Sessions) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := fleet.ActorFrom(r.Context()); ok {
+			next.ServeHTTP(w, r) // already authenticated with a bearer token
+			return
+		}
 		actor, hash, ok, err := m.resolve(r)
 		if err != nil {
 			m.log.Error("resolve session", "err", err)
