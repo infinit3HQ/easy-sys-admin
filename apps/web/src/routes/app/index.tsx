@@ -8,7 +8,14 @@ import { Ago } from '#/components/time'
 import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 import { useRole } from './route'
 
 export const Route = createFileRoute('/app/')({
@@ -34,12 +41,31 @@ function Board() {
         )}
       </PageHeader>
 
-      <Card className="mb-6 grid animate-rise grid-cols-3 gap-x-4 gap-y-5 p-4 sm:p-5 lg:grid-cols-6" style={{ animationDelay: '60ms' }}>
-        <Stat label="Servers" value={t.servers} sub={plural(t.groups, 'group')} />
+      <Card
+        className="mb-6 grid animate-rise grid-cols-3 gap-x-4 gap-y-5 p-4 sm:p-5 lg:grid-cols-6"
+        style={{ animationDelay: '60ms' }}
+      >
+        <Stat
+          label="Servers"
+          value={t.servers}
+          sub={plural(t.groups, 'group')}
+        />
         <Stat label="OK" value={t.ok} tone={t.ok ? 'ok' : undefined} />
-        <Stat label="Warning" value={t.warning} tone={t.warning ? 'warn' : undefined} />
-        <Stat label="Failing" value={t.failing} tone={t.failing ? 'fail' : undefined} />
-        <Stat label="Unreachable" value={t.unreachable} tone={t.unreachable ? 'down' : undefined} />
+        <Stat
+          label="Warning"
+          value={t.warning}
+          tone={t.warning ? 'warn' : undefined}
+        />
+        <Stat
+          label="Failing"
+          value={t.failing}
+          tone={t.failing ? 'fail' : undefined}
+        />
+        <Stat
+          label="Unreachable"
+          value={t.unreachable}
+          tone={t.unreachable ? 'down' : undefined}
+        />
         <Stat label="Pending" value={t.pending} />
       </Card>
 
@@ -56,8 +82,9 @@ function Board() {
             )
           }
         >
-          Add a server with a one-time sudo login, or get a command to paste on it. The control plane installs a small helper and starts watching it within a
-          minute.
+          Add a server with a one-time sudo login, or get a command to paste on
+          it. The control plane installs a small helper and starts watching it
+          within a minute.
         </Empty>
       ) : (
         <div className="animate-rise" style={{ animationDelay: '120ms' }}>
@@ -77,7 +104,17 @@ function Board() {
                   <TableHead className="w-6 pr-1 pl-4">
                     <span className="sr-only">Status</span>
                   </TableHead>
-                  {['Server', 'CPU', 'Memory', 'Disk', 'Load', 'Up', 'Updates', 'Why', 'Seen'].map((h) => (
+                  {[
+                    'Server',
+                    'CPU',
+                    'Memory',
+                    'Disk',
+                    'Load',
+                    'Up',
+                    'Updates',
+                    'Why',
+                    'Seen',
+                  ].map((h) => (
                     <TableHead key={h}>{h}</TableHead>
                   ))}
                 </TableRow>
@@ -95,8 +132,22 @@ function Board() {
   )
 }
 
+/** Names the team that shares a server with this one. */
+function OwnerTag({ s }: { s: Server }) {
+  if (s.access === 'own' || !s.ownerTeam) return null
+  return (
+    <span
+      className="ml-1.5 rounded-sm border border-line-2 px-1 text-[9px] tracking-normal text-muted-foreground normal-case"
+      title={`Shared by ${s.ownerTeam}`}
+    >
+      {s.ownerTeam}
+    </span>
+  )
+}
+
 function why(s: Server): string {
-  const reasons = s.status === 'unreachable' ? [s.lastError || 'no answer'] : s.reasons
+  const reasons =
+    s.status === 'unreachable' ? [s.lastError || 'no answer'] : s.reasons
   if (s.hostKeyMismatch) return 'host key changed: paused'
   if (reasons.length) return reasons.join(' · ')
   if (s.enrollment === 'pending') return 'waiting for enroll command'
@@ -110,7 +161,9 @@ function Updates({ s }: { s: Server }) {
   return (
     <span title={`${security} security, ${other} other`}>
       <span className="text-ink-2">{security + other}</span>
-      {security > 0 && <span className="text-warn"> · {security} security</span>}
+      {security > 0 && (
+        <span className="text-warn"> · {security} security</span>
+      )}
     </span>
   )
 }
@@ -118,28 +171,48 @@ function Updates({ s }: { s: Server }) {
 function Row({ s }: { s: Server }) {
   const m = s.metrics
   return (
-    <TableRow className={cn('group', s.status === 'failing' && 'bg-fail/[0.04]')}>
+    <TableRow
+      className={cn('group', s.status === 'failing' && 'bg-fail/[0.04]')}
+    >
       <TableCell className="w-6 py-3 pr-1 pl-4">
         <StatusDot status={s.status} />
       </TableCell>
       <TableCell className="py-3">
-        <Link to="/app/servers/$serverId" params={{ serverId: s.id }} className="block">
-          <span className="font-mono text-sm text-ink group-hover:text-amber">{s.name}</span>
+        <Link
+          to="/app/servers/$serverId"
+          params={{ serverId: s.id }}
+          className="block"
+        >
+          <span className="font-mono text-sm text-ink group-hover:text-amber">
+            {s.name}
+          </span>
           <span className="mt-0.5 block font-mono text-[10px] tracking-wider text-faint uppercase">
-            {s.groupName ?? 'no group'} · {s.host}
+            {s.groupName ?? 'no group'}
+            <OwnerTag s={s} /> · {s.host}
           </span>
         </Link>
       </TableCell>
       <Gauge value={m?.cpuPercent} warn={85} fail={97} />
       <Gauge value={m?.memPercent} warn={90} fail={97} />
       <Gauge value={m?.diskPercent} warn={85} fail={95} />
-      <TableCell className="num py-3 text-xs text-ink-2">{m ? m.load1.toFixed(2) : '—'}</TableCell>
-      <TableCell className="num py-3 text-xs text-ink-2">{m ? duration(m.uptimeSeconds) : '—'}</TableCell>
+      <TableCell className="num py-3 text-xs text-ink-2">
+        {m ? m.load1.toFixed(2) : '—'}
+      </TableCell>
+      <TableCell className="num py-3 text-xs text-ink-2">
+        {m ? duration(m.uptimeSeconds) : '—'}
+      </TableCell>
       <TableCell className="num py-3 text-xs">
         <Updates s={s} />
       </TableCell>
       <TableCell className="max-w-[260px] py-3">
-        <span className={cn('line-clamp-2 text-xs', s.status === 'ok' ? 'text-faint' : 'text-ink-2')}>{why(s)}</span>
+        <span
+          className={cn(
+            'line-clamp-2 text-xs',
+            s.status === 'ok' ? 'text-faint' : 'text-ink-2',
+          )}
+        >
+          {why(s)}
+        </span>
       </TableCell>
       <TableCell className="num py-3 pr-4 text-[11px] whitespace-nowrap text-muted-foreground">
         <Ago iso={s.lastSeenAt} />
@@ -148,7 +221,15 @@ function Row({ s }: { s: Server }) {
   )
 }
 
-function Gauge({ value, warn, fail }: { value: number | undefined; warn: number; fail: number }) {
+function Gauge({
+  value,
+  warn,
+  fail,
+}: {
+  value: number | undefined
+  warn: number
+  fail: number
+}) {
   return (
     <TableCell className="w-28 py-3">
       <div className="num mb-1 text-xs text-ink-2">{pct(value)}</div>
@@ -172,9 +253,12 @@ function ServerCard({ s }: { s: Server }) {
       <div className="flex items-start gap-3">
         <StatusDot status={s.status} className="mt-1.5" />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-mono text-sm text-ink group-hover:text-amber">{s.name}</div>
+          <div className="truncate font-mono text-sm text-ink group-hover:text-amber">
+            {s.name}
+          </div>
           <div className="truncate font-mono text-[10px] tracking-wider text-faint uppercase">
-            {s.groupName ?? 'no group'} · {s.host}
+            {s.groupName ?? 'no group'}
+            <OwnerTag s={s} /> · {s.host}
           </div>
         </div>
         <span className="num shrink-0 text-[10px] text-muted-foreground">
@@ -199,7 +283,14 @@ function ServerCard({ s }: { s: Server }) {
         ))}
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-line/60 pt-3 font-mono text-[11px]">
-        <span className={cn('min-w-0 truncate', s.status === 'ok' ? 'text-faint' : 'text-ink-2')}>{why(s)}</span>
+        <span
+          className={cn(
+            'min-w-0 truncate',
+            s.status === 'ok' ? 'text-faint' : 'text-ink-2',
+          )}
+        >
+          {why(s)}
+        </span>
         <span className="num shrink-0">
           <Updates s={s} />
         </span>

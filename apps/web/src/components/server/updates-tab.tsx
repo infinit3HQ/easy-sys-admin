@@ -1,20 +1,40 @@
 import { Link } from '@tanstack/react-router'
-import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { useState } from 'react'
 import { DownloadIcon, PowerIcon, RefreshCwIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
-import { ConfirmDialog, Empty, ErrorBanner, Notice, Panel, Segmented, Toggle } from '#/components/kit'
+import {
+  ConfirmDialog,
+  Empty,
+  ErrorBanner,
+  Notice,
+  Panel,
+  Segmented,
+  Toggle,
+} from '#/components/kit'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
-import { useRole } from '#/routes/app/route'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
+import { useServerAccess } from '#/components/server/use-access'
 
 export function UpdatesTab({ serverId }: { serverId: number }) {
   const qc = useQueryClient()
-  const { canAct } = useRole()
   const { data } = useSuspenseQuery(q.server(serverId))
+  // Checks and runs need the admin role, and operate access on a shared server.
+  const { canOperate: canAct } = useServerAccess(data.server)
   const upd = data.pendingUpdates
   const [mode, setMode] = useState<'security' | 'all'>('security')
   const [reboot, setReboot] = useState(false)
@@ -57,10 +77,15 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-xs text-muted-foreground">
-          Package lists from <Ago iso={upd?.listsUpdatedAt} /> · checked <Ago iso={data.server.updates?.checkedAt} />
+          Package lists from <Ago iso={upd?.listsUpdatedAt} /> · checked{' '}
+          <Ago iso={data.server.updates?.checkedAt} />
         </p>
         {canAct && (
-          <Button variant="outline" onClick={() => check.mutate()} busy={check.isPending}>
+          <Button
+            variant="outline"
+            onClick={() => check.mutate()}
+            busy={check.isPending}
+          >
             <RefreshCwIcon /> Refresh package lists
           </Button>
         )}
@@ -89,7 +114,11 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
               checked={reboot}
               onChange={setReboot}
               label="Reboot afterwards if the server asks for it"
-              hint={data.server.hostsControlPlane ? 'Skipped: this server hosts esa.' : 'esa waits for it to come back and checks containers.'}
+              hint={
+                data.server.hostsControlPlane
+                  ? 'Skipped: this server hosts esa.'
+                  : 'esa waits for it to come back and checks containers.'
+              }
             />
           </div>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
@@ -101,7 +130,9 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             </Button>
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            The upgrade runs as its own systemd job on the server, so it finishes even if the connection drops. Config files you changed are kept.
+            The upgrade runs as its own systemd job on the server, so it
+            finishes even if the connection drops. Config files you changed are
+            kept.
           </p>
         </Panel>
       )}
@@ -109,7 +140,11 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       {run.isSuccess && (
         <Notice tone="ok">
           Started. Follow it on the{' '}
-          <Link to="/app/runs/$runId" params={{ runId: run.data.id }} className="underline underline-offset-4">
+          <Link
+            to="/app/runs/$runId"
+            params={{ runId: run.data.id }}
+            className="underline underline-offset-4"
+          >
             run page
           </Link>
           .
@@ -117,11 +152,16 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       )}
 
       {!upd ? (
-        <Empty title="Not checked yet">The poller lists pending updates every six hours.</Empty>
+        <Empty title="Not checked yet">
+          The poller lists pending updates every six hours.
+        </Empty>
       ) : upd.packages.length === 0 ? (
         <Empty title="Up to date">No pending package updates.</Empty>
       ) : (
-        <Panel title={`${upd.packages.length} pending · ${upd.security} security`} flush>
+        <Panel
+          title={`${upd.packages.length} pending · ${upd.security} security`}
+          flush
+        >
           <Table className="min-w-[560px] font-mono text-xs">
             <TableHeader>
               <TableRow>
@@ -133,19 +173,27 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             </TableHeader>
             <TableBody>
               {[...upd.packages]
-                .sort((a, b) => Number(b.security) - Number(a.security) || a.name.localeCompare(b.name))
+                .sort(
+                  (a, b) =>
+                    Number(b.security) - Number(a.security) ||
+                    a.name.localeCompare(b.name),
+                )
                 .map((p) => (
                   <TableRow key={p.name}>
                     <TableCell className="py-2 pl-4 text-ink">
                       <span className="inline-flex flex-wrap items-center gap-2">
                         {p.security && <Badge variant="warn">sec</Badge>}
                         {p.name}
-                        {upd.held.includes(p.name) && <span className="text-muted-foreground">(held)</span>}
+                        {upd.held.includes(p.name) && (
+                          <span className="text-muted-foreground">(held)</span>
+                        )}
                       </span>
                     </TableCell>
                     <TableCell className="py-2 text-ink-2">{p.from}</TableCell>
                     <TableCell className="py-2 text-ink">{p.to}</TableCell>
-                    <TableCell className="py-2 pr-4 text-muted-foreground">{p.archive}</TableCell>
+                    <TableCell className="py-2 pr-4 text-muted-foreground">
+                      {p.archive}
+                    </TableCell>
                   </TableRow>
                 ))}
             </TableBody>

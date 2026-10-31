@@ -1,11 +1,31 @@
-import { Link, Outlet, createFileRoute, redirect, useRouter, useRouterState } from '@tanstack/react-router'
+import {
+  Link,
+  Outlet,
+  createFileRoute,
+  redirect,
+  useRouter,
+  useRouterState,
+} from '@tanstack/react-router'
 import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { ActivityIcon, BellIcon, ChevronsUpDownIcon, HistoryIcon, LayersIcon, LayoutGridIcon, LogOutIcon, MenuIcon, SettingsIcon } from 'lucide-react'
+import {
+  ActivityIcon,
+  BellIcon,
+  ChevronsUpDownIcon,
+  HistoryIcon,
+  LayersIcon,
+  LayoutGridIcon,
+  LogOutIcon,
+  MenuIcon,
+  PlusIcon,
+  SettingsIcon,
+  UsersIcon,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Choice, cn } from '#/components/kit'
+import { CreateTeamDialog } from '#/components/team'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -15,7 +35,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '#/components/ui/dropdown-menu'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '#/components/ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '#/components/ui/sheet'
 
 export const Route = createFileRoute('/app')({
   beforeLoad: async ({ context, location }) => {
@@ -32,7 +59,14 @@ export const Route = createFileRoute('/app')({
 })
 
 const nav: ReadonlyArray<{
-  to: '/app' | '/app/groups' | '/app/runs' | '/app/alerts' | '/app/activity' | '/app/settings'
+  to:
+    | '/app'
+    | '/app/groups'
+    | '/app/runs'
+    | '/app/alerts'
+    | '/app/activity'
+    | '/app/team'
+    | '/app/settings'
   label: string
   icon: LucideIcon
   exact?: boolean
@@ -42,13 +76,16 @@ const nav: ReadonlyArray<{
   { to: '/app/runs', label: 'Runs', icon: HistoryIcon },
   { to: '/app/alerts', label: 'Alerts', icon: BellIcon },
   { to: '/app/activity', label: 'Activity', icon: ActivityIcon },
+  { to: '/app/team', label: 'Team', icon: UsersIcon },
   { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
 function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const current = [...nav].reverse().find((n) => (n.exact ? pathname === n.to : pathname.startsWith(n.to)))
+  const current = [...nav]
+    .reverse()
+    .find((n) => (n.exact ? pathname === n.to : pathname.startsWith(n.to)))
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[232px_1fr]">
@@ -59,30 +96,52 @@ function AppShell() {
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-bg/85 px-4 backdrop-blur-md lg:hidden">
         <Link to="/app" className="flex items-center gap-2" aria-label="Board">
           <img src="/favicon.svg" alt="" className="size-6" />
-          <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">esa</span>
+          <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">
+            esa
+          </span>
         </Link>
         {current && (
           <>
             <span className="text-faint">/</span>
-            <span className="truncate font-mono text-[11px] tracking-wider text-ink-2 uppercase">{current.label}</span>
+            <span className="truncate font-mono text-[11px] tracking-wider text-ink-2 uppercase">
+              {current.label}
+            </span>
           </>
         )}
         <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="ml-auto" aria-label="Open menu">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto"
+              aria-label="Open menu"
+            >
               <MenuIcon />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-[min(18rem,85vw)] gap-0 border-r p-0">
+          <SheetContent
+            side="left"
+            className="w-[min(18rem,85vw)] gap-0 border-r p-0"
+          >
             <SheetHeader className="border-b px-4 py-4">
               <SheetTitle className="flex items-center gap-2">
                 <img src="/favicon.svg" alt="" className="size-6" />
-                <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">easy-sys-admin</span>
+                <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">
+                  easy-sys-admin
+                </span>
               </SheetTitle>
-              <SheetDescription className="sr-only">Pages and account</SheetDescription>
+              <SheetDescription className="sr-only">
+                Pages and account
+              </SheetDescription>
             </SheetHeader>
-            <NavLinks onNavigate={() => setMenuOpen(false)} className="flex-1 overflow-y-auto p-3" />
-            <AccountBox className="border-t p-3" />
+            <NavLinks
+              onNavigate={() => setMenuOpen(false)}
+              className="flex-1 overflow-y-auto p-3"
+            />
+            <AccountBox
+              className="border-t p-3"
+              onNavigate={() => setMenuOpen(false)}
+            />
           </SheetContent>
         </Sheet>
       </header>
@@ -91,7 +150,9 @@ function AppShell() {
       <aside className="sticky top-0 hidden h-dvh flex-col border-r bg-bg-2/80 lg:flex">
         <Link to="/" className="flex items-center gap-2 px-5 pt-5 pb-6">
           <img src="/favicon.svg" alt="" className="size-6" />
-          <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">esa</span>
+          <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">
+            esa
+          </span>
         </Link>
         <NavLinks className="flex-1 overflow-y-auto px-3" />
         <AccountBox className="border-t p-3" />
@@ -104,7 +165,13 @@ function AppShell() {
   )
 }
 
-function NavLinks({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
+function NavLinks({
+  onNavigate,
+  className,
+}: {
+  onNavigate?: () => void
+  className?: string
+}) {
   return (
     <nav className={cn('flex flex-col gap-0.5', className)}>
       {nav.map((n) => (
@@ -119,7 +186,10 @@ function NavLinks({ onNavigate, className }: { onNavigate?: () => void; classNam
             'aria-current': 'page',
           }}
         >
-          <n.icon className="size-4 shrink-0 opacity-70 group-aria-[current=page]:opacity-100" aria-hidden />
+          <n.icon
+            className="size-4 shrink-0 opacity-70 group-aria-[current=page]:opacity-100"
+            aria-hidden
+          />
           {n.label}
         </Link>
       ))}
@@ -127,32 +197,77 @@ function NavLinks({ onNavigate, className }: { onNavigate?: () => void; classNam
   )
 }
 
+// The switcher's last item opens the create-team dialog instead of switching.
+const NEW_TEAM = 'new-team'
+
 /** Account switcher and the signed-in user, with sign-out in a menu. */
-function AccountBox({ className }: { className?: string }) {
+function AccountBox({
+  className,
+  onNavigate,
+}: {
+  className?: string
+  onNavigate?: () => void
+}) {
   const { data: me } = useSuspenseQuery(q.me())
   const qc = useQueryClient()
   const router = useRouter()
+  const [creating, setCreating] = useState(false)
   const who = me.user.name || me.user.email
+  // The personal space first, then teams in the order the API lists them.
+  const spaces = [
+    ...me.accounts.filter((a) => a.personal),
+    ...me.accounts.filter((a) => !a.personal),
+  ]
 
   return (
     <div className={cn('space-y-2', className)}>
-      {me.accounts.length > 1 && (
-        <Choice
-          aria-label="Account"
-          size="sm"
-          className="font-mono text-xs"
-          value={String(me.account.id)}
-          options={me.accounts.map((a) => ({
+      <Choice
+        aria-label="Space"
+        size="sm"
+        className="font-mono text-xs"
+        value={String(me.account.id)}
+        options={[
+          ...spaces.map((a) => ({
             value: String(a.id),
-            label: a.name,
-          }))}
-          onChange={async (v) => {
-            await call(api().PUT('/me/account', { body: { accountId: Number(v) } }))
-            qc.clear()
-            await router.invalidate()
-          }}
-        />
-      )}
+            label: a.personal ? 'Personal' : a.name,
+          })),
+          {
+            value: NEW_TEAM,
+            label: (
+              <span className="flex items-center gap-2 text-amber">
+                <PlusIcon className="text-amber" /> Create team
+              </span>
+            ),
+          },
+        ]}
+        onChange={async (v) => {
+          if (v === NEW_TEAM) {
+            setCreating(true)
+            return
+          }
+          await call(
+            api().PUT('/me/account', { body: { accountId: Number(v) } }),
+          )
+          qc.clear()
+          // A server, group, or run page belongs to the old space; go to its list instead.
+          const path = router.state.location.pathname
+          const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
+          if (detail) {
+            await router.navigate({
+              to:
+                detail[1] === 'servers'
+                  ? '/app'
+                  : `/app/${detail[1] as 'groups' | 'runs'}`,
+            })
+          }
+          await router.invalidate()
+        }}
+      />
+      <CreateTeamDialog
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={onNavigate}
+      />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -165,18 +280,34 @@ function AccountBox({ className }: { className?: string }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm text-ink">{who}</span>
               <span
-                className={cn('block truncate font-mono text-[10px] tracking-wider uppercase', me.account.role === 'viewer' ? 'text-muted-foreground' : 'text-amber')}
+                className={cn(
+                  'block truncate font-mono text-[10px] tracking-wider uppercase',
+                  me.account.role === 'viewer'
+                    ? 'text-muted-foreground'
+                    : 'text-amber',
+                )}
               >
-                {me.accounts.length > 1 ? me.account.role : `${me.account.name} · ${me.account.role}`}
+                {me.account.role}
               </span>
             </span>
-            <ChevronsUpDownIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <ChevronsUpDownIcon
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden
+            />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="top" align="start" className="w-(--radix-dropdown-menu-trigger-width) min-w-56">
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
+        >
           <DropdownMenuLabel className="font-normal">
             <span className="block truncate text-sm text-ink">{who}</span>
-            {me.user.name && <span className="block truncate font-mono text-[11px] text-muted-foreground">{me.user.email}</span>}
+            {me.user.name && (
+              <span className="block truncate font-mono text-[11px] text-muted-foreground">
+                {me.user.email}
+              </span>
+            )}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>

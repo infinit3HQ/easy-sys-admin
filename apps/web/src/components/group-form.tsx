@@ -11,7 +11,10 @@ type Day = (typeof days)[number]
 
 export const defaultGroup: GroupInput = {
   name: '',
-  timezone: typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'UTC',
+  timezone:
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : 'UTC',
   clean: {
     enabled: false,
     days: ['sun'],
@@ -31,7 +34,15 @@ export const defaultGroup: GroupInput = {
   },
 }
 
-function DayPicker({ id, value, onChange }: { id?: string; value: Array<Day>; onChange: (d: Array<Day>) => void }) {
+function DayPicker({
+  id,
+  value,
+  onChange,
+}: {
+  id?: string
+  value: Array<Day>
+  onChange: (d: Array<Day>) => void
+}) {
   return (
     <ToggleGroup
       id={id}
@@ -44,7 +55,12 @@ function DayPicker({ id, value, onChange }: { id?: string; value: Array<Day>; on
       className="flex-wrap"
     >
       {days.map((d) => (
-        <ToggleGroupItem key={d} value={d} aria-label={d} className="w-11 font-mono text-[11px] uppercase">
+        <ToggleGroupItem
+          key={d}
+          value={d}
+          aria-label={d}
+          className="w-11 font-mono text-[11px] uppercase"
+        >
           {d}
         </ToggleGroupItem>
       ))}
@@ -69,9 +85,14 @@ export function GroupForm({
 }) {
   const [g, setG] = useState<GroupInput>(initial)
   const [hold, setHold] = useState(initial.updates.hold.join(', '))
-  const zones = typeof Intl !== 'undefined' && 'supportedValuesOf' in Intl ? Intl.supportedValuesOf('timeZone') : [g.timezone]
-  const setClean = (c: Partial<GroupInput['clean']>) => setG({ ...g, clean: { ...g.clean, ...c } })
-  const setUpd = (u: Partial<GroupInput['updates']>) => setG({ ...g, updates: { ...g.updates, ...u } })
+  const zones =
+    typeof Intl !== 'undefined' && 'supportedValuesOf' in Intl
+      ? Intl.supportedValuesOf('timeZone')
+      : [g.timezone]
+  const setClean = (c: Partial<GroupInput['clean']>) =>
+    setG({ ...g, clean: { ...g.clean, ...c } })
+  const setUpd = (u: Partial<GroupInput['updates']>) =>
+    setG({ ...g, updates: { ...g.updates, ...u } })
 
   return (
     <form
@@ -89,14 +110,25 @@ export function GroupForm({
         })
       }}
     >
-      <fieldset disabled={disabled} className="min-w-0 space-y-6">
+      <fieldset
+        disabled={disabled}
+        className="min-w-0 space-y-6 disabled:opacity-75"
+      >
         <Panel title="Group">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name">
-              <Input value={g.name} onChange={(e) => setG({ ...g, name: e.target.value })} placeholder="production" required />
+              <Input
+                value={g.name}
+                onChange={(e) => setG({ ...g, name: e.target.value })}
+                placeholder="production"
+                required
+              />
             </Field>
             <Field label="Timezone" hint="Schedule times are in this zone.">
-              <NativeSelect value={g.timezone} onChange={(e) => setG({ ...g, timezone: e.target.value })}>
+              <NativeSelect
+                value={g.timezone}
+                onChange={(e) => setG({ ...g, timezone: e.target.value })}
+              >
                 {[...new Set(['UTC', ...zones])].map((z) => (
                   <NativeSelectOption key={z}>{z}</NativeSelectOption>
                 ))}
@@ -108,16 +140,30 @@ export function GroupForm({
         <Panel
           title="Cleanups"
           actions={
-            <Toggle className="py-0" checked={g.clean.enabled} onChange={(enabled) => setClean({ enabled })} label="On a schedule" disabled={disabled} />
+            <Toggle
+              className="py-0"
+              checked={g.clean.enabled}
+              onChange={(enabled) => setClean({ enabled })}
+              label="On a schedule"
+              disabled={disabled}
+            />
           }
         >
           <div className={cn('space-y-5', !g.clean.enabled && 'opacity-50')}>
             <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-6">
               <Field label="Days">
-                <DayPicker value={g.clean.days} onChange={(d) => setClean({ days: d })} />
+                <DayPicker
+                  value={g.clean.days}
+                  onChange={(d) => setClean({ days: d })}
+                />
               </Field>
               <Field label="Time">
-                <Input className="w-32 font-mono" type="time" value={g.clean.time} onChange={(e) => setClean({ time: e.target.value })} />
+                <Input
+                  className="w-32 font-mono"
+                  type="time"
+                  value={g.clean.time}
+                  onChange={(e) => setClean({ time: e.target.value })}
+                />
               </Field>
             </div>
             <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
@@ -135,9 +181,18 @@ export function GroupForm({
                 label="Old VS Code server copies"
                 hint="Keeps the newest copy and any copy in use."
               />
-              <Toggle checked={g.clean.journal} onChange={(journal) => setClean({ journal })} disabled={disabled} label="Cap the systemd journal" />
+              <Toggle
+                checked={g.clean.journal}
+                onChange={(journal) => setClean({ journal })}
+                disabled={disabled}
+                label="Cap the systemd journal"
+              />
               <Field label="Journal size">
-                <Input className="w-32 font-mono" value={g.clean.journalSize} onChange={(e) => setClean({ journalSize: e.target.value })} />
+                <Input
+                  className="w-32 font-mono"
+                  value={g.clean.journalSize}
+                  onChange={(e) => setClean({ journalSize: e.target.value })}
+                />
               </Field>
             </div>
           </div>
@@ -146,10 +201,18 @@ export function GroupForm({
         <Panel
           title="Package updates"
           actions={
-            <Toggle className="py-0" checked={g.updates.enabled} onChange={(enabled) => setUpd({ enabled })} label="On a schedule" disabled={disabled} />
+            <Toggle
+              className="py-0"
+              checked={g.updates.enabled}
+              onChange={(enabled) => setUpd({ enabled })}
+              label="On a schedule"
+              disabled={disabled}
+            />
           }
         >
-          <p className="mb-4 text-xs text-muted-foreground">One server at a time. The first failure stops the rest of the group.</p>
+          <p className="mb-4 text-xs text-muted-foreground">
+            One server at a time. The first failure stops the rest of the group.
+          </p>
           <div className={cn('space-y-5', !g.updates.enabled && 'opacity-50')}>
             <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:gap-6">
               <Field label="What" className="sm:w-56">
@@ -164,10 +227,18 @@ export function GroupForm({
                 />
               </Field>
               <Field label="Days">
-                <DayPicker value={g.updates.days} onChange={(d) => setUpd({ days: d })} />
+                <DayPicker
+                  value={g.updates.days}
+                  onChange={(d) => setUpd({ days: d })}
+                />
               </Field>
               <Field label="Time">
-                <Input className="w-32 font-mono" type="time" value={g.updates.time} onChange={(e) => setUpd({ time: e.target.value })} />
+                <Input
+                  className="w-32 font-mono"
+                  type="time"
+                  value={g.updates.time}
+                  onChange={(e) => setUpd({ time: e.target.value })}
+                />
               </Field>
             </div>
             <Field label="Never upgrade" hint="Package names, comma-separated.">

@@ -14,8 +14,20 @@ import { LogsTab } from '#/components/server/logs-tab'
 import { AccessTab, JobsTab, SecurityTab } from '#/components/server/audit-tabs'
 import { HistoryTab } from '#/components/server/history-tab'
 import { SettingsTab } from '#/components/server/settings-tab'
+import { useServerAccess } from '#/components/server/use-access'
 
-const tabs = ['status', 'updates', 'services', 'containers', 'logs', 'access', 'security', 'jobs', 'history', 'settings'] as const
+const tabs = [
+  'status',
+  'updates',
+  'services',
+  'containers',
+  'logs',
+  'access',
+  'security',
+  'jobs',
+  'history',
+  'settings',
+] as const
 type Tab = (typeof tabs)[number]
 
 export const Route = createFileRoute('/app/servers/$serverId')({
@@ -28,9 +40,12 @@ export const Route = createFileRoute('/app/servers/$serverId')({
     }),
     stringify: (p) => ({ serverId: String(p.serverId) }),
   },
-  loader: ({ context, params }) => context.queryClient.ensureQueryData(q.server(params.serverId)),
+  loader: ({ context, params }) =>
+    context.queryClient.ensureQueryData(q.server(params.serverId)),
   head: ({ loaderData }) => ({
-    meta: [{ title: `${loaderData?.server.name ?? 'Server'} · easy-sys-admin` }],
+    meta: [
+      { title: `${loaderData?.server.name ?? 'Server'} · easy-sys-admin` },
+    ],
   }),
   component: ServerPage,
 })
@@ -42,6 +57,7 @@ function ServerPage() {
   const { data } = useSuspenseQuery(q.server(serverId))
   const s = data.server
   const ready = s.enrollment === 'ready' && !s.hostKeyMismatch
+  const access = useServerAccess(s)
 
   return (
     <div>
@@ -53,7 +69,11 @@ function ServerPage() {
             </Link>
             <Crumb />
             {s.groupId ? (
-              <Link to="/app/groups/$groupId" params={{ groupId: s.groupId }} className="hover:text-ink">
+              <Link
+                to="/app/groups/$groupId"
+                params={{ groupId: s.groupId }}
+                className="hover:text-ink"
+              >
                 {s.groupName}
               </Link>
             ) : (
@@ -71,8 +91,18 @@ function ServerPage() {
         </div>
       </PageHeader>
 
-      {s.hostKeyMismatch && <HostKeyAlert server={s} />}
-      {s.enrollment === 'pending' && <PendingEnrollment server={s} />}
+      {!access.isOwn && (
+        <Notice className="mb-6">
+          Shared by {access.ownerTeam}. You can {s.access} this server. Its
+          settings, helper, and host key stay with {access.ownerTeam}.
+        </Notice>
+      )}
+      {s.hostKeyMismatch && (
+        <HostKeyAlert server={s} canManage={access.canManage} />
+      )}
+      {s.enrollment === 'pending' && (
+        <PendingEnrollment server={s} canManage={access.canManage} />
+      )}
 
       <Tabs
         value={tab}
@@ -99,10 +129,30 @@ function ServerPage() {
   )
 }
 
-function TabBody({ tab, serverId, ready }: { tab: Tab; serverId: number; ready: boolean }) {
-  const live = ['services', 'containers', 'logs', 'access', 'security', 'jobs'].includes(tab)
+function TabBody({
+  tab,
+  serverId,
+  ready,
+}: {
+  tab: Tab
+  serverId: number
+  ready: boolean
+}) {
+  const live = [
+    'services',
+    'containers',
+    'logs',
+    'access',
+    'security',
+    'jobs',
+  ].includes(tab)
   if (live && !ready) {
-    return <Notice>This server cannot be reached until it is enrolled and its host key is trusted.</Notice>
+    return (
+      <Notice>
+        This server cannot be reached until it is enrolled and its host key is
+        trusted.
+      </Notice>
+    )
   }
   switch (tab) {
     case 'status':

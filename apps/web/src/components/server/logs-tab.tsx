@@ -1,13 +1,22 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { ScrollTextIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
-import { Choice, ErrorBanner, Field, Loading, Notice, NumberInput, cn } from '#/components/kit'
+import {
+  Choice,
+  ErrorBanner,
+  Field,
+  Loading,
+  Notice,
+  NumberInput,
+  cn,
+} from '#/components/kit'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { useRole } from '#/routes/app/route'
+import { useServerAccess } from '#/components/server/use-access'
 
 const priorities = [
   { value: '-1', label: 'all' },
@@ -17,7 +26,9 @@ const priorities = [
 ]
 
 export function LogsTab({ serverId }: { serverId: number }) {
-  const { canAct } = useRole()
+  const { canAct: isAdmin } = useRole()
+  const { data: detail } = useSuspenseQuery(q.server(serverId))
+  const { canOperate: canAct, ownerTeam } = useServerAccess(detail.server)
   const containers = useQuery(q.containers(serverId))
   const [source, setSource] = useState<{
     kind: 'unit' | 'container'
@@ -52,9 +63,11 @@ export function LogsTab({ serverId }: { serverId: number }) {
             path: { serverId },
             query: {
               unit: submitted.kind === 'unit' ? submitted.name : undefined,
-              container: submitted.kind === 'container' ? submitted.name : undefined,
+              container:
+                submitted.kind === 'container' ? submitted.name : undefined,
               lines: submitted.lines,
-              priority: submitted.kind === 'unit' ? submitted.priority : undefined,
+              priority:
+                submitted.kind === 'unit' ? submitted.priority : undefined,
               grep: submitted.grep || undefined,
             },
           },
@@ -62,7 +75,19 @@ export function LogsTab({ serverId }: { serverId: number }) {
       ),
   })
 
-  if (!canAct) return <Notice>Logs can contain secrets, so reading them needs the admin role.</Notice>
+  if (!isAdmin)
+    return (
+      <Notice>
+        Logs can contain secrets, so reading them needs the admin role.
+      </Notice>
+    )
+  if (!canAct)
+    return (
+      <Notice>
+        Logs need operate access. {ownerTeam} shares this server with view
+        access only.
+      </Notice>
+    )
 
   const items = logs.data?.items ?? []
 
@@ -79,14 +104,19 @@ export function LogsTab({ serverId }: { serverId: number }) {
           <Field label="Source" className="col-span-2 sm:col-span-1">
             <Choice
               value={source.kind}
-              onChange={(v) => setSource({ kind: v as 'unit' | 'container', name: '' })}
+              onChange={(v) =>
+                setSource({ kind: v as 'unit' | 'container', name: '' })
+              }
               options={[
                 { value: 'unit', label: 'systemd unit' },
                 { value: 'container', label: 'container' },
               ]}
             />
           </Field>
-          <Field label={source.kind === 'unit' ? 'Unit' : 'Container'} className="col-span-2 sm:col-span-1">
+          <Field
+            label={source.kind === 'unit' ? 'Unit' : 'Container'}
+            className="col-span-2 sm:col-span-1"
+          >
             {source.kind === 'container' ? (
               <Choice
                 className="font-mono"
@@ -113,12 +143,27 @@ export function LogsTab({ serverId }: { serverId: number }) {
             <NumberInput min={1} max={1000} value={lines} onChange={setLines} />
           </Field>
           <Field label="Priority">
-            <Choice disabled={source.kind === 'container'} value={String(priority)} onChange={(v) => setPriority(Number(v))} options={priorities} />
+            <Choice
+              disabled={source.kind === 'container'}
+              value={String(priority)}
+              onChange={(v) => setPriority(Number(v))}
+              options={priorities}
+            />
           </Field>
           <Field label="Contains" className="col-span-2 md:col-span-1">
-            <Input className="font-mono" autoCapitalize="off" spellCheck={false} value={grep} onChange={(e) => setGrep(e.target.value)} />
+            <Input
+              className="font-mono"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={grep}
+              onChange={(e) => setGrep(e.target.value)}
+            />
           </Field>
-          <Button type="submit" busy={logs.isFetching} className="col-span-2 md:col-span-1">
+          <Button
+            type="submit"
+            busy={logs.isFetching}
+            className="col-span-2 md:col-span-1"
+          >
             <ScrollTextIcon /> Read
           </Button>
         </form>
@@ -128,16 +173,25 @@ export function LogsTab({ serverId }: { serverId: number }) {
         <Loading label="Reading logs" />
       ) : (
         <div className="max-h-[65dvh] overflow-auto rounded-md border bg-bg-2 p-3 font-mono text-[11px] leading-relaxed">
-          {items.length === 0 && <p className="text-muted-foreground">No lines.</p>}
+          {items.length === 0 && (
+            <p className="text-muted-foreground">No lines.</p>
+          )}
           {items.map((l, i) => (
-            <div key={i} className="flex flex-col gap-x-3 border-b border-line/40 py-1 last:border-0 sm:flex-row sm:border-0 sm:py-0">
+            <div
+              key={i}
+              className="flex flex-col gap-x-3 border-b border-line/40 py-1 last:border-0 sm:flex-row sm:border-0 sm:py-0"
+            >
               <span className="shrink-0 text-faint" suppressHydrationWarning>
                 {new Date(l.time).toLocaleTimeString()}
               </span>
               <span
                 className={cn(
                   'break-all whitespace-pre-wrap',
-                  l.priority <= 3 || l.stream === 'stderr' ? 'text-fail' : l.priority === 4 ? 'text-warn' : 'text-ink-2',
+                  l.priority <= 3 || l.stream === 'stderr'
+                    ? 'text-fail'
+                    : l.priority === 4
+                      ? 'text-warn'
+                      : 'text-ink-2',
                 )}
               >
                 {l.message}
@@ -146,7 +200,9 @@ export function LogsTab({ serverId }: { serverId: number }) {
           ))}
         </div>
       )}
-      <p className="font-mono text-[10px] text-faint">Reading logs is recorded in the activity log.</p>
+      <p className="font-mono text-[10px] text-faint">
+        Reading logs is recorded in the activity log.
+      </p>
     </div>
   )
 }

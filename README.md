@@ -52,6 +52,12 @@ No ports are published. Traefik reaches the web container over its network, and 
 
 Control plane only, for running it outside compose: `ESA_DATABASE_URL`, `ESA_LISTEN` (default `127.0.0.1:8080`), `ESA_HELPER_DIR`, `ESA_LOG_FORMAT` (`text` or `json`), and `ESA_AUTH_MODE=dev` for a one-click local login, which is only allowed on loopback. The web server reads `ESA_API_URL`, the address of the control plane.
 
+### Teams and shared groups
+
+- Every user gets a private personal space at first sign-in. Nobody else can join it.
+- Anyone can create a team from the space switcher in the sidebar, then invite people from the Team page with one-time links (owner, admin or viewer; optionally limited to one email address).
+- A group can be shared with another team from the group page, with `view` or `operate` access. The owning team keeps the SSH key, settings, schedules and alerts. See [docs/teams.md](docs/teams.md).
+
 ### Security notes
 
 - API tokens expire after 1 to 365 days (90 by default). Sessions end after 24 hours without use, and after 7 days at most. Settings > Sessions has "Sign out everywhere".
