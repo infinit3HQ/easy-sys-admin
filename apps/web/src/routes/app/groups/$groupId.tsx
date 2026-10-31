@@ -2,19 +2,28 @@ import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
+import { BrushCleaningIcon, DownloadIcon, GaugeIcon, Trash2Icon } from 'lucide-react'
 import type { GroupInput, RunKind } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Until } from '#/components/time'
 import { GroupForm } from '#/components/group-form'
 import { RunsTable } from '#/components/runs-table'
-import { Button, ConfirmDialog, ErrorBanner, PageHeader, Panel, StatusDot } from '#/components/ui'
+import { ConfirmDialog, ErrorBanner, KeyValue, PageHeader, Panel, StatusDot } from '#/components/kit'
+import { Button } from '#/components/ui/button'
 import { useRole } from '../route'
 
 export const Route = createFileRoute('/app/groups/$groupId')({
-  params: { parse: (p) => ({ groupId: z.coerce.number().int().positive().parse(p.groupId) }), stringify: (p) => ({ groupId: String(p.groupId) }) },
+  params: {
+    parse: (p) => ({
+      groupId: z.coerce.number().int().positive().parse(p.groupId),
+    }),
+    stringify: (p) => ({ groupId: String(p.groupId) }),
+  },
   loader: ({ context, params }) => context.queryClient.ensureQueryData(q.group(params.groupId)),
-  head: ({ loaderData }) => ({ meta: [{ title: `${loaderData?.name ?? 'Group'} · easy-sys-admin` }] }),
+  head: ({ loaderData }) => ({
+    meta: [{ title: `${loaderData?.name ?? 'Group'} · easy-sys-admin` }],
+  }),
   component: GroupPage,
 })
 
@@ -50,40 +59,57 @@ function GroupPage() {
     },
   })
 
-  const initial: GroupInput = { name: g.name, timezone: g.timezone, clean: g.clean, updates: g.updates }
+  const initial: GroupInput = {
+    name: g.name,
+    timezone: g.timezone,
+    clean: g.clean,
+    updates: g.updates,
+  }
+  const empty = g.serverCount === 0
 
   return (
     <div>
-      <PageHeader kicker={<Link to="/app/groups">Groups</Link>} title={g.name}>
+      <PageHeader
+        kicker={
+          <Link to="/app/groups" className="hover:text-ink">
+            Groups
+          </Link>
+        }
+        title={g.name}
+      >
         {canAct && (
-          <>
-            <Button onClick={() => run.mutate('measure')} busy={run.isPending && run.variables === 'measure'} disabled={g.serverCount === 0}>
-              Measure
+          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto">
+            <Button variant="outline" onClick={() => run.mutate('measure')} busy={run.isPending && run.variables === 'measure'} disabled={empty}>
+              <GaugeIcon /> Measure
             </Button>
-            <Button onClick={() => setConfirm('clean')} disabled={g.serverCount === 0}>
-              Clean now
+            <Button variant="outline" onClick={() => setConfirm('clean')} disabled={empty}>
+              <BrushCleaningIcon /> Clean
             </Button>
-            <Button variant="primary" onClick={() => setConfirm('update')} disabled={g.serverCount === 0}>
-              Update now
+            <Button onClick={() => setConfirm('update')} disabled={empty}>
+              <DownloadIcon /> Update
             </Button>
-          </>
+          </div>
         )}
       </PageHeader>
-      <ErrorBanner error={run.error} />
+      <ErrorBanner error={run.error} className="mb-6" />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_1.2fr]">
-        <div className="space-y-6">
-          <Panel title={`Servers · ${members.length}`}>
+        <div className="min-w-0 space-y-6">
+          <Panel title={`Servers · ${members.length}`} flush>
             {members.length === 0 ? (
-              <p className="text-sm text-muted">No servers yet. Move one here from its settings tab.</p>
+              <p className="p-4 text-sm text-muted-foreground">No servers yet. Move one here from its settings tab.</p>
             ) : (
-              <ul className="space-y-2">
+              <ul className="divide-y divide-line/60">
                 {members.map((s) => (
                   <li key={s.id}>
-                    <Link to="/app/servers/$serverId" params={{ serverId: s.id }} className="flex items-center gap-3 hover:text-amber">
+                    <Link
+                      to="/app/servers/$serverId"
+                      params={{ serverId: s.id }}
+                      className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-panel-2 hover:text-amber"
+                    >
                       <StatusDot status={s.status} />
-                      <span className="font-mono text-sm">{s.name}</span>
-                      <span className="ml-auto font-mono text-[11px] text-muted">{s.host}</span>
+                      <span className="min-w-0 truncate font-mono text-sm">{s.name}</span>
+                      <span className="ml-auto shrink-0 font-mono text-[11px] text-muted-foreground">{s.host}</span>
                     </Link>
                   </li>
                 ))}
@@ -91,28 +117,33 @@ function GroupPage() {
             )}
           </Panel>
           <Panel title="Next">
-            <dl className="space-y-2 font-mono text-xs">
-              <div className="flex justify-between">
-                <dt className="text-muted">Clean</dt>
-                <dd>{g.clean.enabled ? <Until iso={g.nextClean} /> : 'off'}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-muted">Updates</dt>
-                <dd>{g.updates.enabled ? <Until iso={g.nextUpdate} /> : 'off'}</dd>
-              </div>
+            <dl className="space-y-2">
+              <KeyValue k="Clean" v={g.clean.enabled ? <Until iso={g.nextClean} /> : 'off'} />
+              <KeyValue k="Updates" v={g.updates.enabled ? <Until iso={g.nextUpdate} /> : 'off'} />
             </dl>
           </Panel>
-          <div>
+          <section>
             <h2 className="label mb-3">Recent runs</h2>
             <RunsTable runs={g.lastRuns} />
-          </div>
+          </section>
         </div>
-        <div>
-          <GroupForm key={g.id} initial={initial} submitLabel="Save group" busy={save.isPending} error={save.error} disabled={!canAct} onSubmit={(b) => save.mutate(b)} />
+        <div className="min-w-0">
+          <GroupForm
+            key={g.id}
+            initial={initial}
+            submitLabel="Save group"
+            busy={save.isPending}
+            error={save.error}
+            disabled={!canAct}
+            onSubmit={(b) => save.mutate(b)}
+          />
           {canAct && (
-            <Button className="mt-6" variant="danger" size="sm" onClick={() => setConfirm('delete')}>
-              Delete group
-            </Button>
+            <Panel title="Danger zone" className="mt-6 border-fail/30">
+              <p className="mb-3 text-xs text-muted-foreground">Its servers stay, without a group, and stop being cleaned and patched on a schedule.</p>
+              <Button variant="destructive" size="sm" onClick={() => setConfirm('delete')}>
+                <Trash2Icon /> Delete group
+              </Button>
+            </Panel>
           )}
         </div>
       </div>

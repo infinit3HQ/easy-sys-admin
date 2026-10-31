@@ -1,11 +1,14 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import type { ReactNode } from 'react'
+import { Trash2Icon, WrenchIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { When } from '#/components/time'
-import { Button, ConfirmDialog, ErrorBanner, Field, Notice, Panel, Toggle } from '#/components/ui'
+import { Choice, ConfirmDialog, ErrorBanner, Field, KeyValue, Notice, Panel, Toggle } from '#/components/kit'
+import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
+import { Textarea } from '#/components/ui/textarea'
 import { useRole } from '#/routes/app/route'
 
 export function SettingsTab({ serverId }: { serverId: number }) {
@@ -34,14 +37,22 @@ export function SettingsTab({ serverId }: { serverId: number }) {
             groupId: groupId ?? undefined,
             clearGroup: groupId === null,
             hostsControlPlane: cp,
-            protectedContainers: prot.split(',').map((p) => p.trim()).filter(Boolean),
+            protectedContainers: prot
+              .split(',')
+              .map((p) => p.trim())
+              .filter(Boolean),
           },
         }),
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['server', serverId] }),
   })
   const remove = useMutation({
-    mutationFn: () => call(api().DELETE('/servers/{serverId}', { params: { path: { serverId }, query: { uninstall } } })),
+    mutationFn: () =>
+      call(
+        api().DELETE('/servers/{serverId}', {
+          params: { path: { serverId }, query: { uninstall } },
+        }),
+      ),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ['overview'] })
       await navigate({ to: '/app' })
@@ -64,57 +75,84 @@ export function SettingsTab({ serverId }: { serverId: number }) {
   return (
     <div className="grid gap-6 xl:grid-cols-2">
       <Panel title="Settings">
-        <fieldset disabled={!canAct} className="space-y-4">
-          <Field label="Name">
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
-          </Field>
-          <Field label="Group" hint="The group decides when this server is cleaned and patched.">
-            <select className="input" value={groupId ?? ''} onChange={(e) => setGroupId(e.target.value ? Number(e.target.value) : null)}>
-              <option value="">No group</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Protected containers" hint="Name prefixes, comma-separated. Empty uses traefik, authentik, portainer, crowdsec.">
-            <input className="input font-mono" value={prot} onChange={(e) => setProt(e.target.value)} placeholder="traefik, authentik" />
-          </Field>
-          <Toggle checked={cp} onChange={setCp} label="esa runs on this server" hint="Never rebooted by a schedule." />
-          <Button variant="primary" onClick={() => save.mutate()} busy={save.isPending}>
-            Save
-          </Button>
-          <ErrorBanner error={save.error} />
-          {save.isSuccess && <Notice tone="ok">Saved.</Notice>}
-        </fieldset>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            save.mutate()
+          }}
+        >
+          <fieldset disabled={!canAct} className="space-y-4">
+            <Field label="Name">
+              <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field label="Group" hint="The group decides when this server is cleaned and patched.">
+              <Choice
+                disabled={!canAct}
+                value={groupId === null ? 'none' : String(groupId)}
+                onChange={(v) => setGroupId(v === 'none' ? null : Number(v))}
+                options={[
+                  { value: 'none', label: 'No group' },
+                  ...groups.map((g) => ({
+                    value: String(g.id),
+                    label: g.name,
+                  })),
+                ]}
+              />
+            </Field>
+            <Field label="Protected containers" hint="Name prefixes, comma-separated. Empty uses traefik, authentik, portainer, crowdsec.">
+              <Input
+                className="font-mono"
+                autoCapitalize="off"
+                spellCheck={false}
+                value={prot}
+                onChange={(e) => setProt(e.target.value)}
+                placeholder="traefik, authentik"
+              />
+            </Field>
+            <Toggle checked={cp} onChange={setCp} disabled={!canAct} label="esa runs on this server" hint="Never rebooted by a schedule." />
+            {canAct && (
+              <Button type="submit" busy={save.isPending} className="w-full sm:w-auto">
+                Save
+              </Button>
+            )}
+            <ErrorBanner error={save.error} />
+            {save.isSuccess && <Notice tone="ok">Saved.</Notice>}
+          </fieldset>
+        </form>
       </Panel>
 
-      <div className="space-y-6">
+      <div className="min-w-0 space-y-6">
         <Panel title="Connection">
-          <dl className="space-y-2 font-mono text-xs">
-            <Row k="SSH" v={`${s.username}@${s.host}:${s.port}`} />
-            <Row k="Host key" v={s.hostKeyFingerprint || 'not accepted yet'} />
-            <Row k="Helper" v={`${s.helperVersion || '—'} · ${s.arch || '—'}`} />
-            <Row k="Stored login" v={s.hasStoredLogin ? 'yes (encrypted)' : 'no'} />
-            <Row k="Added" v={<When iso={s.createdAt} />} />
+          <dl className="space-y-2">
+            <KeyValue wrap k="SSH" v={`${s.username}@${s.host}:${s.port}`} />
+            <KeyValue wrap k="Host key" v={s.hostKeyFingerprint || 'not accepted yet'} />
+            <KeyValue k="Helper" v={`${s.helperVersion || '—'} · ${s.arch || '—'}`} />
+            <KeyValue k="Stored login" v={s.hasStoredLogin ? 'yes (encrypted)' : 'no'} />
+            <KeyValue k="Added" v={<When iso={s.createdAt} />} />
           </dl>
         </Panel>
 
         {canAct && (
           <Panel title="Update or reinstall the helper">
-            <p className="mb-3 text-xs text-muted">
-              Needs a sudo login again{s.hasStoredLogin ? ', or leave the key empty to use the stored one' : ''}. The esa user itself cannot replace the helper.
+            <p className="mb-4 text-xs text-muted-foreground">
+              Needs a sudo login again
+              {s.hasStoredLogin ? ', or leave the key empty to use the stored one' : ''}. The esa user itself cannot replace the helper.
             </p>
-            <div className="space-y-3">
+            <div className="space-y-4">
               <Field label="User">
-                <input className="input font-mono" value={reinstallUser} onChange={(e) => setReinstallUser(e.target.value)} />
+                <Input className="font-mono" autoCapitalize="off" spellCheck={false} value={reinstallUser} onChange={(e) => setReinstallUser(e.target.value)} />
               </Field>
               <Field label="Private key">
-                <textarea className="input h-24 font-mono text-xs" value={reinstallKey} onChange={(e) => setReinstallKey(e.target.value)} spellCheck={false} />
+                <Textarea
+                  className="h-24 font-mono text-xs"
+                  value={reinstallKey}
+                  onChange={(e) => setReinstallKey(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
               </Field>
-              <Button onClick={() => reinstall.mutate()} busy={reinstall.isPending} disabled={!reinstallKey && !s.hasStoredLogin}>
-                Reinstall helper
+              <Button variant="outline" onClick={() => reinstall.mutate()} busy={reinstall.isPending} disabled={!reinstallKey && !s.hasStoredLogin}>
+                <WrenchIcon /> Reinstall helper
               </Button>
               <ErrorBanner error={reinstall.error} />
               {reinstall.isSuccess && <Notice tone="ok">Helper reinstalled: {reinstall.data.helperVersion}.</Notice>}
@@ -123,10 +161,15 @@ export function SettingsTab({ serverId }: { serverId: number }) {
         )}
 
         {canAct && (
-          <Panel title="Remove">
-            <Toggle checked={uninstall} onChange={setUninstall} label="Also remove esa from the server" hint="Deletes the esa user, its sudo rule, and the helper." />
-            <Button className="mt-3" variant="danger" onClick={() => setDel(true)}>
-              Remove server
+          <Panel title="Remove" className="border-fail/30">
+            <Toggle
+              checked={uninstall}
+              onChange={setUninstall}
+              label="Also remove esa from the server"
+              hint="Deletes the esa user, its sudo rule, and the helper."
+            />
+            <Button className="mt-3" variant="destructive" onClick={() => setDel(true)}>
+              <Trash2Icon /> Remove server
             </Button>
           </Panel>
         )}
@@ -137,22 +180,17 @@ export function SettingsTab({ serverId }: { serverId: number }) {
         title={`Remove ${s.name}`}
         danger
         confirmWord={s.name}
-        body={uninstall ? 'esa removes its user and helper from the server, then forgets the server and its history.' : 'esa forgets the server and its history. The helper stays on the server.'}
+        body={
+          uninstall
+            ? 'esa removes its user and helper from the server, then forgets the server and its history.'
+            : 'esa forgets the server and its history. The helper stays on the server.'
+        }
         actionLabel="Remove"
         busy={remove.isPending}
         error={remove.error}
         onConfirm={() => remove.mutate()}
         onClose={() => setDel(false)}
       />
-    </div>
-  )
-}
-
-function Row({ k, v }: { k: string; v: ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4">
-      <dt className="text-muted">{k}</dt>
-      <dd className="break-all text-right text-ink-2">{v}</dd>
     </div>
   )
 }

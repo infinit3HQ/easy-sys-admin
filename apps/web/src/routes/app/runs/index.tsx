@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { q } from '#/lib/queries'
 import { RunsTable } from '#/components/runs-table'
-import { PageHeader } from '#/components/ui'
+import { PageHeader } from '#/components/kit'
 
 export const Route = createFileRoute('/app/runs/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(q.runs({ limit: 100 })),

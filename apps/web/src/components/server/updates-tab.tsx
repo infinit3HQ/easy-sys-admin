@@ -1,10 +1,14 @@
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { DownloadIcon, PowerIcon, RefreshCwIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
-import { Button, ConfirmDialog, Empty, ErrorBanner, Notice, Panel, Toggle } from '#/components/ui'
+import { ConfirmDialog, Empty, ErrorBanner, Notice, Panel, Segmented, Toggle } from '#/components/kit'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { useRole } from '#/routes/app/route'
 
 export function UpdatesTab({ serverId }: { serverId: number }) {
@@ -17,14 +21,30 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
   const [confirm, setConfirm] = useState<'update' | 'reboot' | null>(null)
 
   const check = useMutation({
-    mutationFn: () => call(api().POST('/servers/{serverId}/updates/check', { params: { path: { serverId } } })),
+    mutationFn: () =>
+      call(
+        api().POST('/servers/{serverId}/updates/check', {
+          params: { path: { serverId } },
+        }),
+      ),
     onSuccess: (d) => qc.setQueryData(q.server(serverId).queryKey, d),
   })
   const run = useMutation({
     mutationFn: (kind: 'update' | 'reboot') =>
       call(
         api().POST('/runs', {
-          body: { kind, serverIds: [serverId], options: kind === 'update' ? { updateMode: mode, rebootIfRequired: reboot, journalSize: '200M' } : undefined },
+          body: {
+            kind,
+            serverIds: [serverId],
+            options:
+              kind === 'update'
+                ? {
+                    updateMode: mode,
+                    rebootIfRequired: reboot,
+                    journalSize: '200M',
+                  }
+                : undefined,
+          },
         }),
       ),
     onSuccess: async () => {
@@ -35,13 +55,13 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="font-mono text-xs text-muted">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="font-mono text-xs text-muted-foreground">
           Package lists from <Ago iso={upd?.listsUpdatedAt} /> · checked <Ago iso={data.server.updates?.checkedAt} />
         </p>
         {canAct && (
-          <Button onClick={() => check.mutate()} busy={check.isPending}>
-            Refresh package lists
+          <Button variant="outline" onClick={() => check.mutate()} busy={check.isPending}>
+            <RefreshCwIcon /> Refresh package lists
           </Button>
         )}
       </div>
@@ -49,18 +69,22 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
 
       {canAct && (
         <Panel title="Install">
-          <div className="flex flex-wrap items-end gap-6">
-            <div className="flex gap-2">
-              {(['security', 'all'] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className={`rounded border px-3 py-2 text-sm ${mode === m ? 'border-amber text-amber' : 'border-line-2 text-ink-2'}`}
-                >
-                  {m === 'security' ? `Security only (${upd?.security ?? 0})` : `Everything (${(upd?.security ?? 0) + (upd?.other ?? 0)})`}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:gap-8">
+            <Segmented
+              aria-label="Which updates"
+              value={mode}
+              onChange={setMode}
+              options={[
+                {
+                  value: 'security',
+                  label: `Security only (${upd?.security ?? 0})`,
+                },
+                {
+                  value: 'all',
+                  label: `Everything (${(upd?.security ?? 0) + (upd?.other ?? 0)})`,
+                },
+              ]}
+            />
             <Toggle
               checked={reboot}
               onChange={setReboot}
@@ -68,15 +92,15 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
               hint={data.server.hostsControlPlane ? 'Skipped: this server hosts esa.' : 'esa waits for it to come back and checks containers.'}
             />
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <Button variant="primary" onClick={() => setConfirm('update')}>
-              Install updates
+          <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+            <Button onClick={() => setConfirm('update')}>
+              <DownloadIcon /> Install updates
             </Button>
             <Button variant="outline" onClick={() => setConfirm('reboot')}>
-              Reboot now
+              <PowerIcon /> Reboot now
             </Button>
           </div>
-          <p className="mt-3 text-xs text-muted">
+          <p className="mt-3 text-xs text-muted-foreground">
             The upgrade runs as its own systemd job on the server, so it finishes even if the connection drops. Config files you changed are kept.
           </p>
         </Panel>
@@ -85,7 +109,7 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       {run.isSuccess && (
         <Notice tone="ok">
           Started. Follow it on the{' '}
-          <Link to="/app/runs/$runId" params={{ runId: run.data.id }} className="underline">
+          <Link to="/app/runs/$runId" params={{ runId: run.data.id }} className="underline underline-offset-4">
             run page
           </Link>
           .
@@ -97,33 +121,35 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       ) : upd.packages.length === 0 ? (
         <Empty title="Up to date">No pending package updates.</Empty>
       ) : (
-        <Panel title={`${upd.packages.length} pending · ${upd.security} security`}>
-          <table className="w-full text-left font-mono text-xs">
-            <thead>
-              <tr className="text-muted">
-                <th className="pb-2 font-normal">Package</th>
-                <th className="pb-2 font-normal">Installed</th>
-                <th className="pb-2 font-normal">Candidate</th>
-                <th className="pb-2 font-normal">From</th>
-              </tr>
-            </thead>
-            <tbody>
+        <Panel title={`${upd.packages.length} pending · ${upd.security} security`} flush>
+          <Table className="min-w-[560px] font-mono text-xs">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="pl-4">Package</TableHead>
+                <TableHead>Installed</TableHead>
+                <TableHead>Candidate</TableHead>
+                <TableHead className="pr-4">From</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {[...upd.packages]
                 .sort((a, b) => Number(b.security) - Number(a.security) || a.name.localeCompare(b.name))
                 .map((p) => (
-                  <tr key={p.name} className="border-t border-line/60">
-                    <td className="py-1.5 text-ink">
-                      {p.security && <span className="mr-2 rounded-sm bg-warn px-1 text-[9px] font-bold uppercase text-bg">sec</span>}
-                      {p.name}
-                      {upd.held.includes(p.name) && <span className="ml-2 text-muted">(held)</span>}
-                    </td>
-                    <td className="py-1.5 text-ink-2">{p.from}</td>
-                    <td className="py-1.5 text-ink">{p.to}</td>
-                    <td className="py-1.5 text-muted">{p.archive}</td>
-                  </tr>
+                  <TableRow key={p.name}>
+                    <TableCell className="py-2 pl-4 text-ink">
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        {p.security && <Badge variant="warn">sec</Badge>}
+                        {p.name}
+                        {upd.held.includes(p.name) && <span className="text-muted-foreground">(held)</span>}
+                      </span>
+                    </TableCell>
+                    <TableCell className="py-2 text-ink-2">{p.from}</TableCell>
+                    <TableCell className="py-2 text-ink">{p.to}</TableCell>
+                    <TableCell className="py-2 pr-4 text-muted-foreground">{p.archive}</TableCell>
+                  </TableRow>
                 ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </Panel>
       )}
 

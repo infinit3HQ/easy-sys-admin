@@ -1,13 +1,69 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 @import '@fontsource-variable/big-shoulders';
 @import '@fontsource-variable/instrument-sans';
 @import '@fontsource-variable/martian-mono';
+
+@custom-variant dark (&:is(.dark *));
 
 /*
  * easy-sys-admin control room.
  * Graphite panels, phosphor amber, signal colours that mean one thing each:
  * ok green, warning amber, failing red, unreachable slate.
+ *
+ * The shadcn/ui tokens (--background, --primary, ...) point at the same
+ * palette, so the components in components/ui and the hand-made pieces
+ * draw from one set of colours.
  */
+:root {
+  --radius: 0.375rem;
+
+  --background: #0b0d0c;
+  --foreground: #ece8dc;
+  --card: #131714;
+  --card-foreground: #ece8dc;
+  --popover: #131714;
+  --popover-foreground: #ece8dc;
+  --primary: #ffb000;
+  --primary-foreground: #0b0d0c;
+  --secondary: #191e1a;
+  --secondary-foreground: #ece8dc;
+  --muted: #191e1a;
+  --muted-foreground: #7c8279;
+  --accent: #1f2520;
+  --accent-foreground: #ece8dc;
+  --destructive: #ff5544;
+  --border: #232925;
+  --input: #313833;
+  --ring: #ffb000;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
 @theme {
   --color-bg: #0b0d0c;
   --color-bg-2: #0f1210;
@@ -17,7 +73,6 @@
   --color-line-2: #313833;
   --color-ink: #ece8dc;
   --color-ink-2: #bdb9ad;
-  --color-muted: #7c8279;
   --color-faint: #4c534d;
   --color-amber: #ffb000;
   --color-amber-2: #ffd06a;
@@ -57,21 +112,25 @@
 }
 
 @layer base {
+  * {
+    @apply border-border;
+  }
   html {
     background: var(--color-bg);
     color: var(--color-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+    -webkit-text-size-adjust: 100%;
     font-feature-settings: 'ss01', 'tnum';
+    color-scheme: dark;
   }
   body {
-    min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
     background-color: var(--color-bg);
     /* A faint plotting grid, like the paper on an old chart recorder. */
     background-image:
-      linear-gradient(to right, rgb(255 255 255 / 0.018) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(255 255 255 / 0.018) 1px, transparent 1px);
+      linear-gradient(to right, rgb(255 255 255 / 0.018) 1px, transparent 1px), linear-gradient(to bottom, rgb(255 255 255 / 0.018) 1px, transparent 1px);
     background-size: 32px 32px;
   }
   body::after {
@@ -92,10 +151,13 @@
     outline: 2px solid var(--color-amber);
     outline-offset: 2px;
   }
-  input,
-  select,
-  textarea {
-    color-scheme: dark;
+  /* Inputs under 16px make iOS Safari zoom the page on focus. */
+  @media (max-width: 639px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
   }
 }
 
@@ -104,37 +166,27 @@
     position: relative;
     border: 1px solid var(--color-line);
     background: linear-gradient(180deg, var(--color-panel-2), var(--color-panel) 40%);
-    border-radius: 6px;
+    border-radius: var(--radius);
   }
   .label {
     font-family: var(--font-mono);
     font-size: 0.625rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--color-muted);
+    color: var(--color-muted-foreground);
   }
   .num {
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
-  .input {
-    width: 100%;
-    border: 1px solid var(--color-line-2);
-    background: var(--color-bg-2);
-    border-radius: 4px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.875rem;
-    color: var(--color-ink);
-    transition: border-color 0.15s;
-  }
-  .input:focus {
-    border-color: var(--color-amber);
-    outline: none;
-  }
-  .input::placeholder {
-    color: var(--color-faint);
-  }
   .hatch {
     background-image: repeating-linear-gradient(-45deg, rgb(255 176 0 / 0.08) 0 6px, transparent 6px 12px);
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
   }
 }
