@@ -1,0 +1,87 @@
+# easy-sys-admin on one Docker host behind Traefik.
+#
+#   cp deploy/.env.example deploy/.env    # fill it in
+#   docker compose -f deploy/compose.yaml --env-file deploy/.env -p esa up -d --build
+#
+# Only the web container is published (through Traefik). It serves the
+# board, the MCP endpoint, and proxies /api, /auth, and /enroll to the
+# control plane on the internal network.
+name: esa
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: esa
+      POSTGRES_USER: esa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql
+    networks: [internal]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U esa -d esa']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  esa:
+    build:
+      context: ..
+      dockerfile: apps/esa/Dockerfile
+      args:
+        VERSION: ${ESA_VERSION:-dev}
+        COMMIT: ${ESA_COMMIT:-none}
+    image: esa-control-plane:${ESA_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ESA_DATABASE_URL: postgres://esa:${POSTGRES_PASSWORD}@postgres:5432/esa?sslmode=disable
+      ESA_PUBLIC_URL: ${ESA_PUBLIC_URL:?set ESA_PUBLIC_URL}
+      ESA_MASTER_KEY: ${ESA_MASTER_KEY:?set ESA_MASTER_KEY}
+      ESA_AUTH_MODE: standard
+      ESA_AUTH_PASSWORD: ${ESA_AUTH_PASSWORD:-true}
+      ESA_SIGNUP: ${ESA_SIGNUP:-true}
+      ESA_ALLOWED_EMAILS: ${ESA_ALLOWED_EMAILS:-}
+      ESA_OIDC_ISSUER: ${ESA_OIDC_ISSUER:-}
+      ESA_OIDC_CLIENT_ID: ${ESA_OIDC_CLIENT_ID:-}
+      ESA_OIDC_CLIENT_SECRET: ${ESA_OIDC_CLIENT_SECRET:-}
+      ESA_OIDC_PROVIDER_NAME: ${ESA_OIDC_PROVIDER_NAME:-Authentik}
+      ESA_GOOGLE_CLIENT_ID: ${ESA_GOOGLE_CLIENT_ID:-}
+      ESA_GOOGLE_CLIENT_SECRET: ${ESA_GOOGLE_CLIENT_SECRET:-}
+    # The control plane SSHs out to managed servers, including this host by
+    # its public address, so it needs normal outbound networking.
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    networks: [internal]
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: esa-web:${ESA_VERSION:-dev}
+    restart: unless-stopped
+    depends_on:
+      esa:
+        condition: service_healthy
+    environment:
+      ESA_API_URL: http://esa:8080
+    networks: [internal, proxy]
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: proxy
+      traefik.http.routers.esa.rule: Host(`${ESA_HOST:?set ESA_HOST}`)
+      traefik.http.routers.esa.entrypoints: websecure
+      traefik.http.routers.esa.tls.certresolver: ${TRAEFIK_CERT_RESOLVER:-cloudflare}
+      traefik.http.services.esa.loadbalancer.server.port: '3000'
+
+volumes:
+  postgres:
+
+networks:
+  internal:
+  proxy:
+    name: ${TRAEFIK_NETWORK:-proxy}
+    external: true
