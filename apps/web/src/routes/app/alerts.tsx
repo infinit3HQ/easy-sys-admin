@@ -1,11 +1,17 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { PlusIcon, SendIcon, Trash2Icon, XIcon } from 'lucide-react'
 import type { AlertRule, ChannelConfig, ChannelKind } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago, When } from '#/components/time'
-import { Button, Empty, ErrorBanner, Field, Notice, PageHeader, Panel, Severity, Toggle, cx } from '#/components/ui'
+import { Choice, Empty, ErrorBanner, Field, Notice, NumberInput, PageHeader, Panel, Severity, Toggle, cn } from '#/components/kit'
+import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import { Card } from '#/components/ui/card'
+import { Input } from '#/components/ui/input'
+import { Separator } from '#/components/ui/separator'
 import { useRole } from './route'
 
 export const Route = createFileRoute('/app/alerts')({
@@ -20,40 +26,60 @@ function Alerts() {
   const items = alerts.data?.items ?? []
   return (
     <div className="space-y-8">
-      <PageHeader kicker="Signals" title="Alerts">
-        <Toggle checked={all} onChange={setAll} label="Include resolved" />
-      </PageHeader>
-      {items.length === 0 ? (
-        <Empty title={all ? 'No alerts recorded' : 'Nothing is wrong'}>Rules and channels are below.</Empty>
-      ) : (
-        <div className="panel divide-y divide-line">
-          {items.map((a) => (
-            <div key={a.id} className={cx('flex flex-wrap items-center gap-4 px-4 py-3', a.resolvedAt && 'opacity-50')}>
-              <Severity severity={a.severity} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm text-ink">{a.message}</div>
-                <div className="font-mono text-[10px] uppercase tracking-wider text-faint">
-                  {a.kind}
-                  {a.serverId && (
-                    <>
-                      {' · '}
-                      <Link to="/app/servers/$serverId" params={{ serverId: a.serverId }} className="hover:text-amber">
-                        {a.serverName}
-                      </Link>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="text-right font-mono text-[11px] text-muted">
-                {a.resolvedAt ? <>resolved <Ago iso={a.resolvedAt} /></> : a.firedAt ? <>firing since <Ago iso={a.firedAt} /></> : <>pending since <Ago iso={a.pendingSince} /></>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div>
+        <PageHeader kicker="Signals" title="Alerts">
+          <Toggle checked={all} onChange={setAll} label="Include resolved" />
+        </PageHeader>
+        {items.length === 0 ? (
+          <Empty title={all ? 'No alerts recorded' : 'Nothing is wrong'}>Rules and channels are below.</Empty>
+        ) : (
+          <Card>
+            <ul className="divide-y divide-line">
+              {items.map((a) => (
+                <li key={a.id} className={cn('flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4', a.resolvedAt && 'opacity-50')}>
+                  <div className="flex min-w-0 flex-1 items-start gap-3">
+                    <span className="mt-0.5 shrink-0">
+                      <Severity severity={a.severity} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="text-sm break-words text-ink">{a.message}</div>
+                      <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
+                        {a.kind}
+                        {a.serverId && (
+                          <>
+                            {' · '}
+                            <Link to="/app/servers/$serverId" params={{ serverId: a.serverId }} className="hover:text-amber">
+                              {a.serverName}
+                            </Link>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="font-mono text-[11px] text-muted-foreground sm:shrink-0 sm:text-right">
+                    {a.resolvedAt ? (
+                      <>
+                        resolved <Ago iso={a.resolvedAt} />
+                      </>
+                    ) : a.firedAt ? (
+                      <>
+                        firing since <Ago iso={a.firedAt} />
+                      </>
+                    ) : (
+                      <>
+                        pending since <Ago iso={a.pendingSince} />
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
+      </div>
       <div className="grid gap-6 xl:grid-cols-2">
         <Rules />
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Channels />
           <Certs />
         </div>
@@ -78,12 +104,12 @@ const ruleText: Record<AlertRule['kind'], { title: string; unit?: string }> = {
 function Rules() {
   const rules = useSuspenseQuery(q.alertRules())
   return (
-    <Panel title="Rules">
-      <div className="divide-y divide-line">
+    <Panel title="Rules" flush>
+      <ul className="divide-y divide-line">
         {rules.data.items.map((r) => (
           <RuleRow key={r.id} rule={r} />
         ))}
-      </div>
+      </ul>
     </Panel>
   )
 }
@@ -94,62 +120,108 @@ function RuleRow({ rule }: { rule: AlertRule }) {
   const [r, setR] = useState(rule)
   const dirty = r.enabled !== rule.enabled || r.threshold !== rule.threshold || r.forMinutes !== rule.forMinutes
   const save = useMutation({
-    mutationFn: () => call(api().PUT('/alerts/rules/{kind}', { params: { path: { kind: r.kind } }, body: { enabled: r.enabled, threshold: r.threshold, forMinutes: r.forMinutes } })),
+    mutationFn: () =>
+      call(
+        api().PUT('/alerts/rules/{kind}', {
+          params: { path: { kind: r.kind } },
+          body: {
+            enabled: r.enabled,
+            threshold: r.threshold,
+            forMinutes: r.forMinutes,
+          },
+        }),
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['alert-rules'] }),
   })
   const t = ruleText[r.kind]
   return (
-    <div className="flex flex-wrap items-center gap-3 py-2.5">
-      <Toggle checked={r.enabled} onChange={(enabled) => setR({ ...r, enabled })} label={t.title} />
-      {t.unit && (
-        <input
-          className="input w-20 !py-1 font-mono"
-          type="number"
-          value={r.threshold}
-          disabled={!canAct}
-          onChange={(e) => setR({ ...r, threshold: Number(e.target.value) })}
-        />
-      )}
-      {t.unit && <span className="font-mono text-xs text-muted">{t.unit}</span>}
-      <span className="ml-auto flex items-center gap-2 font-mono text-[11px] text-muted">
-        for
-        <input
-          className="input w-20 !py-1 font-mono"
-          type="number"
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+      <Toggle className="min-w-0 flex-1 basis-56 py-0" checked={r.enabled} disabled={!canAct} onChange={(enabled) => setR({ ...r, enabled })} label={t.title} />
+      <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
+        {t.unit && (
+          <>
+            <NumberInput
+              aria-label={`${t.title} (${t.unit})`}
+              className="h-8 w-20"
+              value={r.threshold}
+              disabled={!canAct}
+              onChange={(threshold) => setR({ ...r, threshold })}
+            />
+            <span className="w-8">{t.unit}</span>
+          </>
+        )}
+        <span>for</span>
+        <NumberInput
+          aria-label="Minutes before it fires"
+          className="h-8 w-20"
           value={r.forMinutes}
           disabled={!canAct}
-          onChange={(e) => setR({ ...r, forMinutes: Number(e.target.value) })}
+          onChange={(forMinutes) => setR({ ...r, forMinutes })}
         />
-        min
-      </span>
+        <span>min</span>
+      </div>
       {canAct && dirty && (
-        <Button size="sm" variant="primary" onClick={() => save.mutate()} busy={save.isPending}>
+        <Button size="sm" onClick={() => save.mutate()} busy={save.isPending}>
           Save
         </Button>
       )}
-      {save.error && <div className="w-full"><ErrorBanner error={save.error} /></div>}
-    </div>
+      {save.error && (
+        <div className="w-full">
+          <ErrorBanner error={save.error} />
+        </div>
+      )}
+    </li>
   )
 }
 
-const kindFields: Record<ChannelKind, Array<{ key: keyof ChannelConfig; label: string; placeholder?: string; secret?: boolean }>> = {
+const kindFields: Record<
+  ChannelKind,
+  Array<{
+    key: keyof ChannelConfig
+    label: string
+    placeholder?: string
+    secret?: boolean
+  }>
+> = {
   ntfy: [
-    { key: 'url', label: 'Topic URL', placeholder: 'https://ntfy.sh/my-servers' },
+    {
+      key: 'url',
+      label: 'Topic URL',
+      placeholder: 'https://ntfy.sh/my-servers',
+    },
     { key: 'token', label: 'Access token (optional)', secret: true },
   ],
   webhook: [
     { key: 'url', label: 'URL', placeholder: 'https://hooks.example.com/esa' },
     { key: 'secret', label: 'Signing secret (optional)', secret: true },
   ],
-  discord: [{ key: 'url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/…', secret: true }],
-  slack: [{ key: 'url', label: 'Webhook URL', placeholder: 'https://hooks.slack.com/services/…', secret: true }],
+  discord: [
+    {
+      key: 'url',
+      label: 'Webhook URL',
+      placeholder: 'https://discord.com/api/webhooks/…',
+      secret: true,
+    },
+  ],
+  slack: [
+    {
+      key: 'url',
+      label: 'Webhook URL',
+      placeholder: 'https://hooks.slack.com/services/…',
+      secret: true,
+    },
+  ],
   email: [
     { key: 'smtpHost', label: 'SMTP host', placeholder: 'smtp.example.com' },
     { key: 'smtpPort', label: 'SMTP port', placeholder: '587' },
     { key: 'username', label: 'Username' },
     { key: 'password', label: 'Password', secret: true },
     { key: 'from', label: 'From', placeholder: 'esa@example.com' },
-    { key: 'to', label: 'To (comma-separated)', placeholder: 'you@example.com' },
+    {
+      key: 'to',
+      label: 'To (comma-separated)',
+      placeholder: 'you@example.com',
+    },
   ],
 }
 
@@ -164,7 +236,11 @@ function Channels() {
 
   const create = useMutation({
     mutationFn: () => {
-      const config: ChannelConfig = { ...cfg, smtpPort: cfg.smtpPort ? Number(cfg.smtpPort) : undefined, to: cfg.to ? cfg.to.split(',').map((t) => t.trim()) : undefined }
+      const config: ChannelConfig = {
+        ...cfg,
+        smtpPort: cfg.smtpPort ? Number(cfg.smtpPort) : undefined,
+        to: cfg.to ? cfg.to.split(',').map((t) => t.trim()) : undefined,
+      }
       return call(api().POST('/channels', { body: { name, kind, config } }))
     },
     onSuccess: () => {
@@ -174,64 +250,101 @@ function Channels() {
     },
   })
   const test = useMutation({
-    mutationFn: (id: number) => call(api().POST('/channels/{channelId}/test', { params: { path: { channelId: id } } })),
+    mutationFn: (id: number) =>
+      call(
+        api().POST('/channels/{channelId}/test', {
+          params: { path: { channelId: id } },
+        }),
+      ),
     onSuccess: (_d, id) => setTested((t) => ({ ...t, [id]: 'sent' })),
     onError: (e, id) => setTested((t) => ({ ...t, [id]: e.message })),
   })
   const remove = useMutation({
-    mutationFn: (id: number) => call(api().DELETE('/channels/{channelId}', { params: { path: { channelId: id } } })),
+    mutationFn: (id: number) =>
+      call(
+        api().DELETE('/channels/{channelId}', {
+          params: { path: { channelId: id } },
+        }),
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['channels'] }),
   })
+  const list = channels.data?.items ?? []
 
   return (
     <Panel title="Notification channels">
       <div className="space-y-2">
-        {(channels.data?.items ?? []).length === 0 && <p className="text-sm text-muted">No channels. Alerts show here only.</p>}
-        {(channels.data?.items ?? []).map((c) => (
-          <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border border-line px-3 py-2">
-            <span className="font-mono text-xs uppercase text-amber">{c.kind}</span>
-            <span className="text-sm text-ink">{c.name}</span>
-            <span className="font-mono text-[11px] text-muted">{c.target}</span>
-            <span className="ml-auto font-mono text-[10px] text-faint">{c.lastError ? <span className="text-fail">{c.lastError}</span> : c.lastSentAt ? <>sent <When iso={c.lastSentAt} /></> : ''}</span>
-            {canAct && (
-              <Button size="sm" variant="ghost" onClick={() => test.mutate(c.id)} busy={test.isPending && test.variables === c.id}>
-                test
-              </Button>
+        {list.length === 0 && <p className="text-sm text-muted-foreground">No channels. Alerts show here only.</p>}
+        {list.map((c) => (
+          <div key={c.id} className="rounded-md border bg-bg-2/60 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <Badge variant="amber">{c.kind}</Badge>
+              <span className="text-sm text-ink">{c.name}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{c.target}</span>
+              <span className="ml-auto flex items-center gap-1">
+                {canAct && (
+                  <Button size="xs" variant="ghost" onClick={() => test.mutate(c.id)} busy={test.isPending && test.variables === c.id}>
+                    <SendIcon /> test
+                  </Button>
+                )}
+                {isOwner && (
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="hover:text-fail"
+                    onClick={() => remove.mutate(c.id)}
+                    busy={remove.isPending && remove.variables === c.id}
+                  >
+                    <Trash2Icon /> remove
+                  </Button>
+                )}
+              </span>
+            </div>
+            {(c.lastError || c.lastSentAt) && (
+              <div className="mt-1 font-mono text-[10px] text-faint">
+                {c.lastError ? (
+                  <span className="text-fail">{c.lastError}</span>
+                ) : (
+                  <>
+                    sent <When iso={c.lastSentAt} />
+                  </>
+                )}
+              </div>
             )}
-            {isOwner && (
-              <Button size="sm" variant="ghost" onClick={() => remove.mutate(c.id)}>
-                remove
-              </Button>
-            )}
-            {tested[c.id] && <span className={cx('w-full font-mono text-[11px]', tested[c.id] === 'sent' ? 'text-ok' : 'text-fail')}>{tested[c.id]}</span>}
+            {tested[c.id] && <div className={cn('mt-1 font-mono text-[11px]', tested[c.id] === 'sent' ? 'text-ok' : 'text-fail')}>{tested[c.id]}</div>}
           </div>
         ))}
       </div>
+      <Separator className="my-5" />
       {isOwner ? (
         <form
-          className="mt-5 space-y-3 border-t border-line pt-4"
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault()
             create.mutate()
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Kind">
-              <select className="input" value={kind} onChange={(e) => (setKind(e.target.value as ChannelKind), setCfg({}))}>
-                {(Object.keys(kindFields) as Array<ChannelKind>).map((k) => (
-                  <option key={k}>{k}</option>
-                ))}
-              </select>
+              <Choice
+                value={kind}
+                onChange={(v) => {
+                  setKind(v as ChannelKind)
+                  setCfg({})
+                }}
+                options={(Object.keys(kindFields) as Array<ChannelKind>).map((k) => ({ value: k, label: k }))}
+              />
             </Field>
             <Field label="Name">
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="phone" required />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="phone" required />
             </Field>
             {kindFields[kind].map((f) => (
               <Field key={f.key} label={f.label}>
-                <input
-                  className="input font-mono"
+                <Input
+                  className="font-mono"
                   type={f.secret ? 'password' : 'text'}
                   autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   placeholder={f.placeholder}
                   value={cfg[f.key] ?? ''}
                   onChange={(e) => setCfg({ ...cfg, [f.key]: e.target.value })}
@@ -240,12 +353,12 @@ function Channels() {
             ))}
           </div>
           <ErrorBanner error={create.error} />
-          <Button type="submit" variant="primary" busy={create.isPending}>
-            Add channel
+          <Button type="submit" busy={create.isPending} className="w-full sm:w-auto">
+            <PlusIcon /> Add channel
           </Button>
         </form>
       ) : (
-        <p className="mt-4 text-xs text-muted">Only account owners can add channels, because they hold credentials.</p>
+        <p className="text-xs text-muted-foreground">Only account owners can add channels, because they hold credentials.</p>
       )}
     </Panel>
   )
@@ -267,28 +380,38 @@ function Certs() {
     mutationFn: (id: number) => call(api().DELETE('/certs/{certId}', { params: { path: { certId: id } } })),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['certs'] }),
   })
+  const list = certs.data?.items ?? []
   return (
     <Panel title="TLS certificates">
-      <div className="space-y-1.5">
-        {(certs.data?.items ?? []).map((c) => (
-          <div key={c.id} className="flex items-center gap-3 font-mono text-xs">
-            <span className="text-ink">
-              {c.hostname}
-              {c.port !== 443 && `:${c.port}`}
-            </span>
-            <span className="text-faint">{c.issuer}</span>
-            <span className={cx('ml-auto', c.lastError ? 'text-fail' : (c.daysLeft ?? 99) <= 14 ? 'text-warn' : 'text-ok')}>
-              {c.lastError ? c.lastError : `${c.daysLeft} days`}
-            </span>
-            {canAct && (
-              <button className="text-muted hover:text-fail" onClick={() => del.mutate(c.id)} aria-label={`Stop checking ${c.hostname}`}>
-                ×
-              </button>
-            )}
-          </div>
-        ))}
-        {(certs.data?.items ?? []).length === 0 && <p className="text-sm text-muted">Add the hostnames your servers serve. esa checks them twice a day.</p>}
-      </div>
+      {list.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Add the hostnames your servers serve. esa checks them twice a day.</p>
+      ) : (
+        <ul className="divide-y divide-line/60">
+          {list.map((c) => (
+            <li key={c.id} className="flex items-start gap-3 py-2 font-mono text-xs first:pt-0 last:pb-0">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="min-w-0 truncate text-ink">
+                    {c.hostname}
+                    {c.port !== 443 && `:${c.port}`}
+                  </span>
+                  {!c.lastError && <span className={cn('shrink-0', (c.daysLeft ?? 99) <= 14 ? 'text-warn' : 'text-ok')}>{c.daysLeft} days</span>}
+                </div>
+                {c.lastError ? (
+                  <div className="mt-0.5 text-[11px] break-words text-fail">{c.lastError}</div>
+                ) : (
+                  <div className="truncate text-[10px] text-faint">{c.issuer}</div>
+                )}
+              </div>
+              {canAct && (
+                <Button size="icon-xs" variant="ghost" className="-mt-1 hover:text-fail" onClick={() => del.mutate(c.id)} aria-label={`Stop checking ${c.hostname}`}>
+                  <XIcon />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
       {canAct && (
         <form
           className="mt-4 flex gap-2"
@@ -297,16 +420,27 @@ function Certs() {
             add.mutate()
           }}
         >
-          <input className="input font-mono" value={host} onChange={(e) => setHost(e.target.value)} placeholder="app.example.com" />
-          <Button type="submit" busy={add.isPending} disabled={!host}>
+          <Input
+            className="font-mono"
+            aria-label="Hostname"
+            inputMode="url"
+            autoCapitalize="off"
+            spellCheck={false}
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="app.example.com"
+          />
+          <Button type="submit" variant="outline" busy={add.isPending} disabled={!host}>
             Add
           </Button>
         </form>
       )}
-      <div className="mt-2">
-        <ErrorBanner error={add.error} />
-      </div>
-      {add.isSuccess && <div className="mt-2"><Notice tone="ok">Checked {add.data.hostname}.</Notice></div>}
+      <ErrorBanner error={add.error} className="mt-3" />
+      {add.isSuccess && (
+        <Notice tone="ok" className="mt-3">
+          Checked {add.data.hostname}.
+        </Notice>
+      )}
     </Panel>
   )
 }

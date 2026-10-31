@@ -1,10 +1,14 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { PlusIcon } from 'lucide-react'
 import type { Server } from '@esa/api'
 import { q } from '#/lib/queries'
 import { duration, pct } from '#/lib/format'
 import { Ago } from '#/components/time'
-import { Empty, Meter, PageHeader, Stat, StatusDot, cx } from '#/components/ui'
+import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
+import { Button } from '#/components/ui/button'
+import { Card } from '#/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
 import { useRole } from './route'
 
 export const Route = createFileRoute('/app/')({
@@ -22,97 +26,183 @@ function Board() {
     <div>
       <PageHeader kicker="Fleet" title="The board">
         {canAct && (
-          <Link to="/app/servers/new" className="rounded bg-amber px-4 py-2 text-sm font-semibold text-bg hover:bg-amber-2">
-            Add server
-          </Link>
+          <Button asChild>
+            <Link to="/app/servers/new">
+              <PlusIcon /> Add server
+            </Link>
+          </Button>
         )}
       </PageHeader>
 
-      <div className="panel mb-6 grid grid-cols-2 gap-6 p-5 sm:grid-cols-3 lg:grid-cols-6 animate-rise" style={{ animationDelay: '60ms' }}>
+      <Card className="mb-6 grid animate-rise grid-cols-3 gap-x-4 gap-y-5 p-4 sm:p-5 lg:grid-cols-6" style={{ animationDelay: '60ms' }}>
         <Stat label="Servers" value={t.servers} sub={`${t.groups} groups`} />
         <Stat label="OK" value={t.ok} tone={t.ok ? 'ok' : undefined} />
         <Stat label="Warning" value={t.warning} tone={t.warning ? 'warn' : undefined} />
         <Stat label="Failing" value={t.failing} tone={t.failing ? 'fail' : undefined} />
         <Stat label="Unreachable" value={t.unreachable} tone={t.unreachable ? 'down' : undefined} />
         <Stat label="Pending" value={t.pending} />
-      </div>
+      </Card>
 
       {data.servers.length === 0 ? (
-        <Empty title="No servers yet">
-          Add a server with a one-time sudo login, or get a command to paste on it. The control plane installs a small helper and starts
-          watching it within a minute.
+        <Empty
+          title="No servers yet"
+          action={
+            canAct && (
+              <Button asChild>
+                <Link to="/app/servers/new">
+                  <PlusIcon /> Add server
+                </Link>
+              </Button>
+            )
+          }
+        >
+          Add a server with a one-time sudo login, or get a command to paste on it. The control plane installs a small helper and starts watching it within a
+          minute.
         </Empty>
       ) : (
-        <div className="panel overflow-x-auto animate-rise" style={{ animationDelay: '120ms' }}>
-          <table className="w-full min-w-[960px] border-collapse text-left">
-            <thead>
-              <tr className="border-b border-line">
-                {['', 'Server', 'CPU', 'Memory', 'Disk', 'Load', 'Up', 'Updates', 'Why', 'Seen'].map((h) => (
-                  <th key={h} className="label px-3 py-2.5 font-normal">
-                    {h}
-                  </th>
+        <div className="animate-rise" style={{ animationDelay: '120ms' }}>
+          {/* Phones and tablets: one card per server. */}
+          <ul className="grid gap-3 md:grid-cols-2 xl:hidden">
+            {data.servers.map((s) => (
+              <li key={s.id}>
+                <ServerCard s={s} />
+              </li>
+            ))}
+          </ul>
+          {/* Wide screens: the full table. */}
+          <Card className="hidden xl:flex">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-6 pr-1 pl-4">
+                    <span className="sr-only">Status</span>
+                  </TableHead>
+                  {['Server', 'CPU', 'Memory', 'Disk', 'Load', 'Up', 'Updates', 'Why', 'Seen'].map((h) => (
+                    <TableHead key={h}>{h}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.servers.map((s) => (
+                  <Row key={s.id} s={s} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.servers.map((s) => (
-                <Row key={s.id} s={s} />
-              ))}
-            </tbody>
-          </table>
+              </TableBody>
+            </Table>
+          </Card>
         </div>
       )}
     </div>
   )
 }
 
+function why(s: Server): string {
+  const reasons = s.status === 'unreachable' ? [s.lastError || 'no answer'] : s.reasons
+  if (s.hostKeyMismatch) return 'host key changed: paused'
+  if (reasons.length) return reasons.join(' · ')
+  if (s.enrollment === 'pending') return 'waiting for enroll command'
+  return 'all clear'
+}
+
+function Updates({ s }: { s: Server }) {
+  if (!s.updates) return <span className="text-faint">—</span>
+  return (
+    <span>
+      <span className={s.updates.security ? 'text-warn' : 'text-ink-2'}>{s.updates.security} sec</span>
+      <span className="text-faint"> · </span>
+      <span className="text-ink-2">{s.updates.other}</span>
+    </span>
+  )
+}
+
 function Row({ s }: { s: Server }) {
   const m = s.metrics
-  const reasons = s.status === 'unreachable' ? [s.lastError || 'no answer'] : s.reasons
   return (
-    <tr className={cx('group border-b border-line/60 transition-colors last:border-0 hover:bg-panel-2', s.status === 'failing' && 'bg-fail/[0.04]')}>
-      <td className="w-6 py-3 pl-4 pr-1">
+    <TableRow className={cn('group', s.status === 'failing' && 'bg-fail/[0.04]')}>
+      <TableCell className="w-6 py-3 pr-1 pl-4">
         <StatusDot status={s.status} />
-      </td>
-      <td className="px-3 py-3">
+      </TableCell>
+      <TableCell className="py-3">
         <Link to="/app/servers/$serverId" params={{ serverId: s.id }} className="block">
           <span className="font-mono text-sm text-ink group-hover:text-amber">{s.name}</span>
-          <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-wider text-faint">
+          <span className="mt-0.5 block font-mono text-[10px] tracking-wider text-faint uppercase">
             {s.groupName ?? 'no group'} · {s.host}
           </span>
         </Link>
-      </td>
+      </TableCell>
       <Gauge value={m?.cpuPercent} warn={85} fail={97} />
       <Gauge value={m?.memPercent} warn={90} fail={97} />
       <Gauge value={m?.diskPercent} warn={85} fail={95} />
-      <td className="num px-3 py-3 text-xs text-ink-2">{m ? m.load1.toFixed(2) : '—'}</td>
-      <td className="num px-3 py-3 text-xs text-ink-2">{m ? duration(m.uptimeSeconds) : '—'}</td>
-      <td className="num px-3 py-3 text-xs">
-        {s.updates ? (
-          <span>
-            <span className={s.updates.security ? 'text-warn' : 'text-ink-2'}>{s.updates.security} sec</span>
-            <span className="text-faint"> · </span>
-            <span className="text-ink-2">{s.updates.other}</span>
-          </span>
-        ) : (
-          <span className="text-faint">—</span>
-        )}
-      </td>
-      <td className="max-w-[260px] px-3 py-3">
-        <span className={cx('line-clamp-2 text-xs', s.status === 'ok' ? 'text-faint' : 'text-ink-2')}>
-          {s.hostKeyMismatch ? 'host key changed: paused' : reasons.length ? reasons.join(' · ') : s.enrollment === 'pending' ? 'waiting for enroll command' : 'all clear'}
-        </span>
-      </td>
-      <td className="num whitespace-nowrap px-3 py-3 pr-4 text-[11px] text-muted"><Ago iso={s.lastSeenAt} /></td>
-    </tr>
+      <TableCell className="num py-3 text-xs text-ink-2">{m ? m.load1.toFixed(2) : '—'}</TableCell>
+      <TableCell className="num py-3 text-xs text-ink-2">{m ? duration(m.uptimeSeconds) : '—'}</TableCell>
+      <TableCell className="num py-3 text-xs">
+        <Updates s={s} />
+      </TableCell>
+      <TableCell className="max-w-[260px] py-3">
+        <span className={cn('line-clamp-2 text-xs', s.status === 'ok' ? 'text-faint' : 'text-ink-2')}>{why(s)}</span>
+      </TableCell>
+      <TableCell className="num py-3 pr-4 text-[11px] whitespace-nowrap text-muted-foreground">
+        <Ago iso={s.lastSeenAt} />
+      </TableCell>
+    </TableRow>
   )
 }
 
 function Gauge({ value, warn, fail }: { value: number | undefined; warn: number; fail: number }) {
   return (
-    <td className="w-28 px-3 py-3">
+    <TableCell className="w-28 py-3">
       <div className="num mb-1 text-xs text-ink-2">{pct(value)}</div>
       <Meter value={value} warn={warn} fail={fail} />
-    </td>
+    </TableCell>
+  )
+}
+
+function ServerCard({ s }: { s: Server }) {
+  const m = s.metrics
+  return (
+    <Link
+      to="/app/servers/$serverId"
+      params={{ serverId: s.id }}
+      className={cn(
+        'panel group block p-4 transition-colors hover:border-amber/50 active:bg-panel-2',
+        s.status === 'failing' && 'border-fail/40',
+        s.status === 'warning' && 'border-warn/30',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <StatusDot status={s.status} className="mt-1.5" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-mono text-sm text-ink group-hover:text-amber">{s.name}</div>
+          <div className="truncate font-mono text-[10px] tracking-wider text-faint uppercase">
+            {s.groupName ?? 'no group'} · {s.host}
+          </div>
+        </div>
+        <span className="num shrink-0 text-[10px] text-muted-foreground">
+          <Ago iso={s.lastSeenAt} />
+        </span>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {(
+          [
+            ['CPU', m?.cpuPercent, 85, 97],
+            ['Mem', m?.memPercent, 90, 97],
+            ['Disk', m?.diskPercent, 85, 95],
+          ] as const
+        ).map(([label, v, warn, fail]) => (
+          <div key={label}>
+            <div className="mb-1 flex items-baseline justify-between gap-1">
+              <span className="label">{label}</span>
+              <span className="num text-[11px] text-ink-2">{pct(v)}</span>
+            </div>
+            <Meter value={v} warn={warn} fail={fail} />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-line/60 pt-3 font-mono text-[11px]">
+        <span className={cn('min-w-0 truncate', s.status === 'ok' ? 'text-faint' : 'text-ink-2')}>{why(s)}</span>
+        <span className="num shrink-0">
+          <Updates s={s} />
+        </span>
+      </div>
+    </Link>
   )
 }

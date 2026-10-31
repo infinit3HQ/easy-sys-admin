@@ -6,12 +6,20 @@ import type { RunServer } from '@esa/api'
 import { q } from '#/lib/queries'
 import { bytes } from '#/lib/format'
 import { When } from '#/components/time'
-import { PageHeader, Panel, RunStatus } from '#/components/ui'
+import { PageHeader, Panel, RunStatus } from '#/components/kit'
+import { Card } from '#/components/ui/card'
 
 export const Route = createFileRoute('/app/runs/$runId')({
-  params: { parse: (p) => ({ runId: z.coerce.number().int().positive().parse(p.runId) }), stringify: (p) => ({ runId: String(p.runId) }) },
+  params: {
+    parse: (p) => ({
+      runId: z.coerce.number().int().positive().parse(p.runId),
+    }),
+    stringify: (p) => ({ runId: String(p.runId) }),
+  },
   loader: ({ context, params }) => context.queryClient.ensureQueryData(q.run(params.runId)),
-  head: ({ params }) => ({ meta: [{ title: `Run #${params.runId} · easy-sys-admin` }] }),
+  head: ({ params }) => ({
+    meta: [{ title: `Run #${params.runId} · easy-sys-admin` }],
+  }),
   component: RunPage,
 })
 
@@ -20,18 +28,25 @@ function RunPage() {
   const { data: r } = useSuspenseQuery(q.run(runId))
   return (
     <div>
-      <PageHeader kicker={<Link to="/app/runs">Runs</Link>} title={`${r.kind} #${r.id}`}>
+      <PageHeader
+        kicker={
+          <Link to="/app/runs" className="hover:text-ink">
+            Runs
+          </Link>
+        }
+        title={`${r.kind} #${r.id}`}
+      >
         <RunStatus status={r.status} />
       </PageHeader>
-      <div className="panel mb-6 grid gap-4 p-5 font-mono text-xs sm:grid-cols-4">
+      <Card className="mb-6 grid grid-cols-2 gap-x-4 gap-y-4 p-4 font-mono text-xs sm:p-5 lg:grid-cols-4">
         <Fact k="Target" v={r.groupName ?? 'selected servers'} />
         <Fact k="Trigger" v={r.trigger} />
         <Fact k="Started" v={<When iso={r.startedAt} />} />
         <Fact k="Finished" v={r.finishedAt ? <When iso={r.finishedAt} /> : 'running'} />
-        <div className="sm:col-span-4">
+        <div className="col-span-2 lg:col-span-4">
           <Fact k="Summary" v={r.summary || '…'} />
         </div>
-      </div>
+      </Card>
       <div className="space-y-4">
         {r.servers.map((s) => (
           <ServerResult key={s.serverId} s={s} kind={r.kind} />
@@ -52,31 +67,34 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
       }
       actions={<RunStatus status={s.status} />}
     >
-      {s.error && <p className="mb-3 rounded border border-fail/40 bg-fail/10 px-3 py-2 font-mono text-xs text-fail">{s.error}</p>}
+      {s.error && <p className="mb-3 rounded-md border border-fail/40 bg-fail/10 px-3 py-2 font-mono text-xs break-all text-fail">{s.error}</p>}
       {(kind === 'clean' || kind === 'measure') && Array.isArray(d.items) && (
-        <table className="w-full text-left font-mono text-xs">
-          <tbody>
-            {(d.items as Array<Record<string, any>>).map((it) => (
-              <tr key={it.id} className="border-t border-line/60 first:border-0">
-                <td className="py-1.5 text-ink">{it.id}</td>
-                <td className="py-1.5 text-ink-2">{it.status}</td>
-                <td className="py-1.5 text-muted">{it.reason ?? it.error ?? ''}</td>
-                <td className="py-1.5 text-right">{kind === 'measure' ? `${bytes(it.reclaimable)} reclaimable` : <span className="text-ok">{bytes(it.freed)} freed</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ul className="divide-y divide-line/60 font-mono text-xs">
+          {(d.items as Array<Record<string, any>>).map((it) => (
+            <li
+              key={it.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-2 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_100px_minmax(0,1.5fr)_auto]"
+            >
+              <span className="break-all text-ink">{it.id}</span>
+              <span className="text-right sm:order-last">
+                {kind === 'measure' ? `${bytes(it.reclaimable)} reclaimable` : <span className="text-ok">{bytes(it.freed)} freed</span>}
+              </span>
+              <span className="text-ink-2">{it.status}</span>
+              <span className="col-span-2 text-muted-foreground sm:col-span-1">{it.reason ?? it.error ?? ''}</span>
+            </li>
+          ))}
+        </ul>
       )}
       {kind === 'update' && d.upgrade && (
         <div className="space-y-3 font-mono text-xs">
-          <p className="text-ink-2">
+          <p className="break-words text-ink-2">
             {d.upgrade.packages?.length ? `${d.upgrade.packages.length} packages upgraded: ${d.upgrade.packages.join(', ')}` : 'Nothing to upgrade.'}
           </p>
-          {d.upgrade.skipped?.length > 0 && <p className="text-muted">Held back: {d.upgrade.skipped.join(', ')}</p>}
+          {d.upgrade.skipped?.length > 0 && <p className="text-muted-foreground">Held back: {d.upgrade.skipped.join(', ')}</p>}
           {d.reboot && <p className="text-amber">Reboot: {d.reboot}</p>}
           {d.upgrade.rebootRequired && !d.reboot && <p className="text-warn">The server needs a reboot.</p>}
           {d.upgrade.logTail?.length > 0 && (
-            <pre className="max-h-64 overflow-auto rounded border border-line bg-bg-2 p-3 text-[11px] text-ink-2">{d.upgrade.logTail.join('\n')}</pre>
+            <pre className="max-h-64 overflow-auto rounded-md border bg-bg-2 p-3 text-[11px] text-ink-2">{d.upgrade.logTail.join('\n')}</pre>
           )}
         </div>
       )}
@@ -89,9 +107,9 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
 
 function Fact({ k, v }: { k: string; v: ReactNode }) {
   return (
-    <div>
+    <div className="min-w-0">
       <div className="label">{k}</div>
-      <div className="mt-1 text-ink">{v}</div>
+      <div className="mt-1 break-words text-ink">{v}</div>
     </div>
   )
 }
