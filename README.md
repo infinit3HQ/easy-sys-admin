@@ -6,12 +6,12 @@ Everything is configured with environment variables. You never need to edit code
 
 ## What is in the repo
 
-| Path | What it is |
-|---|---|
-| `apps/esa` | Go: the control plane (`esa serve`), the CLI (`esa ...`), and `esa-helper`, the small binary installed on each managed server |
-| `apps/web` | TanStack Start: landing page, the board, and the MCP endpoint at `/mcp` |
-| `packages/api` | `openapi.yaml`, the API contract. Go handlers, the Go CLI client, and the TypeScript client are all generated from it |
-| `deploy/` | `compose.yaml` for one Docker host behind Traefik |
+| Path           | What it is                                                                                                                    |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `apps/esa`     | Go: the control plane (`esa serve`), the CLI (`esa ...`), and `esa-helper`, the small binary installed on each managed server |
+| `apps/web`     | TanStack Start: landing page, the board, and the MCP endpoint at `/mcp`                                                       |
+| `packages/api` | `openapi.yaml`, the API contract. Go handlers, the Go CLI client, and the TypeScript client are all generated from it         |
+| `deploy/`      | `compose.yaml` for one Docker host behind Traefik                                                                             |
 
 ## Deploy
 
@@ -30,24 +30,24 @@ No ports are published. Traefik reaches the web container over its network, and 
 
 ## Settings
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `ESA_HOST` | required | Public hostname, for example `esa.example.com` |
-| `ESA_PUBLIC_URL` | `https://$ESA_HOST` | Origin users open. The deploy workflow sets it from `ESA_HOST` |
-| `ESA_MASTER_KEY` | required | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored logins and channel credentials. Comma-separate several keys to rotate: the first seals new secrets. Back it up, because without it stored secrets cannot be read |
-| `POSTGRES_PASSWORD` | required | Password of the bundled PostgreSQL. It takes effect only when the database is first created |
-| `ESA_AUTH_PASSWORD` | `true` | Email and password sign-in |
-| `ESA_SIGNUP` | `true` | Anyone can create an email and password account, and gets their own fleet |
-| `ESA_ALLOWED_EMAILS` | empty | Comma-separated emails allowed to sign in with any method. Empty allows everyone |
-| `ESA_OIDC_ISSUER` | empty | OpenID Connect issuer, for example Authentik. Redirect URI: `https://$ESA_HOST/auth/callback/oidc` |
-| `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET` | empty | OIDC client |
-| `ESA_OIDC_PROVIDER_NAME` | `Authentik` | Name on the sign-in button |
-| `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET` | empty | Google sign-in. Redirect URI: `https://$ESA_HOST/auth/callback/google` |
-| `ESA_STACK_NAME` | `esa` | Compose project name |
-| `ESA_ROUTER` | `esa` | Traefik router and service name. Change it if your Traefik already has a router with this name |
-| `TRAEFIK_NETWORK` | `proxy` | Docker network Traefik watches |
-| `TRAEFIK_ENTRYPOINT` | `websecure` | Traefik entrypoint |
-| `TRAEFIK_CERT_RESOLVER` | `cloudflare` | Traefik certificate resolver |
+| Variable                                           | Default             | Meaning                                                                                                                                                                                                                               |
+| -------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ESA_HOST`                                         | required            | Public hostname, for example `esa.example.com`                                                                                                                                                                                        |
+| `ESA_PUBLIC_URL`                                   | `https://$ESA_HOST` | Origin users open. The deploy workflow sets it from `ESA_HOST`                                                                                                                                                                        |
+| `ESA_MASTER_KEY`                                   | required            | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts stored logins and channel credentials. Comma-separate several keys to rotate: the first seals new secrets. Back it up, because without it stored secrets cannot be read |
+| `POSTGRES_PASSWORD`                                | required            | Password of the bundled PostgreSQL. It takes effect only when the database is first created                                                                                                                                           |
+| `ESA_AUTH_PASSWORD`                                | `true`              | Email and password sign-in                                                                                                                                                                                                            |
+| `ESA_SIGNUP`                                       | `true`              | Anyone can create an email and password account, and gets their own fleet                                                                                                                                                             |
+| `ESA_ALLOWED_EMAILS`                               | empty               | Comma-separated emails allowed to sign in with any method. Empty allows everyone                                                                                                                                                      |
+| `ESA_OIDC_ISSUER`                                  | empty               | OpenID Connect issuer, for example Authentik. Redirect URI: `https://$ESA_HOST/auth/callback/oidc`                                                                                                                                    |
+| `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`     | empty               | OIDC client                                                                                                                                                                                                                           |
+| `ESA_OIDC_PROVIDER_NAME`                           | `Authentik`         | Name on the sign-in button                                                                                                                                                                                                            |
+| `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET` | empty               | Google sign-in. Redirect URI: `https://$ESA_HOST/auth/callback/google`                                                                                                                                                                |
+| `ESA_STACK_NAME`                                   | `esa`               | Compose project name                                                                                                                                                                                                                  |
+| `ESA_ROUTER`                                       | `esa`               | Traefik router and service name. Change it if your Traefik already has a router with this name                                                                                                                                        |
+| `TRAEFIK_NETWORK`                                  | `proxy`             | Docker network Traefik watches                                                                                                                                                                                                        |
+| `TRAEFIK_ENTRYPOINT`                               | `websecure`         | Traefik entrypoint                                                                                                                                                                                                                    |
+| `TRAEFIK_CERT_RESOLVER`                            | `cloudflare`        | Traefik certificate resolver                                                                                                                                                                                                          |
 
 Control plane only, for running it outside compose: `ESA_DATABASE_URL`, `ESA_LISTEN` (default `127.0.0.1:8080`), `ESA_HELPER_DIR`, `ESA_LOG_FORMAT` (`text` or `json`), and `ESA_AUTH_MODE=dev` for a one-click local login, which is only allowed on loopback. The web server reads `ESA_API_URL`, the address of the control plane.
 

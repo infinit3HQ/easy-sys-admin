@@ -208,11 +208,23 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 		}
 		args = append(args, "-f", file)
 	}
-	pull, err := h.output(ctx, 10*time.Minute, "docker", append(args, "pull", c.ComposeService)...)
+	// docker compose reports progress on stderr, so keep both streams.
+	run := func(sub ...string) (string, error) {
+		res, err := h.Run.Run(ctx, 10*time.Minute, "docker", append(append([]string{}, args...), sub...)...)
+		if err != nil {
+			return "", err
+		}
+		out := strings.TrimSpace(string(res.Stdout) + "\n" + string(res.Stderr))
+		if res.Exit != 0 {
+			return "", fmt.Errorf("docker compose %s: exit %d: %s", sub[0], res.Exit, firstLine([]byte(out)))
+		}
+		return out, nil
+	}
+	pull, err := run("pull", c.ComposeService)
 	if err != nil {
 		return "", err
 	}
-	up, err := h.output(ctx, 10*time.Minute, "docker", append(args, "up", "-d", "--no-deps", c.ComposeService)...)
+	up, err := run("up", "-d", "--no-deps", c.ComposeService)
 	if err != nil {
 		return "", err
 	}
