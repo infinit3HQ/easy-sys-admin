@@ -15,7 +15,7 @@
 | Upgrades           | Run as a transient systemd unit, so they survive dropped SSH and control plane restarts. One server at a time; the first failure stops the group                                                           |
 | MCP                | Streamable HTTP at `/mcp` (TypeScript SDK v2). Tools follow the API token's scopes                                                                                                                         |
 | Sign-in            | Email and password with sign-up, Google, any OIDC provider (Authentik), and a loopback-only dev login. Any mix, set by env                                                                                 |
-| Deploy             | One compose stack (PostgreSQL, control plane, web) behind Traefik, with no published ports. GitHub Actions builds and deploys on a self-hosted runner; settings come from repository secrets and variables |
+| Deploy             | One compose stack (PostgreSQL, control plane, web) behind Traefik, with no published ports. GitHub Actions builds and deploys on a self-hosted runner; settings come from production environment secrets and repository variables |
 
 ## Built and verified
 

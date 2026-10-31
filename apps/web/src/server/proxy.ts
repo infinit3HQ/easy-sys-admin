@@ -34,7 +34,7 @@ const MAX_BODY_BYTES = 1 << 20
 // own 10 minute write timeout, plus a margin.
 const DEFAULT_TIMEOUT_MS = 60_000
 const SLOW_TIMEOUT_MS = 11 * 60_000
-const SLOW_PATHS = /^\/(api\/servers(\/|$)|api\/certs(\/|$)|enroll\/)/
+const SLOW_PATHS = /^\/(api\/v1\/(servers|certs)(\/|$)|enroll\/)/
 
 export function apiOrigin(): string {
   return process.env.ESA_API_URL ?? 'http://127.0.0.1:8080'
@@ -70,9 +70,13 @@ export async function proxyToControlPlane(request: Request): Promise<Response> {
   headers.set('x-forwarded-proto', incoming.protocol.replace(':', ''))
 
   const hasBody = request.method !== 'GET' && request.method !== 'HEAD'
-  const timeout = SLOW_PATHS.test(incoming.pathname)
-    ? SLOW_TIMEOUT_MS
-    : DEFAULT_TIMEOUT_MS
+  const slow = SLOW_PATHS.test(incoming.pathname)
+  const timeout = slow ? SLOW_TIMEOUT_MS : DEFAULT_TIMEOUT_MS
+  // A slow call (a helper install, an upgrade start) keeps running when the
+  // browser tab closes; cancelling it upstream would stop an install halfway.
+  const signal = slow
+    ? AbortSignal.timeout(timeout)
+    : AbortSignal.any([request.signal, AbortSignal.timeout(timeout)])
   let upstream: Response
   try {
     upstream = await fetch(target, {
@@ -80,7 +84,7 @@ export async function proxyToControlPlane(request: Request): Promise<Response> {
       headers,
       body: hasBody ? request.body : undefined,
       redirect: 'manual',
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(timeout)]),
+      signal,
       // Required by Node when streaming a request body.
       ...(hasBody ? { duplex: 'half' } : {}),
     })

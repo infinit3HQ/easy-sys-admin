@@ -23,7 +23,7 @@ No ports are published. Traefik reaches the web container over its network, and 
 
 ### With GitHub Actions
 
-`.github/workflows/deploy.yml` builds and starts the stack on a self-hosted runner labelled `esa-deploy`. It writes the env file from repository settings into the runner's temp directory and deletes it when the job ends.
+`.github/workflows/deploy.yml` builds and starts the stack on a self-hosted runner labelled `esa-deploy`. It writes the env file from the `production` environment's secrets and the repository's variables into the runner's temp directory and deletes it when the job ends.
 
 - Secrets: `ESA_MASTER_KEY`, `POSTGRES_PASSWORD`, and optionally `ESA_OIDC_CLIENT_SECRET` and `ESA_GOOGLE_CLIENT_SECRET`.
 - Variables: `ESA_HOST`, and optionally every other setting in the table below. Pushes to `main` deploy after CI passes once `DEPLOY_ENABLED` is `true`. "Run workflow" deploys on demand.
@@ -58,7 +58,7 @@ Control plane only, for running it outside compose: `ESA_DATABASE_URL`, `ESA_LIS
 - Enroll commands need an `https` `ESA_PUBLIC_URL` (plain `http` works only on localhost). When an enrollment completes, esa connects to the server's SSH port to confirm its host key, so esa must be able to reach it.
 - Each account can have at most 500 servers, 200 certificates, and 25 notification channels. Probing, adding, and reinstalling servers, adding certificates, and testing channels are limited to 20 per minute per account.
 - Servers enrolled before this change get the hardened `esa` user (root-owned home, forced command on the key) the next time the helper is reinstalled.
-- For the deploy workflow, set the `production` environment to deploy only from `main` with a required reviewer, and keep `ESA_MASTER_KEY` and `POSTGRES_PASSWORD` as environment secrets rather than repository secrets.
+- The `production` environment deploys only from `main`. Keep `ESA_MASTER_KEY`, `POSTGRES_PASSWORD` and the OIDC/Google client secrets as environment secrets, not repository secrets. A required reviewer on the environment needs a paid GitHub plan for private repositories; on a public repository it is free.
 
 ## CLI
 

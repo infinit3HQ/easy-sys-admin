@@ -16,7 +16,8 @@ function contentSecurityPolicy(nonce: string): string {
     // React renders style attributes on the server.
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
-    "font-src 'self'",
+    // Vite inlines small font subsets as data: URLs.
+    "font-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'none'",

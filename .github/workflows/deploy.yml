@@ -2,8 +2,8 @@ name: Deploy
 
 # Builds the images on the server and restarts the stack with compose.
 # Runs on the self-hosted runner on Server_One, under its own user.
-# Settings come from repository secrets and variables; the env file exists
-# only for the length of the job.
+# Secrets come from the production environment, variables from the
+# repository; the env file exists only for the length of the job.
 #
 # Pushes to main of this repository deploy after CI passes when the
 # repository variable DEPLOY_ENABLED is "true". "Run workflow" deploys on
@@ -66,7 +66,7 @@ jobs:
         run: |
           set -eu
           for v in ESA_HOST ESA_MASTER_KEY POSTGRES_PASSWORD; do
-            if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set in the repository settings"; exit 1; fi
+            if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set (secrets belong to the production environment, variables to the repository)"; exit 1; fi
           done
           vars="ESA_HOST ESA_SIGNUP ESA_ALLOW_PRIVATE_NETWORKS ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME
                 ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET

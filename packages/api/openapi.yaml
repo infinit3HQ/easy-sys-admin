@@ -1699,7 +1699,7 @@ components:
       properties:
         name: { type: string }
         scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
-        expiresInDays: { type: integer, minimum: 0, maximum: 3650, description: 0 or absent means no expiry. }
+        expiresInDays: { type: integer, minimum: 1, maximum: 365, description: Days until the token expires. Absent means 90. }
 
     CreatedToken:
       type: object
