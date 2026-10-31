@@ -9,6 +9,7 @@ RUN npm install -g pnpm@12.15.0
 # Install with only the manifests first, so the dependency layer is cached.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json apps/web/
+COPY apps/esa/package.json apps/esa/
 COPY packages/api/package.json packages/api/
 COPY packages/tsconfig/package.json packages/tsconfig/
 COPY packages/eslint-config/package.json packages/eslint-config/

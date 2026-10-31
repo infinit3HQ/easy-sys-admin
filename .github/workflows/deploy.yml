@@ -30,8 +30,6 @@ jobs:
     environment:
       name: production
       url: https://${{ vars.ESA_HOST }}
-    env:
-      COMPOSE_PROJECT_NAME: esa
     steps:
       - uses: actions/checkout@v5
         with:
@@ -47,6 +45,11 @@ jobs:
           ESA_OIDC_PROVIDER_NAME: ${{ vars.ESA_OIDC_PROVIDER_NAME || 'Authentik' }}
           ESA_OIDC_CLIENT_ID: ${{ vars.ESA_OIDC_CLIENT_ID }}
           ESA_GOOGLE_CLIENT_ID: ${{ vars.ESA_GOOGLE_CLIENT_ID }}
+          ESA_STACK_NAME: ${{ vars.ESA_STACK_NAME || 'esa' }}
+          ESA_ROUTER: ${{ vars.ESA_ROUTER || 'esa' }}
+          TRAEFIK_NETWORK: ${{ vars.TRAEFIK_NETWORK || 'proxy' }}
+          TRAEFIK_ENTRYPOINT: ${{ vars.TRAEFIK_ENTRYPOINT || 'websecure' }}
+          TRAEFIK_CERT_RESOLVER: ${{ vars.TRAEFIK_CERT_RESOLVER || 'cloudflare' }}
           ESA_MASTER_KEY: ${{ secrets.ESA_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           ESA_OIDC_CLIENT_SECRET: ${{ secrets.ESA_OIDC_CLIENT_SECRET }}
@@ -61,7 +64,8 @@ jobs:
           {
             # Single quotes: compose takes the value literally.
             for v in ESA_HOST ESA_SIGNUP ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME \
-                     ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET; do
+                     ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET \
+                     ESA_STACK_NAME ESA_ROUTER TRAEFIK_NETWORK TRAEFIK_ENTRYPOINT TRAEFIK_CERT_RESOLVER; do
               printf "%s='%s'\n" "$v" "$(printenv "$v")"
             done
             printf "ESA_PUBLIC_URL='https://%s'\n" "$ESA_HOST"

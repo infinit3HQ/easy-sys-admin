@@ -6,7 +6,7 @@
 # Only the web container is published (through Traefik). It serves the
 # board, the MCP endpoint, and proxies /api, /auth, and /enroll to the
 # control plane on the internal network.
-name: esa
+name: ${ESA_STACK_NAME:-esa}
 
 services:
   postgres:
@@ -70,12 +70,12 @@ services:
       ESA_API_URL: http://esa:8080
     networks: [internal, proxy]
     labels:
-      traefik.enable: 'true'
-      traefik.docker.network: proxy
-      traefik.http.routers.esa.rule: Host(`${ESA_HOST:?set ESA_HOST}`)
-      traefik.http.routers.esa.entrypoints: websecure
-      traefik.http.routers.esa.tls.certresolver: ${TRAEFIK_CERT_RESOLVER:-cloudflare}
-      traefik.http.services.esa.loadbalancer.server.port: '3000'
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-proxy}
+      - traefik.http.routers.${ESA_ROUTER:-esa}.rule=Host(`${ESA_HOST:?set ESA_HOST}`)
+      - traefik.http.routers.${ESA_ROUTER:-esa}.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.${ESA_ROUTER:-esa}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-cloudflare}
+      - traefik.http.services.${ESA_ROUTER:-esa}.loadbalancer.server.port=3000
 
 volumes:
   postgres:

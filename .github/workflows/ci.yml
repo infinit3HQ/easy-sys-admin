@@ -57,6 +57,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
+          package-manager-cache: false
       - run: npm install -g pnpm@12.15.0
       - run: pnpm install --frozen-lockfile
       - name: Generated types are up to date

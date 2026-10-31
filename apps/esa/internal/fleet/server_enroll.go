@@ -146,13 +146,13 @@ case "$(uname -m)" in
   *) echo "esa: unsupported CPU $(uname -m)" >&2; exit 1 ;;
 esac
 command -v curl >/dev/null 2>&1 || { echo "esa: curl is required" >&2; exit 1; }
-tmp=$(mktemp /tmp/esa-helper.XXXXXX)
-trap 'rm -f "$tmp"' EXIT
-curl -fsSL "$base/helper?arch=$arch" -o "$tmp"
-cat > /tmp/esa-install.sh <<'ESA_INSTALL'
+# A private directory (mode 700), so no other user can swap the files we run as root.
+dir=$(mktemp -d /tmp/esa-enroll.XXXXXX)
+trap 'rm -rf "$dir"' EXIT
+curl -fsSL "$base/helper?arch=$arch" -o "$dir/esa-helper"
+cat > "$dir/install.sh" <<'ESA_INSTALL'
 ` + install + `ESA_INSTALL
-sh /tmp/esa-install.sh "$tmp"
-rm -f /tmp/esa-install.sh
+sh "$dir/install.sh" "$dir/esa-helper"
 hostkey=$(cat /etc/ssh/ssh_host_ed25519_key.pub 2>/dev/null || cat /etc/ssh/ssh_host_ecdsa_key.pub)
 curl -fsS -X POST -H 'Content-Type: text/plain' --data-binary "$hostkey" "$base/complete" >/dev/null
 echo "esa: done. This server will appear as ready in esa within a minute."
