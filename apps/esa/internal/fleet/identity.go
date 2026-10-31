@@ -69,6 +69,23 @@ func (s *Service) SignIn(ctx context.Context, id Identity, source Source) (SignI
 	return res, err
 }
 
+// UserAllowed reports whether the user's stored email is still on the allow
+// list. Sessions and tokens check it on every request, so removing someone
+// from ESA_ALLOWED_EMAILS locks them out without waiting for expiry.
+func (s *Service) UserAllowed(ctx context.Context, userID int64) (bool, error) {
+	if len(s.allowed) == 0 {
+		return true, nil
+	}
+	u, err := s.store.GetUser(ctx, userID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return s.allowed[strings.ToLower(u.Email)], nil
+}
+
 func defaultAccountName(u store.User) string {
 	name := u.Name
 	if name == "" {

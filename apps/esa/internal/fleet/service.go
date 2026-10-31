@@ -45,8 +45,12 @@ type Deps struct {
 	PublicURL *url.URL
 	// AllowedEmails limits sign-in to these lowercase addresses. Empty allows everyone.
 	AllowedEmails []string
+	// Signup lets anyone create an email and password account. When it is
+	// off, only the first user of an empty database can sign up.
+	Signup bool
 	// AllowPrivateNetworks lets SSH, certificate, and notification targets be
-	// private addresses. Loopback, link-local, and metadata are always refused.
+	// private or loopback addresses. Link-local, metadata, multicast, and
+	// unspecified addresses are always refused.
 	AllowPrivateNetworks bool
 	Logger               *slog.Logger
 }
@@ -61,6 +65,7 @@ type Service struct {
 	notifier  Notifier
 	publicURL *url.URL
 	allowed   map[string]bool
+	signup    bool
 	// allowPrivate mirrors Deps.AllowPrivateNetworks.
 	allowPrivate bool
 	log          *slog.Logger
@@ -89,7 +94,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 	}
 	return &Service{
 		store: d.Store, db: d.Store.DB(), box: d.Box, pool: d.Pool, helpers: d.Helpers,
-		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, allowPrivate: d.AllowPrivateNetworks, log: log,
+		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, signup: d.Signup, allowPrivate: d.AllowPrivateNetworks, log: log,
 		now: func() time.Time { return time.Now().UTC() }, baseCtx: baseCtx,
 		signers: map[int64]*accountSigner{},
 	}
@@ -103,7 +108,8 @@ func (s *Service) background(fn func(ctx context.Context)) {
 	s.runs.Add(1)
 	go func() {
 		defer s.runs.Done()
-		fn(s.baseCtx)
+		// Background SSH dials (runs resumed after a restart, ...) use the address policy too.
+		fn(s.netCtx(s.baseCtx))
 	}()
 }
 

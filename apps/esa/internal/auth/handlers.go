@@ -1,14 +1,17 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/config"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/password"
 )
 
 // devIdentity is the single user of ESA_AUTH_MODE=dev.
@@ -27,10 +30,11 @@ var devIdentity = fleet.Identity{
 //	POST /auth/password/signup      create an email and password account (form)
 //	POST /auth/dev-login            sign in as the dev user (dev mode)
 //	POST /auth/logout               end the session
+//	POST /auth/logout-all           end every session of the signed-in user
 func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessions *Sessions, fl *fleet.Service, log *slog.Logger) {
 	a := cfg.Auth
 	start := func(w http.ResponseWriter, r *http.Request, res fleet.SignInResult) {
-		if err := sessions.Start(r.Context(), w, res.User.ID, res.AccountID); err != nil {
+		if err := sessions.Start(r.Context(), w, r, res.User.ID, res.AccountID); err != nil {
 			log.Error("start session", "err", err)
 			loginError(w, r, "failed")
 			return
@@ -54,12 +58,17 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 	})
 
 	if a.Password {
-		// Five failures per address in 15 minutes, then a pause.
-		limiter := newFailureLimiter(5, 15*time.Minute)
+		limits := newLoginLimits()
+		// Ten sign-up attempts per client an hour, successful or not.
+		signups := newFailureLimiter(10, time.Hour)
 		mux.HandleFunc("POST /auth/password/login", func(w http.ResponseWriter, r *http.Request) {
-			email := strings.ToLower(strings.TrimSpace(r.FormValue("email")))
-			if limiter.Blocked(email) {
-				loginError(w, r, "locked")
+			email, err := fleet.NormalizeEmail(r.FormValue("email"))
+			if err != nil {
+				email = strings.ToLower(strings.TrimSpace(r.FormValue("email")))
+			}
+			ip := clientIP(r)
+			if code := limits.blocked(email, ip); code != "" {
+				loginError(w, r, code)
 				return
 			}
 			res, err := fl.SignInPassword(r.Context(), email, r.FormValue("password"))
@@ -67,25 +76,40 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			case errors.Is(err, fleet.ErrSignInNotAllowed):
 				loginError(w, r, "not_allowed")
 				return
+			case busy(err):
+				log.Warn("password sign in", "err", err)
+				loginError(w, r, "busy")
+				return
 			case err != nil:
 				if !errors.Is(err, fleet.ErrBadCredentials) {
 					log.Error("password sign in", "err", err)
 				}
-				limiter.Fail(email)
+				limits.fail(email, ip)
 				loginError(w, r, "bad_password")
 				return
 			}
-			limiter.Reset(email)
+			limits.succeed(email, ip)
 			start(w, r, res)
 		})
 		mux.HandleFunc("POST /auth/password/signup", func(w http.ResponseWriter, r *http.Request) {
-			if !a.Signup {
-				signupError(w, r, "signup_closed")
+			ip := clientIP(r)
+			if signups.Blocked(ip) {
+				signupError(w, r, "rate_limited")
 				return
 			}
+			signups.Fail(ip)
+			// Without ESA_SIGNUP the fleet service still lets the first
+			// user of an empty database sign up.
 			res, err := fl.SignUpPassword(r.Context(), r.FormValue("name"), r.FormValue("email"), r.FormValue("password"))
 			var verr *fleet.ValidationError
 			switch {
+			case errors.Is(err, fleet.ErrSignupClosed):
+				signupError(w, r, "signup_closed")
+				return
+			case busy(err):
+				log.Warn("password sign up", "err", err)
+				signupError(w, r, "busy")
+				return
 			case errors.Is(err, fleet.ErrEmailTaken):
 				signupError(w, r, "email_taken")
 				return
@@ -106,6 +130,10 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 
 	if a.Dev {
 		mux.HandleFunc("POST /auth/dev-login", func(w http.ResponseWriter, r *http.Request) {
+			if !loopbackRequest(r) {
+				http.Error(w, "dev login only works from localhost", http.StatusForbidden)
+				return
+			}
 			res, err := fl.SignIn(r.Context(), devIdentity, fleet.SourceWeb)
 			if err != nil {
 				log.Error("dev sign in", "err", err)
@@ -122,6 +150,42 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 		}
 		http.Redirect(w, r, "/login?signed_out=1", http.StatusSeeOther)
 	})
+	mux.HandleFunc("POST /auth/logout-all", func(w http.ResponseWriter, r *http.Request) {
+		if err := sessions.EndAll(r.Context(), w); err != nil {
+			log.Error("end all sessions", "err", err)
+		}
+		http.Redirect(w, r, "/login?signed_out=1", http.StatusSeeOther)
+	})
+}
+
+// busy is true when the server had no capacity to check a password.
+func busy(err error) bool {
+	return errors.Is(err, password.ErrBusy) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
+}
+
+// loopbackRequest reports whether the browser addressed the server by a
+// loopback name, directly (Host) and through the web app's proxy
+// (X-Forwarded-Host). Dev login checks it so a page on another site (DNS
+// rebinding) or another machine on the LAN cannot sign in.
+func loopbackRequest(r *http.Request) bool {
+	hosts := []string{r.Host}
+	for _, v := range r.Header.Values("X-Forwarded-Host") {
+		hosts = append(hosts, strings.Split(v, ",")...)
+	}
+	for _, h := range hosts {
+		h = strings.TrimSpace(h)
+		if host, _, err := net.SplitHostPort(h); err == nil {
+			h = host
+		} else {
+			h = strings.TrimSuffix(strings.TrimPrefix(h, "["), "]")
+		}
+		switch strings.ToLower(h) {
+		case "localhost", "127.0.0.1", "::1":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func signupError(w http.ResponseWriter, r *http.Request, code string) {

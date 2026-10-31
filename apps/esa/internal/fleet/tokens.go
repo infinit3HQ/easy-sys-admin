@@ -15,6 +15,12 @@ import (
 // tokenPrefix marks esa API tokens, so secret scanners can find leaked ones.
 const tokenPrefix = "esa_"
 
+// Token lifetimes. Every new token expires.
+const (
+	DefaultTokenTTL = 90 * 24 * time.Hour
+	MaxTokenTTL     = 365 * 24 * time.Hour
+)
+
 // TokenView is an API token without its secret.
 type TokenView struct {
 	ID         int64
@@ -50,7 +56,8 @@ func (s *Service) ListTokens(ctx context.Context, a Actor) ([]TokenView, error) 
 }
 
 // CreateToken issues a token. The secret is returned once and never stored.
-// Scopes beyond the user's role are refused.
+// Scopes beyond the user's role are refused. A zero ttl means
+// DefaultTokenTTL; otherwise it must be one day to MaxTokenTTL.
 func (s *Service) CreateToken(ctx context.Context, a Actor, name string, scopes []Scope, ttl time.Duration) (TokenView, string, error) {
 	if a.TokenID != 0 || a.Source == SourceSystem {
 		return TokenView{}, "", ErrForbidden
@@ -58,6 +65,12 @@ func (s *Service) CreateToken(ctx context.Context, a Actor, name string, scopes 
 	name, err := validName("name", name)
 	if err != nil {
 		return TokenView{}, "", err
+	}
+	if ttl == 0 {
+		ttl = DefaultTokenTTL
+	}
+	if ttl < 24*time.Hour || ttl > MaxTokenTTL {
+		return TokenView{}, "", invalid("expiresInDays", "use 1 to 365 days")
 	}
 	if len(scopes) == 0 {
 		scopes = []Scope{ScopeRead}
@@ -83,13 +96,11 @@ func (s *Service) CreateToken(ctx context.Context, a Actor, name string, scopes 
 		clean = append([]Scope{ScopeRead}, clean...)
 	}
 	secret, hash := randomToken(tokenPrefix)
+	now := s.now()
+	exp := now.Add(ttl)
 	t := store.APIToken{
 		UserID: a.UserID, AccountID: a.AccountID, Name: name, Scopes: store.MustJSON(clean),
-		TokenHash: hash, Prefix: secret[:len(tokenPrefix)+6], CreatedAt: s.now(),
-	}
-	if ttl > 0 {
-		exp := s.now().Add(ttl)
-		t.ExpiresAt = &exp
+		TokenHash: hash, Prefix: secret[:len(tokenPrefix)+6], CreatedAt: now, ExpiresAt: &exp,
 	}
 	if err := s.db.WithContext(ctx).Omit(clause.Associations).Create(&t).Error; err != nil {
 		return TokenView{}, "", mapStore(err)
@@ -135,6 +146,9 @@ func (s *Service) AuthenticateToken(ctx context.Context, secret string, source S
 	m, err := s.Membership(ctx, t.UserID, t.AccountID)
 	if err != nil {
 		return Actor{}, false, nil
+	}
+	if ok, err := s.UserAllowed(ctx, t.UserID); err != nil || !ok {
+		return Actor{}, false, err
 	}
 	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) > time.Minute {
 		s.db.WithContext(ctx).Model(&store.APIToken{}).Where("id = ?", t.ID).Update("last_used_at", now)
