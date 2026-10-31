@@ -93,7 +93,11 @@ func actor(ctx context.Context) (fleet.Actor, error) {
 // ---- Session ---------------------------------------------------------------------
 
 func (h *Handlers) GetAuthConfig(context.Context, GetAuthConfigRequestObject) (GetAuthConfigResponseObject, error) {
-	return GetAuthConfig200JSONResponse{Mode: AuthConfigMode(h.auth.Mode), ProviderName: h.auth.ProviderName}, nil
+	providers := make([]AuthProvider, 0, len(h.auth.Providers))
+	for _, p := range h.auth.Providers {
+		providers = append(providers, AuthProvider{Id: p.ID, Name: p.Name})
+	}
+	return GetAuthConfig200JSONResponse{Dev: h.auth.Dev, Password: h.auth.Password, Signup: h.auth.Signup, Providers: providers}, nil
 }
 
 func (h *Handlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {

@@ -58,11 +58,14 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Logger: log,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
-	oidc := auth.NewOIDC(ctx, cfg, sessions, fl, log)
+	oidc := map[string]*auth.OIDC{}
+	for _, p := range cfg.Auth.Providers {
+		oidc[p.ID] = auth.NewOIDC(ctx, cfg, p, sessions, fl, log)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", health(st))
-	auth.Routes(mux, cfg.Auth.Mode, oidc, sessions, fl, log)
+	auth.Routes(mux, cfg, oidc, sessions, fl, log)
 	api.Mount(mux, fl, sessions, cfg.Auth, log)
 	api.MountEnroll(mux, fl, log)
 
@@ -93,7 +96,8 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	go func() {
 		log.Info("control plane listening",
 			"addr", cfg.Listen, "public_url", cfg.PublicURL.String(),
-			"auth", cfg.Auth.Mode, "version", version.String())
+			"dev_login", cfg.Auth.Dev, "password", cfg.Auth.Password, "signup", cfg.Auth.Signup,
+			"providers", len(cfg.Auth.Providers), "version", version.String())
 		errc <- srv.ListenAndServe()
 	}()
 

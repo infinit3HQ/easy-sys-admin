@@ -733,13 +733,20 @@ export interface components {
             field?: string;
         };
         AuthConfig: {
-            /**
-             * @description `dev` is a local-only login without an identity provider.
-             * @enum {string}
-             */
-            mode: "oidc" | "dev";
-            /** @example Authentik */
-            providerName: string;
+            /** @description Local-only dev login without an identity provider. */
+            dev: boolean;
+            /** @description Email and password sign-in is on. */
+            password: boolean;
+            /** @description New people can create an email and password account. */
+            signup: boolean;
+            /** @description OpenID Connect providers. Start sign-in at /auth/login/{id}. */
+            providers: components["schemas"]["AuthProvider"][];
+        };
+        AuthProvider: {
+            /** @example google */
+            id: string;
+            /** @example Google */
+            name: string;
         };
         /** @enum {string} */
         Role: "owner" | "admin" | "viewer";

@@ -106,24 +106,6 @@ func (e AlertRuleKind) Valid() bool {
 	}
 }
 
-// Defines values for AuthConfigMode.
-const (
-	Dev  AuthConfigMode = "dev"
-	Oidc AuthConfigMode = "oidc"
-)
-
-// Valid indicates whether the value is a known member of the AuthConfigMode enum.
-func (e AuthConfigMode) Valid() bool {
-	switch e {
-	case Dev:
-		return true
-	case Oidc:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for ChannelKind.
 const (
 	Discord ChannelKind = "discord"
@@ -541,15 +523,27 @@ type AlertRuleList struct {
 
 // AuthConfig defines model for AuthConfig.
 type AuthConfig struct {
-	// Mode `dev` is a local-only login without an identity provider.
-	Mode AuthConfigMode `json:"mode"`
+	// Dev Local-only dev login without an identity provider.
+	Dev bool `json:"dev"`
 
-	// ProviderName Example: Authentik
-	ProviderName string `json:"providerName"`
+	// Password Email and password sign-in is on.
+	Password bool `json:"password"`
+
+	// Providers OpenID Connect providers. Start sign-in at /auth/login/{id}.
+	Providers []AuthProvider `json:"providers"`
+
+	// Signup New people can create an email and password account.
+	Signup bool `json:"signup"`
 }
 
-// AuthConfigMode `dev` is a local-only login without an identity provider.
-type AuthConfigMode string
+// AuthProvider defines model for AuthProvider.
+type AuthProvider struct {
+	// Id Example: google
+	Id string `json:"id"`
+
+	// Name Example: Google
+	Name string `json:"name"`
+}
 
 // AuthorizedKey defines model for AuthorizedKey.
 type AuthorizedKey = proto.AuthorizedKey

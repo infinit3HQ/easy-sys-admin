@@ -38,13 +38,15 @@ type Account struct {
 
 // User is a person who signed in through the identity provider.
 type User struct {
-	ID          int64     `gorm:"primaryKey"`
-	Issuer      string    `gorm:"not null;uniqueIndex:users_issuer_subject_key,priority:1"`
-	Subject     string    `gorm:"not null;uniqueIndex:users_issuer_subject_key,priority:2"`
-	Email       string    `gorm:"not null;default:''"`
-	Name        string    `gorm:"not null;default:''"`
-	CreatedAt   time.Time `gorm:"not null"`
-	LastLoginAt time.Time `gorm:"not null"`
+	ID      int64  `gorm:"primaryKey"`
+	Issuer  string `gorm:"not null;uniqueIndex:users_issuer_subject_key,priority:1"`
+	Subject string `gorm:"not null;uniqueIndex:users_issuer_subject_key,priority:2"`
+	Email   string `gorm:"not null;default:''"`
+	Name    string `gorm:"not null;default:''"`
+	// PasswordHash is set only for email and password accounts (issuer "local").
+	PasswordHash string    `gorm:"not null;default:''" json:"-"`
+	CreatedAt    time.Time `gorm:"not null"`
+	LastLoginAt  time.Time `gorm:"not null"`
 }
 
 // Membership is a user's role in an account.

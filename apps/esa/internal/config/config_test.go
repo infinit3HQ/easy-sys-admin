@@ -37,8 +37,18 @@ func TestRequired(t *testing.T) {
 		}
 	}
 	m := base()
-	m["ESA_AUTH_MODE"] = "oidc"
+	m["ESA_AUTH_MODE"] = "standard"
+	m["ESA_AUTH_PASSWORD"] = "false"
 	if _, err := parse(env(m)); err == nil {
-		t.Error("oidc without issuer accepted")
+		t.Error("no sign-in method accepted")
+	}
+	m["ESA_GOOGLE_CLIENT_ID"] = "id"
+	if _, err := parse(env(m)); err == nil {
+		t.Error("google without secret accepted")
+	}
+	m["ESA_GOOGLE_CLIENT_SECRET"] = "secret"
+	cfg, err := parse(env(m))
+	if err != nil || len(cfg.Auth.Providers) != 1 || cfg.Auth.Providers[0].Issuer != "https://accounts.google.com" {
+		t.Errorf("google provider: %+v, %v", cfg.Auth.Providers, err)
 	}
 }

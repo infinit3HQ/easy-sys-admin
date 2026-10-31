@@ -10,16 +10,6 @@ import (
 	"strings"
 )
 
-// AuthMode selects how users sign in.
-type AuthMode string
-
-const (
-	// AuthOIDC signs users in through an OpenID Connect provider such as Authentik.
-	AuthOIDC AuthMode = "oidc"
-	// AuthDev signs everyone in as one local user. Only allowed on a loopback address.
-	AuthDev AuthMode = "dev"
-)
-
 // Config is the control plane configuration.
 type Config struct {
 	// Listen is the address the HTTP server binds to.
@@ -40,21 +30,37 @@ type Config struct {
 	Auth AuthConfig
 }
 
-// AuthConfig holds sign-in settings.
+// AuthConfig holds sign-in settings. Any combination of methods can be on.
 type AuthConfig struct {
-	Mode AuthMode
-	// ProviderName is shown on the sign-in button.
-	ProviderName string
-	OIDC         OIDCConfig
-	// AllowedEmails limits who may sign in. Empty means anyone the provider lets through.
+	// Dev signs everyone in as one local user. Only allowed on loopback.
+	Dev bool
+	// Password enables email and password sign-in.
+	Password bool
+	// Signup lets new people create an email and password account.
+	Signup bool
+	// Providers are OpenID Connect providers (Authentik, Google, ...).
+	Providers []OIDCProvider
+	// AllowedEmails limits who may sign in with any method. Empty allows everyone.
 	AllowedEmails []string
 }
 
-// OIDCConfig holds OpenID Connect client settings.
-type OIDCConfig struct {
+// OIDCProvider is one OpenID Connect client.
+type OIDCProvider struct {
+	ID           string // in URLs: /auth/login/{id}
+	Name         string // on the button
 	Issuer       string
 	ClientID     string
 	ClientSecret string
+}
+
+// Provider returns the provider with the given id.
+func (a AuthConfig) Provider(id string) (OIDCProvider, bool) {
+	for _, p := range a.Providers {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return OIDCProvider{}, false
 }
 
 // SecureCookies is true when the public URL is HTTPS.
@@ -78,13 +84,6 @@ func parse(getenv func(string) string) (Config, error) {
 		DatabaseURL: get("ESA_DATABASE_URL", ""),
 		LogFormat:   get("ESA_LOG_FORMAT", "text"),
 		Auth: AuthConfig{
-			Mode:         AuthMode(get("ESA_AUTH_MODE", string(AuthOIDC))),
-			ProviderName: get("ESA_OIDC_PROVIDER_NAME", "Authentik"),
-			OIDC: OIDCConfig{
-				Issuer:       get("ESA_OIDC_ISSUER", ""),
-				ClientID:     get("ESA_OIDC_CLIENT_ID", ""),
-				ClientSecret: get("ESA_OIDC_CLIENT_SECRET", ""),
-			},
 			AllowedEmails: splitList(get("ESA_ALLOWED_EMAILS", "")),
 		},
 	}
@@ -116,21 +115,67 @@ func parse(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("ESA_LOG_FORMAT must be text or json, got %q", cfg.LogFormat)
 	}
 
-	switch cfg.Auth.Mode {
-	case AuthOIDC:
-		o := cfg.Auth.OIDC
-		if o.Issuer == "" || o.ClientID == "" || o.ClientSecret == "" {
-			return Config{}, errors.New("ESA_OIDC_ISSUER, ESA_OIDC_CLIENT_ID and ESA_OIDC_CLIENT_SECRET are required when ESA_AUTH_MODE=oidc")
-		}
-	case AuthDev:
-		if !isLoopback(cfg.Listen) || !isLoopbackHost(publicURL.Hostname()) {
-			return Config{}, errors.New("ESA_AUTH_MODE=dev is only allowed when ESA_LISTEN and ESA_PUBLIC_URL are loopback addresses")
-		}
-	default:
-		return Config{}, fmt.Errorf("ESA_AUTH_MODE must be oidc or dev, got %q", cfg.Auth.Mode)
+	if err := parseAuth(&cfg, get, publicURL); err != nil {
+		return Config{}, err
 	}
 
 	return cfg, nil
+}
+
+func parseAuth(cfg *Config, get func(string, string) string, publicURL *url.URL) error {
+	a := &cfg.Auth
+	switch mode := get("ESA_AUTH_MODE", "standard"); mode {
+	case "dev":
+		a.Dev = true
+		if !isLoopback(cfg.Listen) || !isLoopbackHost(publicURL.Hostname()) {
+			return errors.New("ESA_AUTH_MODE=dev is only allowed when ESA_LISTEN and ESA_PUBLIC_URL are loopback addresses")
+		}
+	case "standard", "oidc":
+	default:
+		return fmt.Errorf("ESA_AUTH_MODE must be standard or dev, got %q", mode)
+	}
+
+	var err error
+	if a.Password, err = parseBool(get("ESA_AUTH_PASSWORD", "true")); err != nil {
+		return fmt.Errorf("ESA_AUTH_PASSWORD: %w", err)
+	}
+	if a.Signup, err = parseBool(get("ESA_SIGNUP", "true")); err != nil {
+		return fmt.Errorf("ESA_SIGNUP: %w", err)
+	}
+	a.Signup = a.Signup && a.Password
+
+	if issuer := get("ESA_OIDC_ISSUER", ""); issuer != "" {
+		p := OIDCProvider{
+			ID: "oidc", Name: get("ESA_OIDC_PROVIDER_NAME", "Authentik"), Issuer: issuer,
+			ClientID: get("ESA_OIDC_CLIENT_ID", ""), ClientSecret: get("ESA_OIDC_CLIENT_SECRET", ""),
+		}
+		if p.ClientID == "" || p.ClientSecret == "" {
+			return errors.New("ESA_OIDC_CLIENT_ID and ESA_OIDC_CLIENT_SECRET are required with ESA_OIDC_ISSUER")
+		}
+		a.Providers = append(a.Providers, p)
+	}
+	if id := get("ESA_GOOGLE_CLIENT_ID", ""); id != "" {
+		secret := get("ESA_GOOGLE_CLIENT_SECRET", "")
+		if secret == "" {
+			return errors.New("ESA_GOOGLE_CLIENT_SECRET is required with ESA_GOOGLE_CLIENT_ID")
+		}
+		a.Providers = append(a.Providers, OIDCProvider{ID: "google", Name: "Google", Issuer: "https://accounts.google.com", ClientID: id, ClientSecret: secret})
+	}
+
+	if !a.Dev && !a.Password && len(a.Providers) == 0 {
+		return errors.New("no sign-in method: enable ESA_AUTH_PASSWORD, or configure ESA_OIDC_* or ESA_GOOGLE_*")
+	}
+	return nil
+}
+
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(s) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("want true or false, got %q", s)
 }
 
 func splitList(s string) []string {

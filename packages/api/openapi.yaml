@@ -855,10 +855,22 @@ components:
 
     AuthConfig:
       type: object
-      required: [mode, providerName]
+      required: [dev, password, signup, providers]
       properties:
-        mode: { type: string, enum: [oidc, dev], description: '`dev` is a local-only login without an identity provider.' }
-        providerName: { type: string, example: Authentik }
+        dev: { type: boolean, description: 'Local-only dev login without an identity provider.' }
+        password: { type: boolean, description: Email and password sign-in is on. }
+        signup: { type: boolean, description: New people can create an email and password account. }
+        providers:
+          type: array
+          description: 'OpenID Connect providers. Start sign-in at /auth/login/{id}.'
+          items: { $ref: '#/components/schemas/AuthProvider' }
+
+    AuthProvider:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string, example: google }
+        name: { type: string, example: Google }
 
     Role:
       type: string

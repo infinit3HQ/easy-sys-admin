@@ -21,9 +21,9 @@ import (
 
 const loginStateTTL = 10 * time.Minute
 
-// OIDC runs the authorization code flow with PKCE against the configured provider.
+// OIDC runs the authorization code flow with PKCE against one provider.
 type OIDC struct {
-	cfg         config.OIDCConfig
+	cfg         config.OIDCProvider
 	redirectURL string
 	secure      bool
 	sessions    *Sessions
@@ -40,14 +40,14 @@ type OIDC struct {
 
 // NewOIDC returns the OIDC sign-in handlers. Provider discovery happens on
 // the first login, so the control plane starts even when the provider is down.
-func NewOIDC(baseCtx context.Context, cfg config.Config, sessions *Sessions, fl *fleet.Service, log *slog.Logger) *OIDC {
+func NewOIDC(baseCtx context.Context, cfg config.Config, provider config.OIDCProvider, sessions *Sessions, fl *fleet.Service, log *slog.Logger) *OIDC {
 	return &OIDC{
-		cfg:         cfg.Auth.OIDC,
-		redirectURL: cfg.PublicURL.JoinPath("/auth/callback").String(),
+		cfg:         provider,
+		redirectURL: cfg.PublicURL.JoinPath("/auth/callback", provider.ID).String(),
 		secure:      cfg.SecureCookies(),
 		sessions:    sessions,
 		fleet:       fl,
-		log:         log,
+		log:         log.With("provider", provider.ID),
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 		baseCtx:     baseCtx,
 	}
@@ -84,9 +84,9 @@ type loginState struct {
 
 func (o *OIDC) stateCookieName() string {
 	if o.secure {
-		return "__Host-esa_oidc"
+		return "__Host-esa_oidc_" + o.cfg.ID
 	}
-	return "esa_oidc"
+	return "esa_oidc_" + o.cfg.ID
 }
 
 // Login redirects the browser to the provider.
@@ -171,6 +171,7 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 
 	var claims struct {
 		Email             string `json:"email"`
+		EmailVerified     *bool  `json:"email_verified"`
 		Name              string `json:"name"`
 		PreferredUsername string `json:"preferred_username"`
 	}
@@ -178,6 +179,10 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		o.log.Warn("oidc claims", "err", err)
 		loginError(w, r, "failed")
 		return
+	}
+	// An unverified address must not pass the email allow list.
+	if claims.EmailVerified != nil && !*claims.EmailVerified {
+		claims.Email = ""
 	}
 	name := claims.Name
 	if name == "" {
