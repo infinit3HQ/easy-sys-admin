@@ -20,37 +20,55 @@ import (
 // over a sudo login (path B). It expects the new helper binary at "$1".
 //
 // It creates a system user "esa" with no usable password, allows the
-// account's key with the "restrict" option (no pty, no forwarding), installs
-// the helper, and allows exactly one sudo command: the helper.
+// account's key with the "restrict" option (no pty, no forwarding) and a
+// forced command that only passes helper calls on to sudo, installs the
+// helper, and allows exactly one sudo command: the helper.
+//
+// The esa home and its .ssh are owned by root, so the esa user cannot
+// write there; nothing esa runs needs to. An existing "esa" user is only
+// reused when it carries our comment and home.
 func InstallScript(accountPublicKey string) (string, error) {
 	k, err := ParseKey(accountPublicKey)
 	if err != nil {
 		return "", fmt.Errorf("account key: %w", err)
 	}
-	keyLine := "restrict " + MarshalKey(k) + " esa-control-plane"
+	keyLine := `restrict,command="` + proto.HelperPath + ` ssh-dispatch" ` + MarshalKey(k) + " esa-control-plane"
 	return `set -eu
 umask 022
 src="$1"
 lib=/usr/local/lib/esa
+home=` + proto.UserHome + `
+comment="` + proto.UserComment + `"
 if [ "$(id -u)" != 0 ]; then echo "ESA_INSTALL_ERROR must run as root" >&2; exit 1; fi
 if ! command -v sudo >/dev/null 2>&1; then echo "ESA_INSTALL_ERROR sudo is not installed" >&2; exit 1; fi
-if ! id esa >/dev/null 2>&1; then
-  useradd --system --create-home --home-dir /var/lib/esa-home --shell /bin/sh --comment "easy-sys-admin control plane" esa
+if id esa >/dev/null 2>&1; then
+  if [ "$(getent passwd esa | cut -d: -f5,6)" != "$comment:$home" ]; then
+    echo "ESA_INSTALL_ERROR a user named esa already exists and was not created by easy-sys-admin; remove or rename it, then try again" >&2; exit 1
+  fi
+else
+  useradd --system --no-create-home --home-dir "$home" --shell /bin/sh --comment "$comment" esa
 fi
 # "*" is no valid password but, unlike "!", does not lock key logins.
 usermod -p '*' esa
-home=$(getent passwd esa | cut -d: -f6)
+if [ -L "$home" ] || { [ -e "$home" ] && [ ! -d "$home" ]; }; then
+  echo "ESA_INSTALL_ERROR $home is not a directory" >&2; exit 1
+fi
+# Root owns the home first, so esa cannot plant links in it while we work.
+mkdir -p "$home"
+chown root:root "$home"
+chmod 0755 "$home"
 install -d -m 0755 -o root -g root "$lib"
 install -m 0755 -o root -g root "$src" "$lib/esa-helper.new"
 mv -f "$lib/esa-helper.new" "$lib/esa-helper"
 rm -f "$src"
-install -d -m 0700 -o esa -g esa "$home/.ssh"
+rm -rf "$home/.ssh"
+mkdir -m 0755 "$home/.ssh"
+chown root:root "$home/.ssh"
 printf '%s\n' '` + keyLine + `' > "$home/.ssh/authorized_keys.new"
-chown esa:esa "$home/.ssh/authorized_keys.new"
-chmod 0600 "$home/.ssh/authorized_keys.new"
+chmod 0644 "$home/.ssh/authorized_keys.new"
 mv -f "$home/.ssh/authorized_keys.new" "$home/.ssh/authorized_keys"
 # sudo ignores files in sudoers.d whose name contains a dot, so the .new file is inert until renamed.
-printf '%s\n' 'Defaults:esa !requiretty' 'esa ALL=(root) NOPASSWD: ` + proto.HelperPath + ` *' > /etc/sudoers.d/esa.new
+printf '%s\n' 'Defaults:esa !requiretty' 'Defaults:esa env_reset' 'Defaults:esa secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' 'esa ALL=(root) NOPASSWD: ` + proto.HelperPath + ` *' > /etc/sudoers.d/esa.new
 chmod 0440 /etc/sudoers.d/esa.new
 visudo -cf /etc/sudoers.d/esa.new >/dev/null
 mv -f /etc/sudoers.d/esa.new /etc/sudoers.d/esa
@@ -140,10 +158,10 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 		defer cancel()
 		res, err := Exec(cctx, client, cmd, bytes.NewReader(stdin))
 		if err != nil {
-			return "", err
+			return "", scrubErr(err, req.Login.Password)
 		}
 		if res.Exit != 0 {
-			return "", fmt.Errorf("%s", cleanInstallError(res))
+			return "", errors.New(scrub(cleanInstallError(res), req.Login.Password))
 		}
 		return strings.TrimSpace(string(res.Stdout)), nil
 	}
@@ -182,12 +200,24 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 	switch {
 	case uid == "0":
 		cmd, stdin = "sh -s -- "+tmp, []byte(script)
-	case req.Login.Password != "":
-		// sudo reads the password line from stdin, then sh reads the script.
-		cmd = "sudo -S -p '' sh -s -- " + tmp
-		stdin = append([]byte(req.Login.Password+"\n"), script...)
-	default:
+	case req.Login.Password == "":
 		cmd, stdin = "sudo -n sh -s -- "+tmp, []byte(script)
+	default:
+		if _, err := run("sudo -n true", nil); err == nil {
+			cmd, stdin = "sudo -n sh -s -- "+tmp, []byte(script)
+			break
+		}
+		// sudo needs the password. stdin then carries only the password,
+		// and sh reads the script from a file with stdin from /dev/null, so
+		// the password never reaches a shell even when sudo does not ask.
+		scriptTmp := tmp + ".sh"
+		if _, err := run("umask 077 && cat > "+scriptTmp, []byte(script)); err != nil {
+			_, _ = run("rm -f "+tmp, nil)
+			return InstallResult{}, fmt.Errorf("upload install script: %w", err)
+		}
+		defer func() { _, _ = run("rm -f "+scriptTmp, nil) }()
+		cmd = `sudo -S -p '' sh -c 'exec sh "$1" "$2" </dev/null' sh ` + scriptTmp + " " + tmp
+		stdin = []byte(req.Login.Password + "\n")
 	}
 	out, err := run(cmd, stdin)
 	if err != nil {
@@ -195,9 +225,24 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 		return InstallResult{}, fmt.Errorf("install: %w", err)
 	}
 	if !strings.Contains(out, "ESA_INSTALL_OK") {
-		return InstallResult{}, fmt.Errorf("install script did not finish: %s", out)
+		return InstallResult{}, fmt.Errorf("install script did not finish: %s", scrub(out, req.Login.Password))
 	}
 	return InstallResult{Arch: arch}, nil
+}
+
+// scrub removes the login password from text that may end up in errors.
+func scrub(s, password string) string {
+	if password == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, password, "[password]")
+}
+
+func scrubErr(err error, password string) error {
+	if password == "" || !strings.Contains(err.Error(), password) {
+		return err
+	}
+	return errors.New(scrub(err.Error(), password))
 }
 
 func cleanInstallError(res ExecResult) string {
@@ -206,7 +251,7 @@ func cleanInstallError(res ExecResult) string {
 		msg = msg[i+len("ESA_INSTALL_ERROR "):]
 	}
 	switch {
-	case strings.Contains(msg, "a password is required"), strings.Contains(msg, "incorrect password"), strings.Contains(msg, "Sorry, try again"):
+	case strings.Contains(msg, "a password is required"), strings.Contains(msg, "incorrect password"), strings.Contains(msg, "Sorry, try again"), strings.Contains(msg, "no password was provided"):
 		return "sudo needs a password; log in with a password, or use root"
 	case strings.Contains(msg, "is not in the sudoers"), strings.Contains(msg, "not allowed to"):
 		return "this user cannot use sudo"

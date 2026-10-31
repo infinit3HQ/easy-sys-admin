@@ -27,6 +27,18 @@ type Result struct {
 	Exit   int
 }
 
+// SafePath is the PATH for every program the helper runs. It matches the
+// secure_path in the esa sudo rule.
+const SafePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+// execEnv is the whole environment of programs the helper runs; nothing is
+// inherited from the caller. HOME is root's, so docker finds its config.
+// aptEnv is included because apt runs inside the upgrade unit too.
+func execEnv() []string {
+	env := []string{"PATH=" + SafePath, "HOME=/root", "LC_ALL=C", "LANG=C", "SYSTEMD_PAGER=", "SYSTEMD_COLORS=0"}
+	return append(env, aptEnv...)
+}
+
 // ExecRunner runs real programs with a C locale, so output is parseable.
 type ExecRunner struct{}
 
@@ -35,7 +47,7 @@ func (ExecRunner) Run(ctx context.Context, timeout time.Duration, name string, a
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C", "SYSTEMD_PAGER=", "SYSTEMD_COLORS=0")
+	cmd.Env = execEnv()
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()

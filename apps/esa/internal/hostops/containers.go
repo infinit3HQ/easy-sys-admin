@@ -182,7 +182,11 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 	if err != nil {
 		return "", err
 	}
-	if c.Protected && confirm != c.Name {
+	// The compose labels can come from the image, so the project and
+	// service names count as names too: an image cannot dress up as a
+	// plain container to update a protected service.
+	protected := c.Protected || f.isProtected(c.ComposeProject) || f.isProtected(c.ComposeService)
+	if protected && confirm != c.Name {
 		return "", &RefusedError{Reason: c.Name + " is protected; confirm with its name"}
 	}
 	ins, err := h.Docker.inspect(ctx, c.ID)
@@ -195,7 +199,15 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 	if c.ComposeProject == "" || c.ComposeService == "" || dir == "" {
 		return "", &RefusedError{Reason: c.Name + " is not managed by docker compose"}
 	}
+	if !containerRefRe.MatchString(c.ComposeProject) || !containerRefRe.MatchString(c.ComposeService) {
+		return "", &RefusedError{Reason: c.Name + " has an invalid compose project or service name"}
+	}
+	dir = filepath.Clean(dir)
+	if fi, err := os.Stat(h.path(dir)); !filepath.IsAbs(dir) || err != nil || !fi.IsDir() {
+		return "", &RefusedError{Reason: "compose directory " + dir + " is not a directory"}
+	}
 	args := []string{"compose", "--project-directory", dir, "-p", c.ComposeProject}
+	nfiles := 0
 	for _, file := range strings.Split(files, ",") {
 		if file = strings.TrimSpace(file); file == "" {
 			continue
@@ -203,10 +215,18 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 		if !filepath.IsAbs(file) {
 			file = filepath.Join(dir, file)
 		}
-		if _, err := os.Stat(h.path(file)); err != nil {
-			return "", &RefusedError{Reason: "compose file " + file + " no longer exists"}
+		file = filepath.Clean(file)
+		if rel, err := filepath.Rel(dir, file); err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+			return "", &RefusedError{Reason: "compose file " + file + " is outside " + dir}
+		}
+		if fi, err := os.Lstat(h.path(file)); err != nil || !fi.Mode().IsRegular() {
+			return "", &RefusedError{Reason: "compose file " + file + " no longer exists or is not a regular file"}
 		}
 		args = append(args, "-f", file)
+		nfiles++
+	}
+	if nfiles == 0 {
+		return "", &RefusedError{Reason: c.Name + " has no compose file label"}
 	}
 	// docker compose reports progress on stderr, so keep both streams.
 	run := func(sub ...string) (string, error) {
