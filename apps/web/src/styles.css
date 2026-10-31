@@ -1,4 +1,7 @@
-@import 'tailwindcss';
+/* Scan only src for classes. Without this, Tailwind relies on .gitignore to
+   skip .output; Docker builds have no .gitignore, so the server build picked
+   up the client build's output and linked a stylesheet that did not exist. */
+@import 'tailwindcss' source('./');
 @import 'tw-animate-css';
 @import '@fontsource-variable/big-shoulders';
 @import '@fontsource-variable/instrument-sans';
