@@ -2,9 +2,11 @@ name: Deploy
 
 # Builds the images on the server and restarts the stack with compose.
 # Runs on the self-hosted runner on Server_One, under its own user.
+# Settings come from repository secrets and variables; the env file exists
+# only for the length of the job.
 #
-# Pushes to main deploy only after CI passes and when the repository
-# variable DEPLOY_ENABLED is "true". "Run workflow" deploys on demand.
+# Pushes to main deploy after CI passes when the repository variable
+# DEPLOY_ENABLED is "true". "Run workflow" deploys on demand.
 on:
   workflow_run:
     workflows: [CI]
@@ -25,26 +27,59 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (vars.DEPLOY_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success')
     runs-on: [self-hosted, esa-deploy]
-    environment: production
+    environment:
+      name: production
+      url: https://${{ vars.ESA_HOST }}
     env:
-      # Lives on the server only (mode 600). See deploy/.env.example.
-      ENV_FILE: ${{ vars.DEPLOY_ENV_FILE || '/home/easysysadmin/esa/deploy.env' }}
       COMPOSE_PROJECT_NAME: esa
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-      - name: Check the server env file
-        run: test -r "$ENV_FILE" || { echo "::error::$ENV_FILE is missing on the runner host"; exit 1; }
+
+      - name: Write env file from secrets
+        env:
+          ESA_HOST: ${{ vars.ESA_HOST }}
+          ESA_SIGNUP: ${{ vars.ESA_SIGNUP || 'true' }}
+          ESA_AUTH_PASSWORD: ${{ vars.ESA_AUTH_PASSWORD || 'true' }}
+          ESA_ALLOWED_EMAILS: ${{ vars.ESA_ALLOWED_EMAILS }}
+          ESA_OIDC_ISSUER: ${{ vars.ESA_OIDC_ISSUER }}
+          ESA_OIDC_PROVIDER_NAME: ${{ vars.ESA_OIDC_PROVIDER_NAME || 'Authentik' }}
+          ESA_OIDC_CLIENT_ID: ${{ vars.ESA_OIDC_CLIENT_ID }}
+          ESA_GOOGLE_CLIENT_ID: ${{ vars.ESA_GOOGLE_CLIENT_ID }}
+          ESA_MASTER_KEY: ${{ secrets.ESA_MASTER_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          ESA_OIDC_CLIENT_SECRET: ${{ secrets.ESA_OIDC_CLIENT_SECRET }}
+          ESA_GOOGLE_CLIENT_SECRET: ${{ secrets.ESA_GOOGLE_CLIENT_SECRET }}
+        run: |
+          set -eu
+          for v in ESA_HOST ESA_MASTER_KEY POSTGRES_PASSWORD; do
+            if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set in the repository settings"; exit 1; fi
+          done
+          umask 077
+          f="$RUNNER_TEMP/esa-$GITHUB_RUN_ID.env"
+          {
+            # Single quotes: compose takes the value literally.
+            for v in ESA_HOST ESA_SIGNUP ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME \
+                     ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET; do
+              printf "%s='%s'\n" "$v" "$(printenv "$v")"
+            done
+            printf "ESA_PUBLIC_URL='https://%s'\n" "$ESA_HOST"
+            printf "ESA_VERSION='%s'\nESA_COMMIT='%s'\n" "$(git rev-parse --short HEAD)" "$(git rev-parse HEAD)"
+          } > "$f"
+          echo "ENV_FILE=$f" >> "$GITHUB_ENV"
+
       - name: Build images
-        run: |
-          export ESA_VERSION="$(git rev-parse --short HEAD)" ESA_COMMIT="$(git rev-parse HEAD)"
-          docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" build --pull
+        run: docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" build --pull
+
       - name: Start
-        run: |
-          export ESA_VERSION="$(git rev-parse --short HEAD)" ESA_COMMIT="$(git rev-parse HEAD)"
-          docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" up -d --remove-orphans --wait --wait-timeout 180
+        run: docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" up -d --remove-orphans --wait --wait-timeout 180
+
       - name: Health
         run: |
           docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" ps
           docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" exec -T web wget -qO- http://127.0.0.1:3000/healthz
+
+      - name: Remove env file
+        if: always()
+        run: rm -f "$ENV_FILE"
