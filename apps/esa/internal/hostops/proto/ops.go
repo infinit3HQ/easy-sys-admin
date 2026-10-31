@@ -1,0 +1,219 @@
+package proto
+
+import "time"
+
+// ---- Updates -------------------------------------------------------------
+
+// UpdateMode selects which packages an upgrade installs.
+type UpdateMode string
+
+const (
+	UpdateSecurity UpdateMode = "security" // packages from *-security archives only
+	UpdateAll      UpdateMode = "all"      // everything `apt-get upgrade` would install
+)
+
+// PendingUpdates answers `esa-helper updates`.
+type PendingUpdates struct {
+	Packages       []PendingPackage `json:"packages"`
+	Security       int              `json:"security"`
+	Other          int              `json:"other"`
+	Held           []string         `json:"held"`
+	ListsUpdatedAt time.Time        `json:"listsUpdatedAt"`
+}
+
+// PendingPackage is one upgradable package.
+type PendingPackage struct {
+	Name     string `json:"name"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Archive  string `json:"archive"`
+	Security bool   `json:"security"`
+}
+
+// Precheck answers `esa-helper upgrade-precheck`.
+type Precheck struct {
+	OK       bool     `json:"ok"`
+	Problems []string `json:"problems"`
+	Held     []string `json:"held"`
+}
+
+// UpgradeStarted answers `esa-helper upgrade-start`.
+type UpgradeStarted struct {
+	Unit string `json:"unit"`
+}
+
+// UpgradeResult is written by the detached upgrade job and read back with
+// `esa-helper upgrade-status`.
+type UpgradeResult struct {
+	RunID          int64      `json:"runId"`
+	State          string     `json:"state"` // running | succeeded | failed
+	Mode           UpdateMode `json:"mode"`
+	StartedAt      time.Time  `json:"startedAt"`
+	FinishedAt     time.Time  `json:"finishedAt,omitzero"`
+	Packages       []string   `json:"packages"`
+	Skipped        []string   `json:"skipped,omitempty"`
+	ExitCode       int        `json:"exitCode"`
+	Error          string     `json:"error,omitempty"`
+	RebootRequired bool       `json:"rebootRequired"`
+	LogTail        []string   `json:"logTail,omitempty"`
+}
+
+// ---- Cleanups --------------------------------------------------------------
+
+// Cleanup ids.
+const (
+	CleanBuildCache = "buildcache"
+	CleanVSCode     = "vscode"
+	CleanJournal    = "journal"
+)
+
+// CleanReport answers `esa-helper clean`.
+type CleanReport struct {
+	Applied bool          `json:"applied"`
+	Items   []CleanResult `json:"items"`
+}
+
+// CleanResult is one cleanup on one server.
+type CleanResult struct {
+	ID string `json:"id"`
+	// Status is measured | cleaned | skipped | failed.
+	Status         string   `json:"status"`
+	Reason         string   `json:"reason,omitempty"`
+	ReclaimableNow int64    `json:"reclaimable"`
+	Freed          int64    `json:"freed"`
+	Removed        []string `json:"removed,omitempty"`
+	Error          string   `json:"error,omitempty"`
+}
+
+// ---- Services --------------------------------------------------------------
+
+// Service is one systemd service unit.
+type Service struct {
+	Unit        string    `json:"unit"`
+	Description string    `json:"description"`
+	Load        string    `json:"load"`
+	Active      string    `json:"active"`
+	Sub         string    `json:"sub"`
+	Enabled     string    `json:"enabled"`
+	MemoryBytes uint64    `json:"memoryBytes"`
+	Since       time.Time `json:"since,omitzero"`
+	Protected   bool      `json:"protected"`
+}
+
+// ---- Containers -------------------------------------------------------------
+
+// Container is one Docker container.
+type Container struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Image          string            `json:"image"`
+	ImageID        string            `json:"imageId"`
+	State          string            `json:"state"`
+	Status         string            `json:"status"`
+	Health         string            `json:"health,omitempty"`
+	RestartCount   int               `json:"restartCount"`
+	RestartPolicy  string            `json:"restartPolicy"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	StartedAt      time.Time         `json:"startedAt,omitzero"`
+	Ports          []string          `json:"ports"`
+	ComposeProject string            `json:"composeProject,omitempty"`
+	ComposeService string            `json:"composeService,omitempty"`
+	Protected      bool              `json:"protected"`
+	Labels         map[string]string `json:"-"`
+}
+
+// ImageCheck answers `esa-helper image-check`.
+type ImageCheck struct {
+	Container      string `json:"container"`
+	Image          string `json:"image"`
+	LocalDigest    string `json:"localDigest"`
+	RemoteDigest   string `json:"remoteDigest"`
+	UpdateAvailble bool   `json:"updateAvailable"`
+	Error          string `json:"error,omitempty"`
+}
+
+// ---- Logs --------------------------------------------------------------------
+
+// LogLine is one log entry.
+type LogLine struct {
+	Time     time.Time `json:"time"`
+	Priority int       `json:"priority"` // syslog priority 0-7; 6 for container logs
+	Message  string    `json:"message"`
+	Stream   string    `json:"stream,omitempty"` // stdout | stderr for containers
+}
+
+// ---- Audits ------------------------------------------------------------------
+
+// AccessReport answers `esa-helper access`.
+type AccessReport struct {
+	Users           []LocalUser         `json:"users"`
+	Groups          map[string][]string `json:"groups"`
+	Logins          []Login             `json:"logins"`
+	FailedSSH24h    int                 `json:"failedSsh24h"`
+	PasswordAuth    bool                `json:"passwordAuth"`
+	PermitRootLogin string              `json:"permitRootLogin"`
+}
+
+// LocalUser is an account with a login shell.
+type LocalUser struct {
+	Name           string          `json:"name"`
+	UID            int             `json:"uid"`
+	Home           string          `json:"home"`
+	Shell          string          `json:"shell"`
+	AuthorizedKeys []AuthorizedKey `json:"authorizedKeys"`
+}
+
+// AuthorizedKey is one line of an authorized_keys file.
+type AuthorizedKey struct {
+	Type        string `json:"type"`
+	Fingerprint string `json:"fingerprint"`
+	Comment     string `json:"comment"`
+}
+
+// Login is one entry from `last`.
+type Login struct {
+	User string    `json:"user"`
+	From string    `json:"from"`
+	At   time.Time `json:"at"`
+}
+
+// SecurityReport answers `esa-helper security`.
+type SecurityReport struct {
+	Listening          []Listener `json:"listening"`
+	Firewall           string     `json:"firewall"` // "ufw active", "nftables rules", "none"
+	CrowdSec           string     `json:"crowdsec"` // active | inactive | not installed
+	Fail2ban           string     `json:"fail2ban"`
+	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
+}
+
+// Listener is one listening socket.
+type Listener struct {
+	Proto   string `json:"proto"`
+	Address string `json:"address"`
+	Port    int    `json:"port"`
+	Process string `json:"process"`
+}
+
+// JobsReport answers `esa-helper jobs`.
+type JobsReport struct {
+	Cron   []CronEntry `json:"cron"`
+	Timers []Timer     `json:"timers"`
+}
+
+// CronEntry is one cron line.
+type CronEntry struct {
+	Source   string `json:"source"`
+	User     string `json:"user"`
+	Schedule string `json:"schedule"`
+	Command  string `json:"command"`
+}
+
+// Timer is one systemd timer.
+type Timer struct {
+	Unit      string    `json:"unit"`
+	Activates string    `json:"activates"`
+	Next      time.Time `json:"next,omitzero"`
+	Last      time.Time `json:"last,omitzero"`
+	Result    string    `json:"result"`
+	Failed    bool      `json:"failed"`
+}
