@@ -40,6 +40,9 @@ write actions:
   container-update --name C [--confirm NAME] [--protect a,b]
   reboot
   uninstall   remove the esa user, its sudo rule, and this helper
+
+ssh-dispatch is the esa key's forced command. It runs as the esa user and
+passes "sudo -n esa-helper <action> ..." from SSH_ORIGINAL_COMMAND to sudo.
 `
 
 func main() {
@@ -47,6 +50,11 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
+	if os.Args[1] == hostops.DispatchAction {
+		os.Exit(sshDispatch())
+	}
+	// Programs are looked up on a fixed PATH, whatever the caller set.
+	_ = os.Setenv("PATH", hostops.SafePath)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

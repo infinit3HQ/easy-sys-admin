@@ -6,8 +6,7 @@
 **/dist
 apps/esa/bin
 .git
-.env
-.env.*
-!.env.example
-deploy/.env
+# Settings files can hold secrets; the build needs none of them.
+**/.env
+**/.env.*
 data

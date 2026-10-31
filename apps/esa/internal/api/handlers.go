@@ -92,12 +92,17 @@ func actor(ctx context.Context) (fleet.Actor, error) {
 
 // ---- Session ---------------------------------------------------------------------
 
-func (h *Handlers) GetAuthConfig(context.Context, GetAuthConfigRequestObject) (GetAuthConfigResponseObject, error) {
+func (h *Handlers) GetAuthConfig(ctx context.Context, _ GetAuthConfigRequestObject) (GetAuthConfigResponseObject, error) {
+	// Sign-up is open when ESA_SIGNUP is on, or for the first user of an empty install.
+	open, err := h.fleet.SignupOpen(ctx)
+	if err != nil {
+		return nil, err
+	}
 	providers := make([]AuthProvider, 0, len(h.auth.Providers))
 	for _, p := range h.auth.Providers {
 		providers = append(providers, AuthProvider{Id: p.ID, Name: p.Name})
 	}
-	return GetAuthConfig200JSONResponse{Dev: h.auth.Dev, Password: h.auth.Password, Signup: h.auth.Signup, Providers: providers}, nil
+	return GetAuthConfig200JSONResponse{Dev: h.auth.Dev, Password: h.auth.Password, Signup: h.auth.Password && open, Providers: providers}, nil
 }
 
 func (h *Handlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {

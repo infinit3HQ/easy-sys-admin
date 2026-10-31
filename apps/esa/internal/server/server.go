@@ -54,8 +54,9 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	defer stopBackground()
 
 	fl := fleet.New(bgCtx, fleet.Deps{
-		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(),
-		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Logger: log,
+		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(cfg.AllowPrivateNetworks),
+		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Signup: cfg.Auth.Signup,
+		AllowPrivateNetworks: cfg.AllowPrivateNetworks, Logger: log,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
 	oidc := map[string]*auth.OIDC{}
@@ -73,6 +74,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		recoverPanics(log),
 		logRequests(log),
 		securityHeaders,
+		limitBodies,
 		crossOriginProtection(cfg),
 		auth.BearerMiddleware(fl, log),
 		sessions.Middleware,
@@ -91,6 +93,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 
 	startJobs(bgCtx, fl, sessions, log)
+
+	if cfg.Auth.SignupIgnored {
+		log.Warn("ESA_SIGNUP=true is ignored because ESA_ALLOWED_EMAILS is set: a password sign-up cannot prove the person owns the address. " +
+			"Allowed people should sign in with OIDC or Google; only the first user of an empty database can create a password account.")
+	}
 
 	errc := make(chan error, 1)
 	go func() {

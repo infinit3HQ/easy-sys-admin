@@ -3,14 +3,18 @@ package fleet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
 func TestPasswordSignUpAndSignIn(t *testing.T) {
 	s := newTestService(t)
+	s.signup = true
 	ctx := context.Background()
 
 	if _, err := s.SignUpPassword(ctx, "Ana", "ana@example.com", "short"); err == nil {
@@ -55,5 +59,96 @@ func TestPasswordSignUpAndSignIn(t *testing.T) {
 	}
 	if g.User.ID == res.User.ID || g.AccountID == res.AccountID {
 		t.Fatal("a Google sign-in must not land in the password account")
+	}
+}
+
+// With sign-up off, exactly one password account can be created, by the
+// first person to reach an empty database, even when requests race.
+func TestPasswordBootstrap(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+
+	if open, err := s.SignupOpen(ctx); err != nil || !open {
+		t.Fatalf("empty database: open %v, %v", open, err)
+	}
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := range errs {
+		wg.Go(func() {
+			_, errs[i] = s.SignUpPassword(ctx, "", fmt.Sprintf("u%d@example.com", i), "correct horse battery")
+		})
+	}
+	wg.Wait()
+	created := 0
+	for _, err := range errs {
+		switch {
+		case err == nil:
+			created++
+		case !errors.Is(err, ErrSignupClosed):
+			t.Errorf("racing sign-up: %v", err)
+		}
+	}
+	if created != 1 {
+		t.Fatalf("%d bootstrap accounts created, want 1", created)
+	}
+	if open, err := s.SignupOpen(ctx); err != nil || open {
+		t.Fatalf("after bootstrap: open %v, %v", open, err)
+	}
+	// Closed sign-up does not reveal whether an address is taken.
+	if _, err := s.SignUpPassword(ctx, "", "u0@example.com", "another long password"); !errors.Is(err, ErrSignupClosed) {
+		t.Fatalf("sign-up after bootstrap: %v", err)
+	}
+}
+
+func TestPasswordBootstrapAllowList(t *testing.T) {
+	s := newTestService(t)
+	s.allowed = map[string]bool{"owner@example.com": true}
+	ctx := context.Background()
+	if _, err := s.SignUpPassword(ctx, "", "eve@example.com", "correct horse battery"); !errors.Is(err, ErrSignInNotAllowed) {
+		t.Fatalf("bootstrap with an address not on the list: %v", err)
+	}
+	if _, err := s.SignUpPassword(ctx, "", "Owner@Example.com", "correct horse battery"); err != nil {
+		t.Fatalf("bootstrap with an allowed address: %v", err)
+	}
+}
+
+func TestPasswordLengthCapAtSignIn(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	if _, err := s.SignInPassword(ctx, "ana@example.com", strings.Repeat("x", maxPasswordLen+1)); !errors.Is(err, ErrBadCredentials) {
+		t.Fatalf("over-long password: %v", err)
+	}
+}
+
+// Removing an address from the allow list disables that user's tokens.
+func TestTokenAllowListAndExpiry(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	ana := signIn(t, s, "ana")
+
+	for _, ttl := range []time.Duration{-24 * time.Hour, time.Hour, 366 * 24 * time.Hour} {
+		var verr *ValidationError
+		if _, _, err := s.CreateToken(ctx, ana, "bad", nil, ttl); !errors.As(err, &verr) || verr.Field != "expiresInDays" {
+			t.Errorf("ttl %v: %v", ttl, err)
+		}
+	}
+	view, secret, err := s.CreateToken(ctx, ana, "cli", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.ExpiresAt == nil || view.ExpiresAt.Sub(view.CreatedAt) != DefaultTokenTTL {
+		t.Fatalf("default expiry %v", view.ExpiresAt)
+	}
+
+	if _, ok, err := s.AuthenticateToken(ctx, secret, SourceAPI); !ok || err != nil {
+		t.Fatalf("token before allow list: %v, %v", ok, err)
+	}
+	s.allowed = map[string]bool{"someone-else@example.com": true}
+	if _, ok, err := s.AuthenticateToken(ctx, secret, SourceAPI); ok || err != nil {
+		t.Fatalf("token of a user no longer allowed: %v, %v", ok, err)
+	}
+	s.allowed = map[string]bool{"ana@example.com": true}
+	if _, ok, err := s.AuthenticateToken(ctx, secret, SourceAPI); !ok || err != nil {
+		t.Fatalf("token of an allowed user: %v, %v", ok, err)
 	}
 }

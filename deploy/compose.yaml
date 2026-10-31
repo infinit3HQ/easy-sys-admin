@@ -5,12 +5,13 @@
 #
 # Only the web container is published (through Traefik). It serves the
 # board, the MCP endpoint, and proxies /api, /auth, and /enroll to the
-# control plane on the internal network.
+# control plane on the internal network. PostgreSQL sits on its own network
+# with no outside access, shared only with the control plane.
 name: ${ESA_STACK_NAME:-esa}
 
 services:
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
     restart: unless-stopped
     environment:
       POSTGRES_DB: esa
@@ -18,7 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres:/var/lib/postgresql
-    networks: [internal]
+    networks: [database]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U esa -d esa']
       interval: 10s
@@ -43,7 +44,10 @@ services:
       ESA_MASTER_KEY: ${ESA_MASTER_KEY:?set ESA_MASTER_KEY}
       ESA_AUTH_MODE: standard
       ESA_AUTH_PASSWORD: ${ESA_AUTH_PASSWORD:-true}
-      ESA_SIGNUP: ${ESA_SIGNUP:-true}
+      ESA_SIGNUP: ${ESA_SIGNUP:-false}
+      # Empty leaves the control plane default: private addresses are refused
+      # while sign-up is open and allowed while it is closed.
+      ESA_ALLOW_PRIVATE_NETWORKS: ${ESA_ALLOW_PRIVATE_NETWORKS:-}
       ESA_ALLOWED_EMAILS: ${ESA_ALLOWED_EMAILS:-}
       ESA_OIDC_ISSUER: ${ESA_OIDC_ISSUER:-}
       ESA_OIDC_CLIENT_ID: ${ESA_OIDC_CLIENT_ID:-}
@@ -55,7 +59,7 @@ services:
     # its public address, so it needs normal outbound networking.
     extra_hosts:
       - host.docker.internal:host-gateway
-    networks: [internal]
+    networks: [internal, database]
 
   web:
     build:
@@ -68,6 +72,8 @@ services:
         condition: service_healthy
     environment:
       ESA_API_URL: http://esa:8080
+      # Origin the MCP endpoint accepts from browsers.
+      ESA_PUBLIC_URL: ${ESA_PUBLIC_URL:?set ESA_PUBLIC_URL}
     networks: [internal, proxy]
     labels:
       - traefik.enable=true
@@ -82,6 +88,8 @@ volumes:
 
 networks:
   internal:
+  database:
+    internal: true
   proxy:
     name: ${TRAEFIK_NETWORK:-proxy}
     external: true

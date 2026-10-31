@@ -116,6 +116,9 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 	if srv.HostKey == "" {
 		return ServerView{}, &ConflictError{Message: srv.Name + " has no accepted host key yet"}
 	}
+	if err := s.limitRate(a, "server.reinstall"); err != nil {
+		return ServerView{}, err
+	}
 	var l remote.LoginAuth
 	if login != nil && login.User != "" {
 		l = *login
@@ -137,7 +140,7 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 	if err != nil {
 		return ServerView{}, err
 	}
-	ictx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	ictx, cancel := context.WithTimeout(s.netCtx(ctx), 5*time.Minute)
 	defer cancel()
 	res, err := remote.Install(ictx, remote.InstallRequest{Host: srv.Host, Port: srv.Port, HostKey: hk, Login: l, AccountPublicKey: k.publicKey, Helper: s.helpers})
 	if err != nil {
@@ -173,7 +176,7 @@ func (s *Service) DeleteServer(ctx context.Context, a Actor, id int64, uninstall
 	uninstalled := false
 	if uninstall && srv.Enrollment == "ready" {
 		if ep, err := s.endpoint(ctx, srv); err == nil {
-			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			cctx, cancel := context.WithTimeout(s.netCtx(ctx), 30*time.Second)
 			err = s.pool.Call(cctx, ep, nil, "uninstall")
 			cancel()
 			if err != nil {

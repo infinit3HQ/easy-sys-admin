@@ -8,18 +8,27 @@ import { Card, CardContent } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 
 const errors: Record<string, string> = {
-  state_mismatch: 'The sign-in took too long or was opened in another tab. Try again.',
+  state_mismatch:
+    'The sign-in took too long or was opened in another tab. Try again.',
   denied: 'The identity provider did not let you in.',
-  not_allowed: 'This email is not on the list of people allowed to use this install.',
+  not_allowed:
+    'This email is not on the list of people allowed to use this install.',
   provider_unavailable: 'The identity provider cannot be reached right now.',
   bad_password: 'Wrong email or password.',
-  locked: 'Too many failed attempts for this email. Wait 15 minutes and try again.',
+  locked:
+    'Too many failed attempts for this email. Wait 15 minutes and try again.',
+  rate_limited:
+    'Too many attempts from your network. Wait 15 minutes and try again.',
+  busy: 'The server is busy. Try again in a moment.',
   email_taken: 'An account with this email already exists. Sign in instead.',
-  signup_closed: 'Sign-up is closed on this install. Ask the owner for an invite.',
+  signup_closed:
+    'Sign-up is closed on this install. Ask the owner for an invite.',
   invalid_email: 'Enter a valid email address.',
-  invalid_password: 'Use a password of 10 to 200 characters that is not your email.',
+  invalid_password:
+    'Use a password of 10 to 200 characters that is not your email.',
   invalid_name: 'Use a name of at most 100 characters.',
-  failed: 'Sign-in failed. Try again, and check the control plane log if it keeps happening.',
+  failed:
+    'Sign-in failed. Try again, and check the control plane log if it keeps happening.',
 }
 
 export const Route = createFileRoute('/login')({
@@ -45,13 +54,18 @@ function ProviderIcon({ id }: { id: string }) {
       </svg>
     )
   }
-  return <span className="size-4 rounded-sm border border-current" aria-hidden />
+  return (
+    <span className="size-4 rounded-sm border border-current" aria-hidden />
+  )
 }
 
 function Login() {
   const { error, signed_out, return_to, mode = 'signin' } = Route.useSearch()
   const { data: cfg } = useSuspenseQuery(q.authConfig())
-  const returnTo = return_to?.startsWith('/') && !return_to.startsWith('//') ? return_to : '/app'
+  const returnTo =
+    return_to?.startsWith('/') && !return_to.startsWith('//')
+      ? return_to
+      : '/app'
   const signup = mode === 'signup' && cfg.signup
 
   return (
@@ -59,19 +73,38 @@ function Login() {
       <div className="w-full max-w-sm animate-rise">
         <a href="/" className="mb-8 flex items-center gap-2.5">
           <img src="/favicon.svg" alt="" className="size-7" />
-          <span className="font-display text-2xl font-bold tracking-wide uppercase">easy-sys-admin</span>
+          <span className="font-display text-2xl font-bold tracking-wide uppercase">
+            easy-sys-admin
+          </span>
         </a>
         <Card>
           <CardContent className="p-5 sm:p-6">
-            <h1 className="font-display text-4xl font-bold uppercase">{signup ? 'Create account' : 'Sign in'}</h1>
+            <h1 className="font-display text-4xl font-bold uppercase">
+              {signup ? 'Create account' : 'Sign in'}
+            </h1>
             <p className="mt-2 text-sm text-ink-2">
-              {signup ? 'You get your own fleet. Add servers once you are in.' : 'The board, groups, and runs for your fleet.'}
+              {signup
+                ? 'You get your own fleet. Add servers once you are in.'
+                : 'The board, groups, and runs for your fleet.'}
             </p>
-            {error && <ErrorBanner className="mt-4" error={errors[error] ?? errors.failed} />}
-            {signed_out && !error && <Notice className="mt-4">You are signed out.</Notice>}
+            {error && (
+              <ErrorBanner
+                className="mt-4"
+                error={errors[error] ?? errors.failed}
+              />
+            )}
+            {signed_out && !error && (
+              <Notice className="mt-4">You are signed out.</Notice>
+            )}
 
             {cfg.password && (
-              <form method="post" action={signup ? '/auth/password/signup' : '/auth/password/login'} className="mt-6 space-y-4">
+              <form
+                method="post"
+                action={
+                  signup ? '/auth/password/signup' : '/auth/password/login'
+                }
+                className="mt-6 space-y-4"
+              >
                 <input type="hidden" name="return_to" value={returnTo} />
                 {signup && (
                   <Field label="Name">
@@ -79,9 +112,18 @@ function Login() {
                   </Field>
                 )}
                 <Field label="Email">
-                  <Input type="email" name="email" autoComplete="email" autoCapitalize="off" required />
+                  <Input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    autoCapitalize="off"
+                    required
+                  />
                 </Field>
-                <Field label="Password" hint={signup ? 'At least 10 characters.' : undefined}>
+                <Field
+                  label="Password"
+                  hint={signup ? 'At least 10 characters.' : undefined}
+                >
                   <Input
                     type="password"
                     name="password"
@@ -100,13 +142,22 @@ function Login() {
               <>
                 {cfg.password && (
                   <div className="my-5 flex items-center gap-3 font-mono text-[10px] tracking-widest text-faint uppercase">
-                    <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
+                    <span className="h-px flex-1 bg-line" /> or{' '}
+                    <span className="h-px flex-1 bg-line" />
                   </div>
                 )}
                 <div className={cn('space-y-2', !cfg.password && 'mt-6')}>
                   {cfg.providers.map((p) => (
-                    <Button key={p.id} asChild variant="outline" size="lg" className="w-full">
-                      <a href={`/auth/login/${p.id}?return_to=${encodeURIComponent(returnTo)}`}>
+                    <Button
+                      key={p.id}
+                      asChild
+                      variant="outline"
+                      size="lg"
+                      className="w-full"
+                    >
+                      <a
+                        href={`/auth/login/${p.id}?return_to=${encodeURIComponent(returnTo)}`}
+                      >
                         <ProviderIcon id={p.id} />
                         {signup ? 'Sign up' : 'Continue'} with {p.name}
                       </a>
@@ -117,7 +168,11 @@ function Login() {
             )}
 
             {cfg.dev && (
-              <form method="post" action="/auth/dev-login" className="mt-5 border-t pt-5">
+              <form
+                method="post"
+                action="/auth/dev-login"
+                className="mt-5 border-t pt-5"
+              >
                 <input type="hidden" name="return_to" value={returnTo} />
                 <Button
                   type="submit"
@@ -132,7 +187,11 @@ function Login() {
             {cfg.signup && (
               <p className="mt-5 text-center text-sm text-muted-foreground">
                 {signup ? 'Have an account? ' : 'New here? '}
-                <Link to="/login" search={{ mode: signup ? 'signin' : 'signup', return_to }} className="text-amber underline underline-offset-4">
+                <Link
+                  to="/login"
+                  search={{ mode: signup ? 'signin' : 'signup', return_to }}
+                  className="text-amber underline underline-offset-4"
+                >
                   {signup ? 'Sign in' : 'Create an account'}
                 </Link>
               </p>

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -186,7 +187,7 @@ func TestVSCodeKeepsNewestAndInUseCopies(t *testing.T) {
 	}
 
 	h := &Host{Run: &recordingRunner{}, Root: root}
-	got := h.staleVSCodeCopies("/root/.vscode-server/bin", []string{strings.TrimPrefix(inUse, root) + "/node"})
+	got := h.staleVSCodeCopies("/root", ".vscode-server/bin", []string{strings.TrimPrefix(inUse, root) + "/node"})
 	if len(got) != 1 || got[0].path != strings.TrimPrefix(old, root) {
 		t.Fatalf("want only the old, unused copy removed, got %+v", got)
 	}
@@ -254,5 +255,151 @@ func TestProtectedContainersNeedConfirmation(t *testing.T) {
 	}
 	if err := h.ContainerAction(ctx, "app", "rm", "", ContainerFilter{}); err == nil {
 		t.Fatal("unknown action accepted")
+	}
+}
+
+// A user who links ~/.vscode-server (or its bin) somewhere else must not
+// get root to delete files there.
+func TestVSCodeRefusesSymlinkedPaths(t *testing.T) {
+	victim := t.TempDir()
+	for _, name := range []string{strings.Repeat("a", 40), strings.Repeat("c", 40)} {
+		if err := os.MkdirAll(filepath.Join(victim, "bin", name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Now().Add(-72 * time.Hour)
+		if name[0] == 'a' {
+			mt = time.Now()
+		}
+		_ = os.Chtimes(filepath.Join(victim, "bin", name), mt, mt)
+	}
+	h := &Host{Run: &recordingRunner{}}
+
+	for _, link := range []string{".vscode-server", ".vscode-server/bin"} {
+		root := t.TempDir()
+		h.Root = root
+		home := filepath.Join(root, "home/u")
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		target := victim
+		if link == ".vscode-server/bin" {
+			if err := os.MkdirAll(filepath.Join(home, ".vscode-server"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target = filepath.Join(victim, "bin")
+		}
+		if err := os.Symlink(target, filepath.Join(home, link)); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.staleVSCodeCopies("/home/u", ".vscode-server/bin", nil); len(got) != 0 {
+			t.Errorf("link at %s: listed %+v", link, got)
+		}
+	}
+
+	// A path that was fine when listed but is a link at removal time.
+	root := t.TempDir()
+	h.Root = root
+	base := filepath.Join(root, "home/u/.vscode-server/bin")
+	old := filepath.Join(base, strings.Repeat("c", 40))
+	if err := os.MkdirAll(old, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(base, strings.Repeat("a", 40)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	mt := time.Now().Add(-72 * time.Hour)
+	_ = os.Chtimes(old, mt, mt)
+	got := h.staleVSCodeCopies("/home/u", ".vscode-server/bin", nil)
+	if len(got) != 1 {
+		t.Fatalf("want one stale copy, got %+v", got)
+	}
+	if err := os.RemoveAll(base); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(victim, "bin"), base); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.removeVSCodeCopy(got[0]); err == nil {
+		t.Fatal("removed through a swapped-in symlink")
+	}
+	if _, err := os.Stat(filepath.Join(victim, "bin", strings.Repeat("c", 40))); err != nil {
+		t.Fatal("victim directory was removed")
+	}
+}
+
+func TestServiceActionRefusesPowerAndNetworkUnits(t *testing.T) {
+	run := &recordingRunner{out: map[string]string{
+		"systemctl list-units --all --plain --no-legend --no-pager -- wg-quick@wg0.service": "wg-quick@wg0.service loaded active exited WireGuard via wg-quick(8) for wg0",
+	}}
+	h := &Host{Run: run}
+	ctx := context.Background()
+	refused := []struct{ unit, action string }{
+		{"systemd-poweroff.service", "start"},
+		{"systemd-reboot.service", "restart"},
+		{"systemd-kexec.service", "start"},
+		{"systemd-soft-reboot.service", "start"},
+		{"rescue.service", "start"},
+		{"emergency.service", "restart"},
+		{"debug-shell.service", "start"},
+		{"systemd-fsck@dev-sda1.service", "start"},
+		{"systemd-fsck@dev-sda1.service", "restart"},
+		{"ufw.service", "stop"},
+		{"ufw.service", "restart"},
+		{"nftables.service", "start"},
+		{"firewalld.service", "stop"},
+		{"networking.service", "restart"},
+		{"systemd-networkd.service", "stop"},
+		{"NetworkManager.service", "restart"},
+		{"netfilter-persistent.service", "stop"},
+		{"iptables.service", "stop"},
+	}
+	for _, c := range refused {
+		err := h.ServiceAction(ctx, c.unit, c.action)
+		if _, ok := err.(*RefusedError); !ok {
+			t.Errorf("%s %s: want RefusedError, got %v", c.action, c.unit, err)
+		}
+	}
+	for _, cmd := range run.cmds {
+		if !strings.HasPrefix(cmd, "systemctl list-units") {
+			t.Fatalf("refused actions must not change anything, ran %q", cmd)
+		}
+	}
+	run.cmds = nil
+	if err := h.ServiceAction(ctx, "wg-quick@wg0.service", "restart"); err != nil {
+		t.Fatalf("restart of a loaded instance: %v", err)
+	}
+	if err := h.ServiceAction(ctx, "ssh.service", "restart"); err != nil {
+		t.Fatalf("restart ssh: %v", err)
+	}
+	if !IsProtectedUnit("ufw.service") || !IsProtectedUnit("ssh.service") {
+		t.Error("network and ssh units must be listed as protected")
+	}
+}
+
+func TestAuthorizedKeysSkipsFIFOAndLinks(t *testing.T) {
+	root := t.TempDir()
+	h := &Host{Root: root}
+	dir := filepath.Join(root, "home/u/.ssh")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(filepath.Join(dir, "authorized_keys"), 0o600); err != nil {
+		t.Skip("mkfifo:", err)
+	}
+	done := make(chan struct{})
+	go func() {
+		h.authorizedKeys("/home/u/.ssh/authorized_keys")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reading a FIFO blocked")
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(dir, "authorized_keys2")); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.authorizedKeys("/home/u/.ssh/authorized_keys2"); got != nil {
+		t.Fatalf("followed a symlink: %+v", got)
 	}
 }

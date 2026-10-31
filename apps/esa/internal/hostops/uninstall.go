@@ -4,16 +4,22 @@ import (
 	"context"
 	"strconv"
 	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
 // uninstallScript removes everything InstallScript created. It runs as a
 // transient systemd unit a few seconds later, because the esa user's own
-// SSH session would otherwise block `userdel`.
+// SSH session would otherwise block `userdel`. The esa user and its home
+// are only deleted when the user carries our comment and home.
 const uninstallScript = `rm -f /etc/sudoers.d/esa /etc/sudoers.d/esa.new
-pkill -u esa || true
-sleep 1
-userdel --remove esa 2>/dev/null || userdel esa || true
-rm -rf /var/lib/esa-home /var/lib/esa /usr/local/lib/esa`
+if [ "$(getent passwd esa | cut -d: -f5,6)" = "` + proto.UserComment + `:` + proto.UserHome + `" ]; then
+  pkill -u esa || true
+  sleep 1
+  userdel --remove esa 2>/dev/null || userdel esa || true
+  rm -rf ` + proto.UserHome + `
+fi
+rm -rf /var/lib/esa /usr/local/lib/esa`
 
 // Uninstall schedules removal of the esa user, its sudo rule, and the helper.
 func (h *Host) Uninstall(ctx context.Context) error {

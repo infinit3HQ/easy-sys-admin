@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"net"
+	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -60,4 +63,71 @@ func (l *failureLimiter) Reset(key string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.hits, key)
+}
+
+// loginLimits throttle password sign-in. A guesser is stopped quickly per
+// (email, client) pair; the per-email lock needs many more failures, so
+// someone else cannot lock an owner out with a handful of tries. The per
+// client and global budgets cap guessing across many emails.
+type loginLimits struct {
+	pair, email, client, global *failureLimiter
+}
+
+func newLoginLimits() *loginLimits {
+	const window = 15 * time.Minute
+	return &loginLimits{
+		pair:   newFailureLimiter(5, window),
+		email:  newFailureLimiter(100, window),
+		client: newFailureLimiter(30, window),
+		global: newFailureLimiter(1000, window),
+	}
+}
+
+// blocked returns the error code to show, or "" when the attempt may go ahead.
+func (l *loginLimits) blocked(email, ip string) string {
+	switch {
+	case l.pair.Blocked(email + "\x00" + ip), l.email.Blocked(email):
+		return "locked"
+	case l.client.Blocked(ip), l.global.Blocked(""):
+		return "rate_limited"
+	}
+	return ""
+}
+
+func (l *loginLimits) fail(email, ip string) {
+	l.pair.Fail(email + "\x00" + ip)
+	l.email.Fail(email)
+	l.client.Fail(ip)
+	l.global.Fail("")
+}
+
+// succeed clears the counters only the account owner can clear: knowing the
+// password proves it. The client and global budgets are left alone, so
+// signing in to your own account does not buy more guesses at others.
+func (l *loginLimits) succeed(email, ip string) {
+	l.pair.Reset(email + "\x00" + ip)
+	l.email.Reset(email)
+}
+
+// clientIP returns the address used for rate limits. In production Traefik
+// appends the address it accepted the connection from to X-Forwarded-For,
+// and the web app's proxy passes the header on unchanged, so the rightmost
+// entry is the one a client cannot forge. Without the header (direct
+// access, or development) it is the TCP peer. If the control plane is ever
+// reachable without Traefik in front, clients can choose this value, and
+// only the per-email and global limits still hold.
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+		last := xff[len(xff)-1]
+		if i := strings.LastIndexByte(last, ','); i >= 0 {
+			last = last[i+1:]
+		}
+		if ip := strings.TrimSpace(last); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }

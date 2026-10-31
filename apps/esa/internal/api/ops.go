@@ -319,7 +319,15 @@ func (h *Handlers) CreateToken(ctx context.Context, req CreateTokenRequestObject
 			scopes = append(scopes, fleet.Scope(s))
 		}
 	}
-	ttl := time.Duration(deref(b.ExpiresInDays)) * 24 * time.Hour
+	// Absent means the default lifetime; tokens without expiry are not offered.
+	var ttl time.Duration
+	if b.ExpiresInDays != nil {
+		days := *b.ExpiresInDays
+		if days < 1 || days > 365 {
+			return nil, &fleet.ValidationError{Field: "expiresInDays", Message: "use 1 to 365 days"}
+		}
+		ttl = time.Duration(days) * 24 * time.Hour
+	}
 	t, secret, err := h.fleet.CreateToken(ctx, a, b.Name, scopes, ttl)
 	if err != nil {
 		return nil, err

@@ -26,6 +26,12 @@ type Config struct {
 	MasterKeys []string
 	// HelperDir holds esa-helper-linux-amd64 and esa-helper-linux-arm64.
 	HelperDir string
+	// AllowPrivateNetworks lets servers, certificate checks, and notification
+	// channels point at private and loopback addresses (10/8, 172.16/12,
+	// 192.168/16, 127/8, ...). Link-local and cloud metadata addresses are
+	// always refused.
+	// Defaults to true when signup is off, false when anyone can sign up.
+	AllowPrivateNetworks bool
 
 	Auth AuthConfig
 }
@@ -36,8 +42,14 @@ type AuthConfig struct {
 	Dev bool
 	// Password enables email and password sign-in.
 	Password bool
-	// Signup lets new people create an email and password account.
+	// Signup lets new people create an email and password account. It is
+	// off when AllowedEmails is set, because a password sign-up cannot prove
+	// the person owns the address. The first user can always sign up while
+	// the database has no users.
 	Signup bool
+	// SignupIgnored is true when ESA_SIGNUP=true was turned off because
+	// ESA_ALLOWED_EMAILS is set. The server logs a warning at startup.
+	SignupIgnored bool
 	// Providers are OpenID Connect providers (Authentik, Google, ...).
 	Providers []OIDCProvider
 	// AllowedEmails limits who may sign in with any method. Empty allows everyone.
@@ -119,6 +131,14 @@ func parse(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 
+	privateDefault := "true"
+	if cfg.Auth.Signup {
+		privateDefault = "false"
+	}
+	if cfg.AllowPrivateNetworks, err = parseBool(get("ESA_ALLOW_PRIVATE_NETWORKS", privateDefault)); err != nil {
+		return Config{}, fmt.Errorf("ESA_ALLOW_PRIVATE_NETWORKS: %w", err)
+	}
+
 	return cfg, nil
 }
 
@@ -139,10 +159,13 @@ func parseAuth(cfg *Config, get func(string, string) string, publicURL *url.URL)
 	if a.Password, err = parseBool(get("ESA_AUTH_PASSWORD", "true")); err != nil {
 		return fmt.Errorf("ESA_AUTH_PASSWORD: %w", err)
 	}
-	if a.Signup, err = parseBool(get("ESA_SIGNUP", "true")); err != nil {
+	if a.Signup, err = parseBool(get("ESA_SIGNUP", "false")); err != nil {
 		return fmt.Errorf("ESA_SIGNUP: %w", err)
 	}
 	a.Signup = a.Signup && a.Password
+	if a.Signup && len(a.AllowedEmails) > 0 {
+		a.Signup, a.SignupIgnored = false, true
+	}
 
 	if issuer := get("ESA_OIDC_ISSUER", ""); issuer != "" {
 		p := OIDCProvider{

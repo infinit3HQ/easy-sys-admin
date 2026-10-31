@@ -1428,7 +1428,7 @@ export interface components {
         CreateTokenRequest: {
             name: string;
             scopes?: components["schemas"]["Scope"][];
-            /** @description 0 or absent means no expiry. */
+            /** @description Days until the token expires. Absent means 90. */
             expiresInDays?: number;
         };
         CreatedToken: {

@@ -19,6 +19,13 @@ const HelperPath = "/usr/local/lib/esa/esa-helper"
 // StateDir holds the helper's own files on the server (upgrade results).
 const StateDir = "/var/lib/esa"
 
+// UserHome and UserComment mark the esa user as ours. Install reuses an
+// existing esa user, and uninstall deletes it, only when both match.
+const (
+	UserHome    = "/var/lib/esa-home"
+	UserComment = "easy-sys-admin control plane"
+)
+
 // Envelope wraps every helper response.
 type Envelope struct {
 	OK       bool            `json:"ok"`

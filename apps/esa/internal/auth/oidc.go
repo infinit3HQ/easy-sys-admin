@@ -180,8 +180,9 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		loginError(w, r, "failed")
 		return
 	}
-	// An unverified address must not pass the email allow list.
-	if claims.EmailVerified != nil && !*claims.EmailVerified {
+	// Only a verified address may pass the email allow list. A provider
+	// that omits email_verified gets no email stored.
+	if claims.EmailVerified == nil || !*claims.EmailVerified {
 		claims.Email = ""
 	}
 	name := claims.Name
@@ -205,7 +206,7 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 		loginError(w, r, "failed")
 		return
 	}
-	if err := o.sessions.Start(r.Context(), w, res.User.ID, res.AccountID); err != nil {
+	if err := o.sessions.Start(r.Context(), w, r, res.User.ID, res.AccountID); err != nil {
 		o.log.Error("start session", "err", err)
 		loginError(w, r, "failed")
 		return

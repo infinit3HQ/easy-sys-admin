@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
@@ -173,7 +174,11 @@ func (h *Host) processArgs() map[int][]string {
 const stagingMinAge = time.Hour
 
 type vscodeCopy struct {
-	path    string
+	path    string // home/sub/name
+	home    string
+	sub     string
+	name    string
+	uid     uint32 // owner of home, and of every directory below it
 	modTime time.Time
 	staging bool
 	size    int64
@@ -185,7 +190,7 @@ func (h *Host) cleanVSCode(ctx context.Context, apply bool) proto.CleanResult {
 	var remove []vscodeCopy
 	for _, home := range h.homes() {
 		for _, sub := range []string{".vscode-server/bin", ".vscode-server/cli/servers"} {
-			remove = append(remove, h.staleVSCodeCopies(filepath.Join(home, sub), inUse)...)
+			remove = append(remove, h.staleVSCodeCopies(home, sub, inUse)...)
 		}
 	}
 	for _, c := range remove {
@@ -202,7 +207,7 @@ func (h *Host) cleanVSCode(ctx context.Context, apply bool) proto.CleanResult {
 			r.Error = err.Error()
 			break
 		}
-		if err := os.RemoveAll(h.path(c.path)); err != nil {
+		if err := h.removeVSCodeCopy(c); err != nil {
 			r.Error = err.Error()
 			continue
 		}
@@ -216,10 +221,17 @@ func (h *Host) cleanVSCode(ctx context.Context, apply bool) proto.CleanResult {
 	return r
 }
 
-// staleVSCodeCopies lists copies in base that may be removed: every
+// staleVSCodeCopies lists copies in home/sub that may be removed: every
 // finished install except the newest, plus staging folders older than an
-// hour, minus anything a running process uses. Symlinks are never followed.
-func (h *Host) staleVSCodeCopies(base string, inUse []string) []vscodeCopy {
+// hour, minus anything a running process uses. Symlinks are never followed,
+// and every directory from home down must belong to the home's owner, so a
+// user cannot point root at someone else's files.
+func (h *Host) staleVSCodeCopies(home, sub string, inUse []string) []vscodeCopy {
+	_, uid, ok := h.userDir(home, sub)
+	if !ok {
+		return nil
+	}
+	base := filepath.Join(home, sub)
 	entries, err := os.ReadDir(h.path(base))
 	if err != nil {
 		return nil
@@ -233,7 +245,10 @@ func (h *Host) staleVSCodeCopies(base string, inUse []string) []vscodeCopy {
 		if err != nil {
 			continue
 		}
-		c := vscodeCopy{path: filepath.Join(base, e.Name()), modTime: info.ModTime()}
+		if owner, ok := fileOwner(info); !ok || owner != uid {
+			continue
+		}
+		c := vscodeCopy{path: filepath.Join(base, e.Name()), home: home, sub: sub, name: e.Name(), uid: uid, modTime: info.ModTime()}
 		c.staging = strings.HasSuffix(e.Name(), ".staging") || strings.Contains(e.Name(), "-staging")
 		if c.staging {
 			staging = append(staging, c)
@@ -267,6 +282,67 @@ func (h *Host) staleVSCodeCopies(base string, inUse []string) []vscodeCopy {
 		out = append(out, c)
 	}
 	return out
+}
+
+// userDir checks home and every directory of sub below it with Lstat: each
+// must be a real directory (not a symlink) owned by the home's owner. It
+// returns the last directory and the owner.
+func (h *Host) userDir(home, sub string) (fs.FileInfo, uint32, bool) {
+	info, err := os.Lstat(h.path(home))
+	if err != nil || !info.IsDir() {
+		return nil, 0, false
+	}
+	uid, ok := fileOwner(info)
+	if !ok {
+		return nil, 0, false
+	}
+	p := home
+	for _, part := range strings.Split(sub, "/") {
+		p = filepath.Join(p, part)
+		info, err = os.Lstat(h.path(p))
+		if err != nil || !info.IsDir() {
+			return nil, 0, false
+		}
+		if owner, ok := fileOwner(info); !ok || owner != uid {
+			return nil, 0, false
+		}
+	}
+	return info, uid, true
+}
+
+func fileOwner(info fs.FileInfo) (uint32, bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, false
+	}
+	return st.Uid, true
+}
+
+// removeVSCodeCopy checks the path again right before removing, then
+// removes the copy through a handle on the checked directory, so a path
+// swapped in the meantime cannot redirect the removal.
+func (h *Host) removeVSCodeCopy(c vscodeCopy) error {
+	changed := fmt.Errorf("%s changed since it was checked; skipped", c.path)
+	dir, uid, ok := h.userDir(c.home, c.sub)
+	if !ok || uid != c.uid {
+		return changed
+	}
+	root, err := os.OpenRoot(h.path(filepath.Join(c.home, c.sub)))
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if fi, err := root.Stat("."); err != nil || !os.SameFile(fi, dir) {
+		return changed
+	}
+	fi, err := root.Lstat(c.name)
+	if err != nil || !fi.IsDir() {
+		return changed
+	}
+	if owner, ok := fileOwner(fi); !ok || owner != uid {
+		return changed
+	}
+	return root.RemoveAll(c.name)
 }
 
 var commitHashRe = regexp.MustCompile(`^[0-9a-f]{40}$`)

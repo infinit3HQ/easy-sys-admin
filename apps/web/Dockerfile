@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Web app image (landing page, board, MCP endpoint). Build from the repository root:
 #   docker build -f apps/web/Dockerfile .
-FROM node:26-alpine AS build
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94 AS build
 WORKDIR /repo
 # Node 25+ no longer ships corepack.
 RUN npm install -g pnpm@12.15.0
@@ -20,7 +20,7 @@ COPY packages/ packages/
 COPY apps/web/ apps/web/
 RUN pnpm --filter @esa/web build
 
-FROM node:26-alpine
+FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 # Nitro bundles the server and its dependencies into .output.

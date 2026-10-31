@@ -52,3 +52,31 @@ func TestRequired(t *testing.T) {
 		t.Errorf("google provider: %+v, %v", cfg.Auth.Providers, err)
 	}
 }
+
+func TestSignupDefaults(t *testing.T) {
+	m := base()
+	cfg, err := parse(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Signup || !cfg.AllowPrivateNetworks {
+		t.Errorf("default: signup %v, private networks %v; want false, true", cfg.Auth.Signup, cfg.AllowPrivateNetworks)
+	}
+
+	m["ESA_SIGNUP"] = "true"
+	if cfg, err = parse(env(m)); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Auth.Signup || cfg.AllowPrivateNetworks {
+		t.Errorf("ESA_SIGNUP=true: signup %v, private networks %v; want true, false", cfg.Auth.Signup, cfg.AllowPrivateNetworks)
+	}
+
+	// An allow list turns open password sign-up off.
+	m["ESA_ALLOWED_EMAILS"] = "Ana@Example.com"
+	if cfg, err = parse(env(m)); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Signup || !cfg.Auth.SignupIgnored || !cfg.AllowPrivateNetworks {
+		t.Errorf("allow list: %+v, private networks %v", cfg.Auth, cfg.AllowPrivateNetworks)
+	}
+}

@@ -4,12 +4,14 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -87,14 +89,26 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 	return rep, nil
 }
 
+// maxAuthorizedKeys caps how much of one authorized_keys file is read.
+const maxAuthorizedKeys = 1 << 20
+
+// authorizedKeys reads a user's authorized_keys. Users choose what sits at
+// that path, so it must be a regular file (not a link, FIFO, or device),
+// is opened without blocking, and only the first MiB is read.
 func (h *Host) authorizedKeys(path string) []proto.AuthorizedKey {
-	f, err := os.Open(h.path(path))
+	if fi, err := os.Lstat(h.path(path)); err != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
+	f, err := os.OpenFile(h.path(path), os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
+	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
+		return nil
+	}
 	var out []proto.AuthorizedKey
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(io.LimitReader(f, maxAuthorizedKeys))
 	sc.Buffer(make([]byte, 0, 16*1024), 1<<20)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())

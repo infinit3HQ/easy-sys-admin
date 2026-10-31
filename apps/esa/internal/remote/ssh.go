@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/netguard"
 )
 
 // HostKeyMismatchError means the server presented a different host key than
@@ -36,6 +38,16 @@ const dialTimeout = 15 * time.Second
 // before authenticating, so no password or key is offered to a host that
 // has not been verified yet.
 func ProbeHostKey(ctx context.Context, host string, port int) (ssh.PublicKey, error) {
+	return probe(ctx, host, port, preferredHostKeyAlgos)
+}
+
+// ProbeHostKeyLike is ProbeHostKey restricted to the algorithm of want, so a
+// server with several host keys presents the one of the same type.
+func ProbeHostKeyLike(ctx context.Context, host string, port int, want ssh.PublicKey) (ssh.PublicKey, error) {
+	return probe(ctx, host, port, []string{algoFor(want)})
+}
+
+func probe(ctx context.Context, host string, port int, algos []string) (ssh.PublicKey, error) {
 	var presented ssh.PublicKey
 	cfg := &ssh.ClientConfig{
 		User: "esa-probe",
@@ -44,7 +56,7 @@ func ProbeHostKey(ctx context.Context, host string, port int) (ssh.PublicKey, er
 			presented = key
 			return errProbeDone
 		},
-		HostKeyAlgorithms: preferredHostKeyAlgos,
+		HostKeyAlgorithms: algos,
 		Timeout:           dialTimeout,
 	}
 	conn, err := dialTCP(ctx, host, port)
@@ -52,6 +64,9 @@ func ProbeHostKey(ctx context.Context, host string, port int) (ssh.PublicKey, er
 		return nil, err
 	}
 	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
+	_ = conn.SetDeadline(time.Now().Add(dialTimeout))
 	_, _, _, err = ssh.NewClientConn(conn, net.JoinHostPort(host, strconv.Itoa(port)), cfg)
 	if presented != nil {
 		return presented, nil
@@ -112,6 +127,9 @@ func Dial(ctx context.Context, t Target) (*ssh.Client, error) {
 		if errors.As(err, &mismatch) {
 			return nil, mismatch
 		}
+		if strings.Contains(err.Error(), "unable to authenticate") {
+			return nil, fmt.Errorf("ssh %s@%s: %w: %w", t.User, addr, ErrAuthFailed, err)
+		}
 		return nil, fmt.Errorf("ssh %s@%s: %w", t.User, addr, err)
 	}
 	_ = conn.SetDeadline(time.Time{})
@@ -127,8 +145,27 @@ func algoFor(k ssh.PublicKey) string {
 	return k.Type()
 }
 
+// ErrAuthFailed means the server rejected every offered credential.
+var ErrAuthFailed = errors.New("ssh authentication failed")
+
+type allowPrivateKey struct{}
+
+// WithAllowPrivate sets whether SSH dials made with ctx may reach private
+// and loopback addresses. Without it only the always-blocked addresses
+// (metadata, link-local, multicast, unspecified) are refused.
+func WithAllowPrivate(ctx context.Context, allow bool) context.Context {
+	return context.WithValue(ctx, allowPrivateKey{}, allow)
+}
+
+func allowPrivate(ctx context.Context) bool {
+	allow, ok := ctx.Value(allowPrivateKey{}).(bool)
+	return !ok || allow
+}
+
+// dialTCP checks every resolved address against the address policy at
+// connect time, so DNS rebinding cannot slip past an earlier check.
 func dialTCP(ctx context.Context, host string, port int) (net.Conn, error) {
-	d := net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}
+	d := netguard.Dialer(allowPrivate(ctx), net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second})
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		return nil, fmt.Errorf("connect to %s:%d: %w", host, port, err)

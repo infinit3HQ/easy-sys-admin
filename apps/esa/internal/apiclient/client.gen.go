@@ -638,7 +638,7 @@ type CreateChannelRequest struct {
 
 // CreateTokenRequest defines model for CreateTokenRequest.
 type CreateTokenRequest struct {
-	// ExpiresInDays 0 or absent means no expiry.
+	// ExpiresInDays Days until the token expires. Absent means 90.
 	ExpiresInDays *int     `json:"expiresInDays,omitempty"`
 	Name          string   `json:"name"`
 	Scopes        *[]Scope `json:"scopes,omitempty"`

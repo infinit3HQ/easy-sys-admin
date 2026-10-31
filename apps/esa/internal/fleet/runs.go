@@ -141,6 +141,12 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if opts.UpdateMode != proto.UpdateSecurity && opts.UpdateMode != proto.UpdateAll {
 		return RunView{}, invalid("updateMode", "must be security or all")
 	}
+	opts.Hold = cleanList(opts.Hold)
+	for _, p := range opts.Hold {
+		if !pkgNameRe.MatchString(p) {
+			return RunView{}, invalid("hold", "%q is not a valid package name", p)
+		}
+	}
 
 	trigger := TriggerManual
 	if a.Source == SourceSystem {
@@ -150,7 +156,7 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if err != nil {
 		return RunView{}, err
 	}
-	s.background(func(ctx context.Context) { s.execute(ctx, run.ID) })
+	s.background(func(ctx context.Context) { s.execute(s.netCtx(ctx), run.ID) })
 	return s.GetRun(ctx, a, run.ID)
 }
 

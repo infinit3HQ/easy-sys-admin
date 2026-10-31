@@ -3,7 +3,14 @@ import { q } from '#/lib/queries'
 import { Ago, Until, When } from '#/components/time'
 import { ErrorBanner, KeyValue, Loading, Panel, cn } from '#/components/kit'
 import { Badge } from '#/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '#/components/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '#/components/ui/table'
 
 export function AccessTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.access(serverId))
@@ -11,7 +18,11 @@ export function AccessTab({ serverId }: { serverId: number }) {
   if (r.error || !r.data) return <ErrorBanner error={r.error} />
   const d = r.data
   const fpCount = new Map<string, number>()
-  d.users.forEach((u) => u.authorizedKeys.forEach((k) => fpCount.set(k.fingerprint, (fpCount.get(k.fingerprint) ?? 0) + 1)))
+  d.users.forEach((u) =>
+    u.authorizedKeys.forEach((k) =>
+      fpCount.set(k.fingerprint, (fpCount.get(k.fingerprint) ?? 0) + 1),
+    ),
+  )
 
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
@@ -24,7 +35,12 @@ export function AccessTab({ serverId }: { serverId: number }) {
                 {Object.entries(d.groups)
                   .filter(([, m]) => m.includes(u.name))
                   .map(([g]) => (
-                    <Badge key={g} variant={g === 'sudo' || g === 'docker' ? 'warn' : 'secondary'}>
+                    <Badge
+                      key={g}
+                      variant={
+                        g === 'sudo' || g === 'docker' ? 'warn' : 'secondary'
+                      }
+                    >
                       {g}
                     </Badge>
                   ))}
@@ -33,15 +49,26 @@ export function AccessTab({ serverId }: { serverId: number }) {
                 uid {u.uid} · {u.shell} · {u.home}
               </div>
               {u.authorizedKeys.length === 0 ? (
-                <p className="mt-1.5 font-mono text-[11px] text-faint">no SSH keys</p>
+                <p className="mt-1.5 font-mono text-[11px] text-faint">
+                  no SSH keys
+                </p>
               ) : (
                 <ul className="mt-2 space-y-1.5">
                   {u.authorizedKeys.map((k) => (
-                    <li key={k.fingerprint + k.comment} className="flex flex-wrap gap-x-3 font-mono text-[11px]">
+                    <li
+                      key={k.fingerprint + k.comment}
+                      className="flex flex-wrap gap-x-3 font-mono text-[11px]"
+                    >
                       <span className="text-muted-foreground">{k.type}</span>
-                      <span className="break-all text-ink-2">{k.fingerprint}</span>
+                      <span className="break-all text-ink-2">
+                        {k.fingerprint}
+                      </span>
                       <span className="break-all text-faint">{k.comment}</span>
-                      {(fpCount.get(k.fingerprint) ?? 0) > 1 && <span className="text-warn">same key on {fpCount.get(k.fingerprint)} users</span>}
+                      {(fpCount.get(k.fingerprint) ?? 0) > 1 && (
+                        <span className="text-warn">
+                          same key on {fpCount.get(k.fingerprint)} users
+                        </span>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -53,9 +80,21 @@ export function AccessTab({ serverId }: { serverId: number }) {
       <div className="min-w-0 space-y-6">
         <Panel title="SSH server">
           <dl className="space-y-2">
-            <KeyValue k="Password login" v={d.passwordAuth ? 'allowed' : 'off'} tone={d.passwordAuth ? 'warn' : undefined} />
-            <KeyValue k="Root login" v={d.permitRootLogin || 'unknown'} tone={d.permitRootLogin === 'yes' ? 'warn' : undefined} />
-            <KeyValue k="Failed logins, 24h" v={String(d.failedSsh24h)} tone={d.failedSsh24h > 100 ? 'warn' : undefined} />
+            <KeyValue
+              k="Password login"
+              v={d.passwordAuth ? 'allowed' : 'off'}
+              tone={d.passwordAuth ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="Root login"
+              v={d.permitRootLogin || 'unknown'}
+              tone={d.permitRootLogin === 'yes' ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="Failed logins, 24h"
+              v={String(d.failedSsh24h)}
+              tone={d.failedSsh24h > 100 ? 'warn' : undefined}
+            />
           </dl>
         </Panel>
         <Panel title="Recent logins">
@@ -68,7 +107,10 @@ export function AccessTab({ serverId }: { serverId: number }) {
                   key={i}
                   k={
                     <span className="text-ink-2">
-                      {l.user} <span className="text-faint">from {l.from || 'console'}</span>
+                      {l.user}{' '}
+                      <span className="text-faint">
+                        from {l.from || 'console'}
+                      </span>
                     </span>
                   }
                   v={<Ago iso={l.at} />}
@@ -103,10 +145,25 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           <TableBody>
             {d.listening.map((l, i) => (
               <TableRow key={i}>
-                <TableCell className={cn('py-2 pl-4', exposed(l.address) ? 'text-amber' : 'text-ink-2')}>{l.port}</TableCell>
-                <TableCell className="py-2 text-muted-foreground">{l.proto}</TableCell>
-                <TableCell className="py-2 text-ink-2">{exposed(l.address) ? `${l.address} (all interfaces)` : l.address}</TableCell>
-                <TableCell className="py-2 pr-4 text-ink">{l.process}</TableCell>
+                <TableCell
+                  className={cn(
+                    'py-2 pl-4',
+                    exposed(l.address) ? 'text-amber' : 'text-ink-2',
+                  )}
+                >
+                  {l.port}
+                </TableCell>
+                <TableCell className="py-2 text-muted-foreground">
+                  {l.proto}
+                </TableCell>
+                <TableCell className="py-2 text-ink-2">
+                  {exposed(l.address)
+                    ? `${l.address} (all interfaces)`
+                    : l.address}
+                </TableCell>
+                <TableCell className="py-2 pr-4 text-ink">
+                  {l.process}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -114,10 +171,26 @@ export function SecurityTab({ serverId }: { serverId: number }) {
       </Panel>
       <Panel title="Protection">
         <dl className="space-y-2">
-          <KeyValue k="Firewall" v={d.firewall} tone={d.firewall === 'none' ? 'warn' : undefined} />
-          <KeyValue k="CrowdSec" v={d.crowdsec} tone={d.crowdsec === 'failed' ? 'warn' : undefined} />
-          <KeyValue k="fail2ban" v={d.fail2ban} tone={d.fail2ban === 'failed' ? 'warn' : undefined} />
-          <KeyValue k="unattended-upgrades" v={d.unattendedUpgrades ? 'on' : 'off'} tone={!d.unattendedUpgrades ? 'warn' : undefined} />
+          <KeyValue
+            k="Firewall"
+            v={d.firewall}
+            tone={d.firewall === 'none' ? 'warn' : undefined}
+          />
+          <KeyValue
+            k="CrowdSec"
+            v={d.crowdsec}
+            tone={d.crowdsec === 'failed' ? 'warn' : undefined}
+          />
+          <KeyValue
+            k="fail2ban"
+            v={d.fail2ban}
+            tone={d.fail2ban === 'failed' ? 'warn' : undefined}
+          />
+          <KeyValue
+            k="unattended-upgrades"
+            v={d.unattendedUpgrades ? 'on' : 'off'}
+            tone={!d.unattendedUpgrades ? 'warn' : undefined}
+          />
         </dl>
       </Panel>
     </div>
@@ -145,13 +218,33 @@ export function JobsTab({ serverId }: { serverId: number }) {
           <TableBody>
             {d.timers.map((t) => (
               <TableRow key={t.unit}>
-                <TableCell className={cn('py-2 pl-4', t.failed ? 'text-fail' : 'text-ink')}>{t.unit}</TableCell>
-                <TableCell className="py-2 text-muted-foreground">{t.activates}</TableCell>
+                <TableCell
+                  className={cn(
+                    'py-2 pl-4',
+                    t.failed ? 'text-fail' : 'text-ink',
+                  )}
+                >
+                  {t.unit}
+                </TableCell>
+                <TableCell className="py-2 text-muted-foreground">
+                  {t.activates}
+                </TableCell>
                 <TableCell className="py-2 text-ink-2">
                   <Until iso={t.next} />
                 </TableCell>
-                <TableCell className="py-2 text-muted-foreground">{t.last ? <When iso={t.last} /> : 'never'}</TableCell>
-                <TableCell className={cn('py-2 pr-4', t.result && t.result !== 'success' ? 'text-fail' : 'text-faint')}>{t.result}</TableCell>
+                <TableCell className="py-2 text-muted-foreground">
+                  {t.last ? <When iso={t.last} /> : 'never'}
+                </TableCell>
+                <TableCell
+                  className={cn(
+                    'py-2 pr-4',
+                    t.result && t.result !== 'success'
+                      ? 'text-fail'
+                      : 'text-faint',
+                  )}
+                >
+                  {t.result}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -163,11 +256,22 @@ export function JobsTab({ serverId }: { serverId: number }) {
         ) : (
           <ul className="divide-y divide-line/60 font-mono text-xs">
             {d.cron.map((c, i) => (
-              <li key={i} className="grid gap-x-4 gap-y-1 px-4 py-2.5 md:grid-cols-[160px_100px_minmax(0,1fr)_auto]">
+              <li
+                key={i}
+                className="grid gap-x-4 gap-y-1 px-4 py-2.5 md:grid-cols-[160px_100px_minmax(0,1fr)_auto]"
+              >
                 <span className="text-amber-2">{c.schedule}</span>
                 <span className="text-ink-2">{c.user}</span>
-                <span className="break-all text-ink">{c.command}</span>
-                <span className="text-[10px] break-all text-faint md:text-xs">{c.source}</span>
+                <span className="break-all text-ink">
+                  {c.command || (
+                    <span className="text-faint">
+                      hidden: needs admin and logs:read
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] break-all text-faint md:text-xs">
+                  {c.source}
+                </span>
               </li>
             ))}
           </ul>

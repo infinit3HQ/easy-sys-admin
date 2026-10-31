@@ -17,7 +17,9 @@ import (
 )
 
 const (
+	// sessionTTL is the absolute limit; idleTTL ends sessions unused for a day.
 	sessionTTL      = 7 * 24 * time.Hour
+	idleTTL         = 24 * time.Hour
 	touchInterval   = 5 * time.Minute
 	sessionTokenLen = 32
 )
@@ -46,8 +48,15 @@ func (m *Sessions) CookieName() string {
 	return "esa_session"
 }
 
-// Start creates a session for the user in the given account and sets the cookie.
-func (m *Sessions) Start(ctx context.Context, w http.ResponseWriter, userID, accountID int64) error {
+// Start creates a session for the user in the given account and sets the
+// cookie. A session the request already carried is deleted, so a token
+// planted before sign-in is never upgraded.
+func (m *Sessions) Start(ctx context.Context, w http.ResponseWriter, r *http.Request, userID, accountID int64) error {
+	if old, ok := m.tokenHash(r); ok {
+		if err := m.store.DeleteSession(ctx, old); err != nil {
+			return err
+		}
+	}
 	token := make([]byte, sessionTokenLen)
 	if _, err := rand.Read(token); err != nil {
 		return err
@@ -84,6 +93,17 @@ func (m *Sessions) End(ctx context.Context, w http.ResponseWriter, r *http.Reque
 		return nil
 	}
 	return m.store.DeleteSession(ctx, hash)
+}
+
+// EndAll deletes every session of the request's user and clears the cookie.
+// Requests without a session (including API tokens) only clear the cookie.
+func (m *Sessions) EndAll(ctx context.Context, w http.ResponseWriter) error {
+	defer m.clearCookie(w)
+	actor, ok := fleet.ActorFrom(ctx)
+	if _, hasSession := ctx.Value(sessionHashKey{}).([]byte); !ok || !hasSession {
+		return nil
+	}
+	return m.store.DB().WithContext(ctx).Where("user_id = ?", actor.UserID).Delete(&store.Session{}).Error
 }
 
 // SwitchAccount moves the current request's session to another account the user belongs to.
@@ -152,7 +172,13 @@ func (m *Sessions) resolveActor(r *http.Request) (fleet.Actor, bool, error) {
 		return fleet.Actor{}, false, err
 	}
 	now := m.now()
-	if !now.Before(sess.ExpiresAt) {
+	if !now.Before(sess.ExpiresAt) || now.Sub(sess.LastSeenAt) >= idleTTL {
+		return fleet.Actor{}, false, m.store.DeleteSession(ctx, hash)
+	}
+	// Removing someone from the allow list ends their sessions.
+	if ok, err := m.fleet.UserAllowed(ctx, sess.UserID); err != nil {
+		return fleet.Actor{}, false, err
+	} else if !ok {
 		return fleet.Actor{}, false, m.store.DeleteSession(ctx, hash)
 	}
 
@@ -188,13 +214,20 @@ func (m *Sessions) resolveActor(r *http.Request) (fleet.Actor, bool, error) {
 	}, true, nil
 }
 
-// CleanupExpired deletes expired sessions. Run it periodically.
+// CleanupExpired deletes expired and idle sessions. Run it periodically.
 func (m *Sessions) CleanupExpired(ctx context.Context) {
-	n, err := m.store.DeleteExpiredSessions(ctx, m.now())
+	now := m.now()
+	n, err := m.store.DeleteExpiredSessions(ctx, now)
 	if err != nil {
 		m.log.Error("delete expired sessions", "err", err)
 		return
 	}
+	idle := m.store.DB().WithContext(ctx).Where("last_seen_at <= ?", now.Add(-idleTTL)).Delete(&store.Session{})
+	if idle.Error != nil {
+		m.log.Error("delete idle sessions", "err", idle.Error)
+		return
+	}
+	n += idle.RowsAffected
 	if n > 0 {
 		m.log.Info("deleted expired sessions", "count", n)
 	}
