@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-
-	"gorm.io/gorm"
 )
 
 // migrationLockID is the advisory lock key that serialises schema changes
@@ -14,8 +12,8 @@ const migrationLockID int64 = 0x657361_6d6967 // "esa" "mig"
 
 // Migrate brings the schema up to date with the models in models.go using
 // GORM AutoMigrate. AutoMigrate adds tables, columns, indexes, and
-// constraints; it never drops or renames anything. Renames and drops need a
-// hand-written step in postMigrate.
+// constraints. It never drops or renames anything. A drop or a rename needs
+// a hand-written step in postMigrate.
 func (s *Store) Migrate(ctx context.Context, log *slog.Logger) error {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
@@ -45,37 +43,6 @@ func (s *Store) Migrate(ctx context.Context, log *slog.Logger) error {
 // postMigrate holds schema steps AutoMigrate cannot express. Each step must
 // be safe to run on every start.
 func (s *Store) postMigrate(ctx context.Context) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// One-time steps record their name here when they have run.
-		if err := tx.Exec(`CREATE TABLE IF NOT EXISTS schema_flags (name text PRIMARY KEY, done_at timestamptz NOT NULL)`).Error; err != nil {
-			return err
-		}
-		res := tx.Exec(`INSERT INTO schema_flags (name, done_at) VALUES ('personal_spaces_backfill', now()) ON CONFLICT (name) DO NOTHING`)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return nil // the backfill ran on an earlier start
-		}
-		// Runs once. Accounts created before personal spaces existed: a
-		// user's oldest account where they are the only member and its owner
-		// becomes their personal space. Users that already have one are
-		// skipped, and so are accounts created after the first personal
-		// space (teams made once the feature shipped) and accounts that
-		// received shared groups (personal spaces never do).
-		return tx.Exec(`UPDATE accounts a SET personal_of = pick.user_id
-		 FROM (
-		   SELECT DISTINCT ON (m.user_id) m.user_id, m.account_id
-		   FROM memberships m
-		   JOIN accounts acc ON acc.id = m.account_id
-		   WHERE m.role = 'owner'
-		     AND acc.personal_of IS NULL
-		     AND acc.created_at < COALESCE((SELECT min(p.created_at) FROM accounts p WHERE p.personal_of IS NOT NULL), 'infinity')
-		     AND NOT EXISTS (SELECT 1 FROM accounts p WHERE p.personal_of = m.user_id)
-		     AND NOT EXISTS (SELECT 1 FROM group_shares gs WHERE gs.account_id = acc.id)
-		     AND (SELECT count(*) FROM memberships o WHERE o.account_id = m.account_id) = 1
-		   ORDER BY m.user_id, acc.created_at, acc.id
-		 ) pick
-		 WHERE a.id = pick.account_id`).Error
-	})
+	// Left over from a one-time account conversion. Nothing reads this table.
+	return s.db.WithContext(ctx).Exec(`DROP TABLE IF EXISTS schema_flags`).Error
 }

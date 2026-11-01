@@ -68,7 +68,7 @@ This Go module builds three things: the control plane (`esa serve`), the `esa` C
 - Models live in `internal/store/models.go`, `models_fleet.go`, `models_ops.go`, and `models_teams.go`.
 - Add new models to `Models()` in `models.go`.
 - `AutoMigrate` runs on start and only adds tables, columns, indexes, and constraints. It never drops or renames.
-- Put drops, renames, and backfills in `postMigrate` in `store/migrate.go` as SQL. Each step must be safe to run on every start. Use `schema_flags` for one-time steps.
+- Put drops, renames, and data fixes in `postMigrate` in `store/migrate.go` as SQL. Each step must be safe to run on every start. Do not add a conversion for data that never shipped.
 
 ## Host changes
 

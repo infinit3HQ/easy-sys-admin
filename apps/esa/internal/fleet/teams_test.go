@@ -3,13 +3,9 @@ package fleet
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
-
-	"gorm.io/gorm/clause"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -77,8 +73,8 @@ func TestPersonalSpace(t *testing.T) {
 	}
 }
 
-// A user who only has team memberships gets a personal space on the next
-// sign-in, and sessions default to it.
+// A user whose personal space is missing gets a new one on the next
+// sign-in, and the session starts there.
 func TestPersonalSpaceCreatedForExistingUser(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
@@ -87,7 +83,7 @@ func TestPersonalSpaceCreatedForExistingUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a user from before personal spaces: drop bob's personal space.
+	// Drop the personal space, as if it had been deleted out from under the user.
 	if err := s.db.Where("id = ?", bob.AccountID).Delete(&store.Account{}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -586,81 +582,5 @@ func TestTeamsEnsurePersonalSpace(t *testing.T) {
 	}
 	if !hasPersonal(bob) {
 		t.Error("want exactly one personal space")
-	}
-}
-
-// The personal-space backfill runs once, and never converts teams made
-// after personal spaces existed or accounts that received shares.
-func TestPersonalBackfillRunsOnce(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	alice, bob, carol := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol")
-	signIn(t, s, "dave") // keeps a personal space: the cutoff for "made after the feature"
-
-	// Users without a personal space, each the only member of an account.
-	solo := func(a Actor, name string, created time.Time) int64 {
-		t.Helper()
-		if err := s.db.Where("personal_of = ?", a.UserID).Delete(&store.Account{}).Error; err != nil {
-			t.Fatal(err)
-		}
-		acc := store.Account{Name: name, CreatedAt: created}
-		if err := s.db.Omit(clause.Associations).Create(&acc).Error; err != nil {
-			t.Fatal(err)
-		}
-		m := store.Membership{AccountID: acc.ID, UserID: a.UserID, Role: string(RoleOwner), CreatedAt: created}
-		if err := s.db.Omit(clause.Associations).Create(&m).Error; err != nil {
-			t.Fatal(err)
-		}
-		return acc.ID
-	}
-	old := time.Now().Add(-365 * 24 * time.Hour)
-	newTeam := solo(alice, "new team", time.Now())
-	oldAcc := solo(bob, "old fleet", old)
-	oldShared := solo(carol, "old shared", old)
-	g, err := s.CreateGroup(ctx, Actor{UserID: alice.UserID, AccountID: newTeam, Role: RoleOwner, Source: SourceWeb}, GroupInput{Name: "g", Timezone: "UTC",
-		Clean: CleanPolicy{Days: []string{"sun"}, Time: "03:00", JournalSize: "200M"}, Updates: UpdatePolicy{Days: []string{"sun"}, Time: "04:00"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.Omit(clause.Associations).Create(&store.GroupShare{GroupID: g.ID, AccountID: oldShared, Access: "view", CreatedAt: time.Now()}).Error; err != nil {
-		t.Fatal(err)
-	}
-	personal := func(id int64) bool {
-		var acc store.Account
-		if err := s.db.Where("id = ?", id).Take(&acc).Error; err != nil {
-			t.Fatal(err)
-		}
-		return acc.Personal()
-	}
-
-	// The flag from the first migration stops it.
-	if err := s.store.Migrate(ctx, log); err != nil {
-		t.Fatal(err)
-	}
-	if personal(oldAcc) || personal(newTeam) || personal(oldShared) {
-		t.Fatal("backfill ran a second time")
-	}
-
-	// Without the flag it converts only the old, unshared account.
-	if err := s.db.Exec(`DELETE FROM schema_flags WHERE name = 'personal_spaces_backfill'`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.Migrate(ctx, log); err != nil {
-		t.Fatal(err)
-	}
-	if !personal(oldAcc) {
-		t.Error("old solo account was not converted")
-	}
-	if personal(newTeam) {
-		t.Error("a team created after personal spaces existed was converted")
-	}
-	if personal(oldShared) {
-		t.Error("an account that received a share was converted")
-	}
-	var n int64
-	s.db.Raw(`SELECT count(*) FROM schema_flags WHERE name = 'personal_spaces_backfill'`).Scan(&n)
-	if n != 1 {
-		t.Errorf("flag rows = %d", n)
 	}
 }
