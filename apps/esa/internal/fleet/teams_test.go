@@ -67,11 +67,11 @@ func TestPersonalSpace(t *testing.T) {
 		wantConflict(t, "invite personal", err)
 	}
 	wantConflict(t, "leave personal", s.RemoveMember(ctx, alice, alice.UserID))
-	wantConflict(t, "delete personal", s.DeleteTeam(ctx, alice, me.Current.Account.Name))
+	wantConflict(t, "delete personal", s.DeleteOrganization(ctx, alice, me.Current.Account.Name))
 	_, err = s.UpdateMemberRole(ctx, alice, alice.UserID, RoleAdmin)
 	wantConflict(t, "demote in personal", err)
 
-	team, err := s.GetTeam(ctx, alice)
+	team, err := s.GetOrganization(ctx, alice)
 	if err != nil || !team.Personal || team.MemberCount != 1 || team.Role != RoleOwner {
 		t.Errorf("GetTeam personal = %+v, %v", team, err)
 	}
@@ -83,7 +83,7 @@ func TestPersonalSpaceCreatedForExistingUser(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	bob := signIn(t, s, "bob")
-	team, err := s.CreateTeam(ctx, bob, "Older team")
+	team, err := s.CreateOrganization(ctx, bob, "Older team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestTeamInviteAccept(t *testing.T) {
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
 
-	tm, err := s.CreateTeam(ctx, alice, "Ops crew")
+	tm, err := s.CreateOrganization(ctx, alice, "Ops crew")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestTeamInviteAccept(t *testing.T) {
 	if err != nil || len(members) != 2 || members[0].Role != RoleOwner || !members[1].You {
 		t.Errorf("members = %+v, %v", members, err)
 	}
-	team, err := s.GetTeam(ctx, owner)
+	team, err := s.GetOrganization(ctx, owner)
 	if err != nil || team.MemberCount != 2 || team.Personal {
 		t.Errorf("team = %+v, %v", team, err)
 	}
@@ -187,15 +187,15 @@ func TestTeamInviteAccept(t *testing.T) {
 	if _, err := s.ListMembers(ctx, tokActor); err != nil {
 		t.Errorf("read token ListMembers: %v", err)
 	}
-	if _, err := s.CreateTeam(ctx, tokActor, "x"); !errors.Is(err, ErrForbidden) {
+	if _, err := s.CreateOrganization(ctx, tokActor, "x"); !errors.Is(err, ErrForbidden) {
 		t.Errorf("token CreateTeam: %v", err)
 	}
 
-	// Renaming is for owners.
-	if _, err := s.RenameTeam(ctx, inTeam(bob, m), "Mine now"); !errors.Is(err, ErrForbidden) {
+	// Renaming the organization is for owners.
+	if _, err := s.UpdateOrganization(ctx, inTeam(bob, m), OrgUpdate{Name: ptr("Mine now")}); !errors.Is(err, ErrForbidden) {
 		t.Errorf("admin rename: %v", err)
 	}
-	if v, err := s.RenameTeam(ctx, owner, "Ops crew 2"); err != nil || v.Name != "Ops crew 2" {
+	if v, err := s.UpdateOrganization(ctx, owner, OrgUpdate{Name: ptr("Ops crew 2")}); err != nil || v.Name != "Ops crew 2" {
 		t.Errorf("rename = %+v, %v", v, err)
 	}
 }
@@ -204,7 +204,7 @@ func TestInviteRestrictions(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob, carol := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +282,7 @@ func TestMemberLastOwnerAndRemoval(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +344,7 @@ func TestDeleteTeam(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
-	tm, err := s.CreateTeam(ctx, alice, "Doomed")
+	tm, err := s.CreateOrganization(ctx, alice, "Doomed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,13 +377,13 @@ func TestDeleteTeam(t *testing.T) {
 		}
 	}
 
-	if err := s.DeleteTeam(ctx, bobIn, "Doomed"); !errors.Is(err, ErrForbidden) {
+	if err := s.DeleteOrganization(ctx, bobIn, "Doomed"); !errors.Is(err, ErrForbidden) {
 		t.Errorf("admin delete: %v", err)
 	}
-	if err := s.DeleteTeam(ctx, owner, "doomed"); err == nil {
+	if err := s.DeleteOrganization(ctx, owner, "doomed"); err == nil {
 		t.Error("delete with wrong confirmation")
 	}
-	if err := s.DeleteTeam(ctx, owner, "Doomed"); err != nil {
+	if err := s.DeleteOrganization(ctx, owner, "Doomed"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -405,8 +405,8 @@ func TestDeleteTeam(t *testing.T) {
 		t.Errorf("membership after delete: %v", err)
 	}
 	var audit store.AuditEntry
-	if err := s.db.Where("action = ?", "team.delete").Take(&audit).Error; err != nil || audit.AccountID == nil || *audit.AccountID != alice.AccountID {
-		t.Errorf("team.delete audit = %+v, %v", audit, err)
+	if err := s.db.Where("action = ?", "org.delete").Take(&audit).Error; err != nil || audit.AccountID == nil || *audit.AccountID != alice.AccountID {
+		t.Errorf("org.delete audit = %+v, %v", audit, err)
 	}
 }
 
@@ -416,7 +416,7 @@ func TestInviteCreatorAuthority(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob, carol, dave := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol"), signIn(t, s, "dave")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +510,7 @@ func TestInviteEmailLocalUser(t *testing.T) {
 	}
 	lou := Actor{UserID: res.User.ID, AccountID: res.AccountID, Role: RoleOwner, Source: SourceWeb}
 	alice := signIn(t, s, "alice")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func TestTeamsEnsurePersonalSpace(t *testing.T) {
 	}
 
 	dropPersonal(alice)
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}

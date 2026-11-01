@@ -82,7 +82,7 @@ All of these are marked read-only for the client.
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------- |
 | `get_logs` | `server`, `unit` (optional, a systemd unit such as `nginx.service`), `container` (optional), `lines` (1 to 500, default 100), `grep` (optional, up to 200 characters), `priority` (optional, 0 to 7; 3 means errors and worse) | Journal lines of the unit, or log lines of the container. |
 
-Reading logs needs the admin or owner role, and `operate` access on a shared server. Only admins and owners can create a token with `logs:read`.
+Reading logs needs admin rights on the server's group, and `operate` access when another organization owns the server. The organization role counts, and so does an extra team that holds the group. An owner, an admin, or a viewer who is in at least one extra team can create a token with `logs:read`. The token still works only where that role allows it on each request.
 
 ### Registered with `actions` and without `logs:read`
 
@@ -94,8 +94,8 @@ Reading logs needs the admin or owner role, and `operate` access on a shared ser
 - `clean` prunes idle build cache and old VS Code copies, with the group's settings when started on a group.
 - `update` installs package updates in batches, using the group's batch size and failure limit (one server at a time and stop at the first failure when started on a server).
 - `reboot` is not offered over MCP. Use the web app or `esa runs start reboot`.
-- On a server or group shared with `view` access, the tool refuses before calling the API and tells the agent to ask the owning team for `operate` access.
-- Starting runs needs the admin or owner role. The tool is marked destructive for the client.
+- On a server or group shared with `view` access, the tool refuses before calling the API and tells the agent to ask the owning organization for `operate` access.
+- Starting runs needs admin rights on that group: the organization role, or an extra team that holds the group. The tool is marked destructive for the client.
 
 ### Why start_run is not offered to tokens with logs:read
 
@@ -107,7 +107,7 @@ The server instructions also tell the agent to treat server output such as logs 
 
 ## Shared servers
 
-A team can share a group, and the servers in it, with another team. Shared servers and groups show up in the tools with `ownerTeam`, the name of the owning team, and `access`, which is `view` or `operate`. Your own servers and groups have no `ownerTeam`. `fleet_summary` leaves `access` out for them, and `list_groups` shows `access: "own"`.
+An organization can share a group, and the servers in it, with another organization. Shared servers and groups show up in the tools with `ownerTeam`, the name of the owning organization, and `access`, which is `view` or `operate`. Your own servers and groups have no `ownerTeam`. `fleet_summary` leaves `access` out for them, and `list_groups` shows `access: "own"`.
 
 Names are unique inside one account only. A shared server can have the same name as one of yours, or as another shared server. When a tool gets a `server` or `group` argument, it resolves it this way:
 
@@ -115,16 +115,16 @@ Names are unique inside one account only. A shared server can have the same name
 2. Your own server or group with that name wins.
 3. A numeric argument is checked as one of your own names first, then as an id. If it is the name of one of your servers and also the id of a different one, the tool fails and lists both, so the agent can pick.
 4. Exactly one shared match is used.
-5. Several shared matches fail with a list of `name (team) id N` entries and a request to use the numeric id.
+5. Several shared matches fail with a list of `name (Ops) id N` entries, where Ops is the owning organization, and a request to use the numeric id.
 6. No match fails with the list of known names.
 
-Error messages label a shared server as `web-01 (Ops)`, where `Ops` is the owning team.
+Error messages label a shared server as `web-01 (Ops)`, where `Ops` is the owning organization.
 
 What a shared server allows:
 
 - `view` access: all read tools work, except `check_container_images`. `get_logs` and `start_run` are refused.
-- `operate` access: admins and owners of your team can also read logs and start runs. Viewers stay read only.
-- A run cannot mix your servers with shared ones, or servers of different teams. Runs started on shared servers are recorded in the owning team.
+- `operate` access: owners and admins of your organization can also read logs and start runs, and so can a viewer whose extra team holds the group. Other viewers stay read only.
+- A run cannot mix your servers with shared ones, or servers of different organizations. Runs started on shared servers are recorded in the owning organization.
 
 ## Example session
 

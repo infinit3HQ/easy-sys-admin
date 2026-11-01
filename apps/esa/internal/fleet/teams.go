@@ -15,33 +15,44 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// Team caps (docs/teams.md).
+// Organization caps (docs/teams.md).
 const (
-	maxTeamsPerUser   = 20
-	maxTeamMembers    = 100
+	maxOrgsPerUser    = 20
+	maxTeamMembers    = 100 // members of one organization
 	maxPendingInvites = 50
 	inviteTTL         = 7 * 24 * time.Hour
 	maxInviteTokenLen = 128
 )
 
 var (
-	errPersonalPrivate = &ConflictError{Message: "your personal space is private; create a team to work with other people"}
+	errPersonalPrivate = &ConflictError{Message: "your personal space is private; create an organization to work with other people"}
 	errPersonalDelete  = &ConflictError{Message: "your personal space cannot be deleted"}
 	errPersonalLeave   = &ConflictError{Message: "you cannot leave your personal space"}
-	errLastOwner       = &ConflictError{Message: "a team needs at least one owner; make another member an owner first"}
+	errLastOwner       = &ConflictError{Message: "an organization needs at least one owner; make another member an owner first"}
 	errInviteEmail     = &ConflictError{Message: "this invite is for a different email address; sign in with the address it was sent to"}
 	// Email and password accounts do not verify their address.
 	errInviteUnverified = &ConflictError{Message: "this invite is for a specific address; sign in with a provider that verifies it, or ask for an open invite link"}
 )
 
-// TeamView is the caller's current account.
-type TeamView struct {
+// OrgView is the caller's current account: an organization or their
+// personal space.
+type OrgView struct {
 	ID          int64
 	Name        string
 	Personal    bool
 	Role        Role // the caller's role
 	MemberCount int
 	CreatedAt   time.Time
+	// Display names of the built-in teams (the admin and viewer roles).
+	AdminTeamName  string
+	ViewerTeamName string
+}
+
+// OrgUpdate changes an organization. Nil fields stay as they are.
+type OrgUpdate struct {
+	Name           *string // owners only
+	AdminTeamName  *string
+	ViewerTeamName *string
 }
 
 // MemberView is one member of an account.
@@ -52,6 +63,7 @@ type MemberView struct {
 	Role     Role
 	JoinedAt time.Time
 	You      bool
+	TeamIDs  []int64 // extra teams (orgteams.go) the member is in
 }
 
 // InviteView is a pending invite without its token.
@@ -73,11 +85,12 @@ type InvitePreview struct {
 	AlreadyMember bool
 }
 
-// ---- Teams ------------------------------------------------------------------
+// ---- Organizations ----------------------------------------------------------
 
-// CreateTeam creates a team with the caller as its only owner. The session
-// stays where it is; the caller switches with SwitchAccount.
-func (s *Service) CreateTeam(ctx context.Context, a Actor, name string) (store.Membership, error) {
+// CreateOrganization creates an organization with the caller as its only
+// owner. The session stays where it is; the caller switches with
+// SwitchAccount.
+func (s *Service) CreateOrganization(ctx context.Context, a Actor, name string) (store.Membership, error) {
 	if a.TokenID != 0 || a.Source == SourceSystem || a.UserID == 0 {
 		return store.Membership{}, ErrForbidden
 	}
@@ -85,7 +98,7 @@ func (s *Service) CreateTeam(ctx context.Context, a Actor, name string) (store.M
 	if err != nil {
 		return store.Membership{}, err
 	}
-	if err := s.limitRate(a, "team.create"); err != nil {
+	if err := s.limitRate(a, "org.create"); err != nil {
 		return store.Membership{}, err
 	}
 	var out store.Membership
@@ -96,7 +109,7 @@ func (s *Service) CreateTeam(ctx context.Context, a Actor, name string) (store.M
 			Where("id = ?", a.UserID).Take(&u).Error; err != nil {
 			return mapStore(err)
 		}
-		// Every user has a personal space before they own a team.
+		// Every user has a personal space before they own an organization.
 		if _, err := s.ensurePersonal(ctx, q, u, a.Source); err != nil {
 			return err
 		}
@@ -107,8 +120,8 @@ func (s *Service) CreateTeam(ctx context.Context, a Actor, name string) (store.M
 			Count(&n).Error; err != nil {
 			return err
 		}
-		if n >= maxTeamsPerUser {
-			return &ConflictError{Message: "you already own " + strconv.Itoa(maxTeamsPerUser) + " teams; delete one first"}
+		if n >= maxOrgsPerUser {
+			return &ConflictError{Message: "you already own " + strconv.Itoa(maxOrgsPerUser) + " organizations; delete one first"}
 		}
 		now := s.now()
 		acc, err := q.CreateAccount(ctx, name, now)
@@ -119,69 +132,132 @@ func (s *Service) CreateTeam(ctx context.Context, a Actor, name string) (store.M
 			return err
 		}
 		s.audit(ctx, q, Actor{UserID: a.UserID, AccountID: acc.ID, Role: RoleOwner, Source: a.Source},
-			"team.create", acc.Name, map[string]any{"from_account_id": a.AccountID})
+			"org.create", acc.Name, map[string]any{"from_account_id": a.AccountID})
 		out = store.Membership{AccountID: acc.ID, UserID: a.UserID, Role: string(RoleOwner), CreatedAt: now, Account: acc, User: u}
 		return nil
 	})
 	return out, err
 }
 
-// GetTeam returns the caller's current account with its member count.
-func (s *Service) GetTeam(ctx context.Context, a Actor) (TeamView, error) {
+// GetOrganization returns the caller's current account with its member
+// count and the names of its built-in teams.
+func (s *Service) GetOrganization(ctx context.Context, a Actor) (OrgView, error) {
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
-		return TeamView{}, err
+		return OrgView{}, err
 	}
 	m, err := s.teamMember(ctx, s.store.Queries, a)
 	if err != nil {
-		return TeamView{}, err
+		return OrgView{}, err
 	}
-	return teamView(ctx, s.db, m)
+	return orgView(ctx, s.db, m)
 }
 
-// RenameTeam renames the current account. Owners only.
-func (s *Service) RenameTeam(ctx context.Context, a Actor, name string) (TeamView, error) {
-	if err := a.can(RoleOwner, ScopeAdmin); err != nil {
-		return TeamView{}, err
+// UpdateOrganization renames the current account (owners only) and the
+// organization's two built-in teams (owners and admins). A personal space
+// can be renamed by its owner but has no teams to rename.
+func (s *Service) UpdateOrganization(ctx context.Context, a Actor, in OrgUpdate) (OrgView, error) {
+	if a.TokenID != 0 {
+		return OrgView{}, ErrForbidden
 	}
-	name, err := validTeamName(name)
-	if err != nil {
-		return TeamView{}, err
+	need := RoleAdmin
+	if in.Name != nil {
+		need = RoleOwner
 	}
-	var out TeamView
+	if err := a.can(need, ScopeAdmin); err != nil {
+		return OrgView{}, err
+	}
+	var name, adminName, viewerName string
+	var err error
+	if in.Name != nil {
+		if name, err = validDisplayName("name", *in.Name); err != nil {
+			return OrgView{}, err
+		}
+	}
+	if in.AdminTeamName != nil {
+		if adminName, err = validDisplayName("adminTeamName", *in.AdminTeamName); err != nil {
+			return OrgView{}, err
+		}
+	}
+	if in.ViewerTeamName != nil {
+		if viewerName, err = validDisplayName("viewerTeamName", *in.ViewerTeamName); err != nil {
+			return OrgView{}, err
+		}
+	}
+	var out OrgView
 	err = s.store.InTx(ctx, func(q *store.Queries) error {
-		if _, err := lockAccount(ctx, q, a.AccountID, "NO KEY UPDATE"); err != nil {
+		acc, err := lockAccount(ctx, q, a.AccountID, "NO KEY UPDATE")
+		if errors.Is(err, ErrNotFound) {
+			return ErrForbidden
+		}
+		if err != nil {
 			return err
 		}
 		m, err := s.teamMember(ctx, q, a)
 		if err != nil {
 			return err
 		}
-		if Role(m.Role) != RoleOwner {
+		if !Role(m.Role).AtLeast(need) {
 			return ErrForbidden
 		}
-		old := m.Account.Name
-		if old != name {
-			if err := q.Raw().WithContext(ctx).Model(&store.Account{}).Where("id = ?", m.AccountID).Update("name", name).Error; err != nil {
+		renamesTeams := in.AdminTeamName != nil || in.ViewerTeamName != nil
+		if renamesTeams && acc.Personal() {
+			return errPersonalPrivate
+		}
+		if in.Name != nil && name != acc.Name {
+			if err := q.Raw().WithContext(ctx).Model(&store.Account{}).Where("id = ?", acc.ID).Update("name", name).Error; err != nil {
 				return err
 			}
-			s.audit(ctx, q, a, "team.rename", name, map[string]any{"from": old})
+			s.audit(ctx, q, a, "org.rename", name, map[string]any{"from": acc.Name})
+			acc.Name = name
 		}
-		m.Account.Name = name
-		out, err = teamView(ctx, q.Raw(), m)
+		if renamesTeams {
+			if in.AdminTeamName == nil {
+				adminName = acc.AdminTeamName
+			}
+			if in.ViewerTeamName == nil {
+				viewerName = acc.ViewerTeamName
+			}
+			if strings.EqualFold(adminName, viewerName) {
+				return &ConflictError{Message: "the admin and viewer teams need different names"}
+			}
+			for _, n := range []string{adminName, viewerName} {
+				if err := teamNameFree(ctx, q, acc.ID, n, 0); err != nil {
+					return err
+				}
+			}
+			for _, c := range []struct{ col, team, from, to string }{
+				{"admin_team_name", "admin", acc.AdminTeamName, adminName},
+				{"viewer_team_name", "viewer", acc.ViewerTeamName, viewerName},
+			} {
+				if c.from == c.to {
+					continue
+				}
+				if err := q.Raw().WithContext(ctx).Model(&store.Account{}).Where("id = ?", acc.ID).Update(c.col, c.to).Error; err != nil {
+					return err
+				}
+				s.audit(ctx, q, a, "org.rename_team", c.to, map[string]any{"team": c.team, "from": c.from})
+			}
+			acc.AdminTeamName, acc.ViewerTeamName = adminName, viewerName
+		}
+		m.Account = acc
+		out, err = orgView(ctx, q.Raw(), m)
 		return err
 	})
 	return out, err
 }
 
-// DeleteTeam deletes the current team and everything it owns. confirm must
-// be the team's exact name. Sessions working in the team move to their
+// DeleteOrganization deletes the current organization and everything it
+// owns. confirm must be its exact name. Sessions working in it move to their
 // user's personal space (or another membership) in the same transaction.
-func (s *Service) DeleteTeam(ctx context.Context, a Actor, confirm string) error {
+func (s *Service) DeleteOrganization(ctx context.Context, a Actor, confirm string) error {
+	if a.TokenID != 0 {
+		return ErrForbidden
+	}
 	if err := a.can(RoleOwner, ScopeAdmin); err != nil {
 		return err
 	}
 	var serverIDs []int64
-	var teamID int64
+	var orgID int64
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
 		acc, err := lockAccount(ctx, q, a.AccountID, "UPDATE")
 		if errors.Is(err, ErrNotFound) {
@@ -201,7 +277,7 @@ func (s *Service) DeleteTeam(ctx context.Context, a Actor, confirm string) error
 			return errPersonalDelete
 		}
 		if confirm != acc.Name {
-			return invalid("confirm", "type the team's exact name to delete it")
+			return invalid("confirm", "type the organization's exact name to delete it")
 		}
 		if err := q.Raw().WithContext(ctx).Model(&store.Server{}).Where("account_id = ?", acc.ID).Pluck("id", &serverIDs).Error; err != nil {
 			return err
@@ -210,30 +286,31 @@ func (s *Service) DeleteTeam(ctx context.Context, a Actor, confirm string) error
 			return err
 		}
 		// Foreign keys cascade to everything the account owns, including its
-		// audit log, so the entry below goes to the caller's next account.
+		// teams and its audit log, so the entry below goes to the caller's
+		// next account.
 		if err := q.Raw().WithContext(ctx).Where("id = ?", acc.ID).Delete(&store.Account{}).Error; err != nil {
 			return err
 		}
-		teamID = acc.ID
+		orgID = acc.ID
 		next := Actor{UserID: a.UserID, Source: a.Source, TokenID: a.TokenID}
 		if ms, err := q.ListMemberships(ctx, a.UserID); err == nil {
 			if fb, err := defaultMembership(ms, a.UserID); err == nil {
 				next.AccountID, next.Role = fb.Account.ID, Role(fb.Role)
 			}
 		}
-		s.audit(ctx, q, next, "team.delete", acc.Name, map[string]any{"team_id": acc.ID, "servers": len(serverIDs)})
+		s.audit(ctx, q, next, "org.delete", acc.Name, map[string]any{"org_id": acc.ID, "servers": len(serverIDs)})
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	s.forgetTeam(teamID, serverIDs)
+	s.forgetAccount(orgID, serverIDs)
 	return nil
 }
 
-// forgetTeam drops in-memory state of a deleted account: its cached SSH
+// forgetAccount drops in-memory state of a deleted account: its cached SSH
 // signer and pooled connections to its servers.
-func (s *Service) forgetTeam(accountID int64, serverIDs []int64) {
+func (s *Service) forgetAccount(accountID int64, serverIDs []int64) {
 	s.signerMu.Lock()
 	delete(s.signers, accountID)
 	s.signerMu.Unlock()
@@ -258,10 +335,15 @@ func (s *Service) ListMembers(ctx context.Context, a Actor) ([]MemberView, error
 	return listMembers(ctx, s.db, a, 0)
 }
 
-// UpdateMemberRole changes a member's role. Owners only. The last owner
-// cannot be demoted, and personal spaces have no other members to change.
+// UpdateMemberRole changes a member's role. Owners change any role; admins
+// move members between admin and viewer but cannot touch owners or make
+// one. The last owner cannot be demoted, and personal spaces have no other
+// members to change.
 func (s *Service) UpdateMemberRole(ctx context.Context, a Actor, userID int64, role Role) (MemberView, error) {
-	if err := a.can(RoleOwner, ScopeAdmin); err != nil {
+	if a.TokenID != 0 {
+		return MemberView{}, ErrForbidden
+	}
+	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return MemberView{}, err
 	}
 	if !validTeamRole(role) {
@@ -273,7 +355,8 @@ func (s *Service) UpdateMemberRole(ctx context.Context, a Actor, userID int64, r
 		if err != nil {
 			return err
 		}
-		if me, ok := findMember(ms, a.UserID); !ok || Role(me.Role) != RoleOwner {
+		me, ok := findMember(ms, a.UserID)
+		if !ok || !Role(me.Role).AtLeast(RoleAdmin) {
 			return ErrForbidden
 		}
 		if acc.Personal() {
@@ -284,6 +367,9 @@ func (s *Service) UpdateMemberRole(ctx context.Context, a Actor, userID int64, r
 			return ErrNotFound
 		}
 		from := Role(target.Role)
+		if Role(me.Role) != RoleOwner && (from == RoleOwner || role == RoleOwner) {
+			return ErrForbidden
+		}
 		if from != role {
 			if from == RoleOwner && countOwners(ms) <= 1 {
 				return errLastOwner
@@ -315,13 +401,17 @@ func (s *Service) UpdateMemberRole(ctx context.Context, a Actor, userID int64, r
 	return out, err
 }
 
-// RemoveMember removes a member (owners), or lets the caller leave when
-// userID is their own. The last owner cannot leave, and nobody leaves a
-// personal space. The removed user's API tokens for the team are revoked
+// RemoveMember removes a member, or lets the caller leave when userID is
+// their own. Owners remove anyone; admins remove admins and viewers. The
+// last owner cannot leave, and nobody leaves a personal space. The removed
+// user's API tokens and team memberships in the organization go with them,
 // and their sessions in it move to another account.
 func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error {
+	if a.TokenID != 0 {
+		return ErrForbidden
+	}
 	self := userID == a.UserID
-	need := RoleOwner
+	need := RoleAdmin
 	if self {
 		need = RoleViewer
 	}
@@ -334,7 +424,7 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error
 			return err
 		}
 		me, ok := findMember(ms, a.UserID)
-		if !ok || (!self && Role(me.Role) != RoleOwner) {
+		if !ok || !Role(me.Role).AtLeast(need) {
 			return ErrForbidden
 		}
 		if acc.Personal() {
@@ -347,8 +437,11 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error
 		if !ok {
 			return ErrNotFound
 		}
+		if !self && Role(target.Role) == RoleOwner && Role(me.Role) != RoleOwner {
+			return ErrForbidden
+		}
 		if Role(target.Role) == RoleOwner && countOwners(ms) <= 1 {
-			return &ConflictError{Message: "the last owner cannot leave; make another member an owner or delete the team"}
+			return &ConflictError{Message: "the last owner cannot leave; make another member an owner or delete the organization"}
 		}
 		u, err := q.GetUser(ctx, userID)
 		if err != nil {
@@ -361,6 +454,11 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error
 			return err
 		}
 		if err := db.Where("account_id = ? AND user_id = ?", acc.ID, userID).Delete(&store.Membership{}).Error; err != nil {
+			return err
+		}
+		// Team memberships only make sense inside the organization.
+		if err := db.Where("user_id = ? AND team_id IN (SELECT id FROM teams WHERE account_id = ?)", userID, acc.ID).
+			Delete(&store.TeamMember{}).Error; err != nil {
 			return err
 		}
 		// Tokens already stop working without the membership; revoking them
@@ -383,7 +481,7 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error
 
 // ---- Invites ----------------------------------------------------------------
 
-// ListInvites returns the current team's pending invites. Owners and admins.
+// ListInvites returns the current organization's pending invites. Owners and admins.
 func (s *Service) ListInvites(ctx context.Context, a Actor) ([]InviteView, error) {
 	if err := a.can(RoleAdmin, ScopeRead); err != nil {
 		return nil, err
@@ -418,6 +516,9 @@ func (s *Service) CreateInvite(ctx context.Context, a Actor, role Role, email st
 	}
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return InviteView{}, "", err
+	}
+	if role == "" {
+		role = RoleViewer // new members are viewers unless the inviter picks more
 	}
 	if !validTeamRole(role) {
 		return InviteView{}, "", invalid("role", "use owner, admin, or viewer")
@@ -458,10 +559,10 @@ func (s *Service) CreateInvite(ctx context.Context, a Actor, role Role, email st
 			return err
 		}
 		if pending >= maxPendingInvites {
-			return &ConflictError{Message: "this team has " + strconv.Itoa(maxPendingInvites) + " pending invites; revoke one first"}
+			return &ConflictError{Message: "this organization has " + strconv.Itoa(maxPendingInvites) + " pending invites; revoke one first"}
 		}
 		if len(ms) >= maxTeamMembers {
-			return &ConflictError{Message: "this team has reached the limit of " + strconv.Itoa(maxTeamMembers) + " members"}
+			return &ConflictError{Message: "this organization has reached the limit of " + strconv.Itoa(maxTeamMembers) + " members"}
 		}
 		creator, err := q.GetUser(ctx, a.UserID)
 		if err != nil {
@@ -487,7 +588,7 @@ func (s *Service) CreateInvite(ctx context.Context, a Actor, role Role, email st
 	return out, s.publicURL.JoinPath("/invite", token).String(), nil
 }
 
-// RevokeInvite deletes a pending invite of the current team. Owners and admins.
+// RevokeInvite deletes a pending invite of the current organization. Owners and admins.
 func (s *Service) RevokeInvite(ctx context.Context, a Actor, id int64) error {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return err
@@ -554,7 +655,7 @@ func (s *Service) PreviewInvite(ctx context.Context, a Actor, token string) (Inv
 	return InvitePreview{TeamName: acc.Name, Role: Role(inv.Role), InvitedBy: invitedBy, ExpiresAt: inv.ExpiresAt, AlreadyMember: err == nil}, nil
 }
 
-// AcceptInvite adds the caller to the invite's team and deletes the invite,
+// AcceptInvite adds the caller to the invite's organization and deletes the invite,
 // in one transaction. A caller who is already a member gets their existing
 // membership back with alreadyMember set, and the invite stays usable.
 // Browser sessions only.
@@ -576,7 +677,7 @@ func (s *Service) AcceptInvite(ctx context.Context, a Actor, token string) (m st
 		if err != nil {
 			return mapStore(err)
 		}
-		// Every user has a personal space before joining a team. This locks
+		// Every user has a personal space before joining an organization. This locks
 		// the user row first, before the account and the invite.
 		if _, err := s.ensurePersonal(ctx, q, u, a.Source); err != nil {
 			return err
@@ -614,7 +715,7 @@ func (s *Service) AcceptInvite(ctx context.Context, a Actor, token string) (m st
 			return err
 		}
 		if n >= maxTeamMembers {
-			return &ConflictError{Message: "this team has reached the limit of " + strconv.Itoa(maxTeamMembers) + " members"}
+			return &ConflictError{Message: "this organization has reached the limit of " + strconv.Itoa(maxTeamMembers) + " members"}
 		}
 		now := s.now()
 		if err := q.AddMembership(ctx, acc.ID, u.ID, inv.Role, now); err != nil {
@@ -738,13 +839,14 @@ func countOwners(ms []store.Membership) int {
 	return n
 }
 
-func teamView(ctx context.Context, db *gorm.DB, m store.Membership) (TeamView, error) {
+func orgView(ctx context.Context, db *gorm.DB, m store.Membership) (OrgView, error) {
 	var n int64
 	if err := db.WithContext(ctx).Model(&store.Membership{}).Where("account_id = ?", m.AccountID).Count(&n).Error; err != nil {
-		return TeamView{}, err
+		return OrgView{}, err
 	}
-	return TeamView{ID: m.Account.ID, Name: m.Account.Name, Personal: m.Account.Personal(), Role: Role(m.Role),
-		MemberCount: int(n), CreatedAt: m.Account.CreatedAt}, nil
+	return OrgView{ID: m.Account.ID, Name: m.Account.Name, Personal: m.Account.Personal(), Role: Role(m.Role),
+		MemberCount: int(n), CreatedAt: m.Account.CreatedAt,
+		AdminTeamName: m.Account.AdminTeamName, ViewerTeamName: m.Account.ViewerTeamName}, nil
 }
 
 // listMembers returns the account's members, owners first; userID limits it to one.
@@ -761,7 +863,28 @@ func listMembers(ctx context.Context, db *gorm.DB, a Actor, userID int64) ([]Mem
 	out := make([]MemberView, 0, len(ms))
 	for _, m := range ms {
 		out = append(out, MemberView{UserID: m.UserID, Name: m.User.Name, Email: m.User.Email, Role: Role(m.Role),
-			JoinedAt: m.CreatedAt, You: m.UserID == a.UserID})
+			JoinedAt: m.CreatedAt, You: m.UserID == a.UserID, TeamIDs: []int64{}})
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+	var rows []store.TeamMember
+	tq := db.WithContext(ctx).Select("team_members.team_id", "team_members.user_id").
+		Joins("JOIN teams t ON t.id = team_members.team_id").Where("t.account_id = ?", a.AccountID)
+	if userID != 0 {
+		tq = tq.Where("team_members.user_id = ?", userID)
+	}
+	if err := tq.Order("team_members.team_id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	at := make(map[int64]int, len(out))
+	for i, m := range out {
+		at[m.UserID] = i
+	}
+	for _, r := range rows {
+		if i, ok := at[r.UserID]; ok {
+			out[i].TeamIDs = append(out[i].TeamIDs, r.TeamID)
+		}
 	}
 	return out, nil
 }
@@ -817,10 +940,16 @@ func validTeamRole(r Role) bool {
 }
 
 func validTeamName(name string) (string, error) {
+	return validDisplayName("name", name)
+}
+
+// validDisplayName trims a display name and checks it is 1 to 100 printable
+// characters. field names the input in the error.
+func validDisplayName(field, name string) (string, error) {
 	name = strings.TrimSpace(name)
 	n := utf8.RuneCountInString(name)
 	if n == 0 || n > 100 || !utf8.ValidString(name) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
-		return "", invalid("name", "use 1 to 100 characters")
+		return "", invalid(field, "use 1 to 100 characters")
 	}
 	return name, nil
 }

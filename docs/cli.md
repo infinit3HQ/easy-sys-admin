@@ -164,7 +164,7 @@ Starts a run on a group or on a list of servers.
 | `--batch`        | For `update` and `reboot` runs: servers worked on at the same time, 1 to 50. Without it the run uses the group's setting.  |
 | `--max-failures` | For `update` and `reboot` runs: stop after this many servers fail, 1 to 1000. Without it the run uses the group's setting. |
 
-Give exactly one of `--group` or `--server`. All servers in one run must belong to one team.
+Give exactly one of `--group` or `--server`. All servers in one run must belong to one organization.
 
 ```sh
 esa runs start measure --group production
@@ -211,7 +211,7 @@ esa completion zsh > "${fpath[1]}/_esa"
 
 ## Name resolution
 
-`servers show`, `runs start --server`, and `runs start --group` accept a name or an id. The CLI compares names without case and takes the first match: for servers in fleet overview order (worst first), for groups in list order. Names are unique inside one account only. A group shared by another team can have the same name as one of yours, so use the numeric id when names repeat. `esa servers list` and `esa groups list` show the ids.
+`servers show`, `runs start --server`, and `runs start --group` accept a name or an id. The CLI compares names without case and takes the first match: for servers in fleet overview order (worst first), for groups in list order. Names are unique inside one account only. A group shared by another organization can have the same name as one of yours, so use the numeric id when names repeat. `esa servers list` and `esa groups list` show the ids.
 
 ## Exit codes
 

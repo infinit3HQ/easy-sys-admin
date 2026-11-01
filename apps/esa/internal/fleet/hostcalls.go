@@ -103,10 +103,11 @@ type LogQuery struct {
 }
 
 // Logs returns journal or container log lines. Logs can contain secrets, so
-// they need the admin role and the logs:read scope.
+// they need the admin role on the server's group and the logs:read scope.
 func (s *Service) Logs(ctx context.Context, a Actor, serverID int64, q LogQuery) ([]proto.LogLine, error) {
-	if err := a.can(RoleAdmin, ScopeLogs); err != nil {
-		return nil, err
+	// The role is checked on the server's group in operableServer.
+	if !a.hasScope(ScopeLogs) {
+		return nil, ErrForbidden
 	}
 	args := []string{"--lines", strconv.Itoa(q.Lines), "--priority", strconv.Itoa(q.Priority)}
 	switch {
@@ -165,7 +166,7 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 	err = s.callServer(ctx, srv, time.Minute, &out, "jobs")
 	// Cron command lines often hold secrets (tokens, passwords in URLs), so
 	// they need the same access as logs. Schedules stay visible.
-	if canOperateServer(a, acc, RoleAdmin, ScopeLogs) != nil {
+	if s.canOperateServer(ctx, a, srv, acc, RoleAdmin, ScopeLogs) != nil {
 		for i := range out.Cron {
 			out.Cron[i].Command = ""
 		}
@@ -176,8 +177,9 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 // CheckUpdates refreshes the package lists on a server and returns the
 // pending updates.
 func (s *Service) CheckUpdates(ctx context.Context, a Actor, serverID int64) (ServerView, error) {
-	if err := a.can(RoleAdmin, ScopeActions); err != nil {
-		return ServerView{}, err
+	// The role is checked on the server's group in operableServer.
+	if !a.hasScope(ScopeActions) {
+		return ServerView{}, ErrForbidden
 	}
 	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
@@ -195,8 +197,9 @@ func (s *Service) CheckUpdates(ctx context.Context, a Actor, serverID int64) (Se
 
 // ServiceAction starts, stops, or restarts a systemd service.
 func (s *Service) ServiceAction(ctx context.Context, a Actor, serverID int64, unit, action string) error {
-	if err := a.can(RoleAdmin, ScopeActions); err != nil {
-		return err
+	// The role is checked on the server's group in operableServer.
+	if !a.hasScope(ScopeActions) {
+		return ErrForbidden
 	}
 	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
@@ -210,8 +213,9 @@ func (s *Service) ServiceAction(ctx context.Context, a Actor, serverID int64, un
 // ContainerAction starts, stops, or restarts a container. confirm must be
 // the container name for protected containers.
 func (s *Service) ContainerAction(ctx context.Context, a Actor, serverID int64, name, action, confirm string) error {
-	if err := a.can(RoleAdmin, ScopeActions); err != nil {
-		return err
+	// The role is checked on the server's group in operableServer.
+	if !a.hasScope(ScopeActions) {
+		return ErrForbidden
 	}
 	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {
@@ -225,8 +229,9 @@ func (s *Service) ContainerAction(ctx context.Context, a Actor, serverID int64, 
 
 // ContainerUpdate pulls a compose service's image and recreates it.
 func (s *Service) ContainerUpdate(ctx context.Context, a Actor, serverID int64, name, confirm string) (string, error) {
-	if err := a.can(RoleAdmin, ScopeActions); err != nil {
-		return "", err
+	// The role is checked on the server's group in operableServer.
+	if !a.hasScope(ScopeActions) {
+		return "", ErrForbidden
 	}
 	srv, err := s.operableServer(ctx, a, serverID, RoleAdmin, ScopeActions)
 	if err != nil {

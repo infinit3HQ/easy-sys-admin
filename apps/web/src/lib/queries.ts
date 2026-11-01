@@ -174,20 +174,25 @@ export const q = {
       queryFn: () => call(api().GET('/settings/ssh-key')),
       staleTime: Infinity,
     }),
-  team: () =>
+  org: () =>
     queryOptions({
-      queryKey: ['team'],
-      queryFn: () => call(api().GET('/team')),
+      queryKey: ['org'],
+      queryFn: () => call(api().GET('/org')),
     }),
   members: () =>
     queryOptions({
       queryKey: ['members'],
-      queryFn: () => call(api().GET('/team/members')),
+      queryFn: () => call(api().GET('/org/members')),
     }),
   invites: () =>
     queryOptions({
       queryKey: ['invites'],
-      queryFn: () => call(api().GET('/team/invites')),
+      queryFn: () => call(api().GET('/org/invites')),
+    }),
+  teams: () =>
+    queryOptions({
+      queryKey: ['teams'],
+      queryFn: () => call(api().GET('/org/teams')),
     }),
   groupShares: (id: number) =>
     queryOptions({

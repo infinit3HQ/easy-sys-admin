@@ -73,17 +73,18 @@ Sessions are in `apps/esa/internal/auth/sessions.go`.
 
 API tokens are for the CLI and MCP clients (`apps/esa/internal/fleet/tokens.go`). A request with `Authorization: Bearer ...` never falls back to cookies; the control plane drops the `Cookie` header before the session middleware runs.
 
-| Scope       | Allows                                                      | Role needed to grant |
-| ----------- | ----------------------------------------------------------- | -------------------- |
-| `read`      | Everything a viewer sees, except logs                       | viewer               |
-| `logs:read` | Server and container logs                                   | admin                |
-| `actions`   | Runs, service and container actions, reboots, update checks | admin                |
-| `admin`     | Servers, groups, alert rules, channels, certificates        | admin                |
+| Scope       | Allows                                                      | Role needed to grant                  |
+| ----------- | ----------------------------------------------------------- | ------------------------------------- |
+| `read`      | Everything a viewer sees, except logs                       | viewer                                |
+| `logs:read` | Server and container logs                                   | admin, or a viewer in at least 1 team |
+| `actions`   | Runs, service and container actions, reboots, update checks | admin, or a viewer in at least 1 team |
+| `admin`     | Servers, groups, alert rules, channels, certificates        | admin                                 |
 
 - Every token has `read`; it is added if missing.
 - A token expires after 1 to 365 days. The default is 90 days. Every new token expires.
 - The secret is shown once. The database keeps its SHA-256 and a 10 character prefix for display.
 - Scopes apply on top of the user's role, and the role is read at each request. Demoting or removing a member limits or disables their tokens at once. Browser sessions are limited by role only.
+- A viewer in a team can grant `logs:read` and `actions` because the team makes them admin of some groups. The token still works only where their role on the group allows it, checked at each request. Removing them from the team ends that at once.
 - A token cannot list, create, or revoke tokens, and cannot create or accept invites or share links.
 - Revoked and expired tokens get 401.
 
@@ -150,7 +151,7 @@ The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `
 | Password sign-in, per client address                                                                                                             | 30 failures per 15 minutes                 | same                                                     |
 | Password sign-in, whole install                                                                                                                  | 1000 failures per 15 minutes               | same                                                     |
 | Password sign-up, per client address                                                                                                             | 10 attempts per hour, successful or not    | `apps/esa/internal/auth/handlers.go`                     |
-| Probing a host key, adding a server, reinstalling a helper, adding a certificate, testing a channel, creating a team, an invite, or a share link | 20 per minute per account, for each action | `limitRate` in `apps/esa/internal/fleet/limits_state.go` |
+| Probing a host key, adding a server, reinstalling a helper, adding a certificate, testing a channel, creating an organization, creating an extra team, an invite, or a share link | 20 per minute per account, for each action | `limitRate` in `apps/esa/internal/fleet/limits_state.go` |
 
 A successful sign-in clears the per-pair and per-email counters only. The per-client and global budgets stay, so signing in to your own account does not buy more guesses at others. Scheduled work done by the system is not rate limited.
 
@@ -166,9 +167,11 @@ Two more limits protect the servers and the control plane:
 | Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT` | `fleet/limits_state.go` |
 | Certificates per account          | 200                                                  | same                    |
 | Notification channels per account | 25                                                   | same                    |
-| Teams created per user            | 20                                                   | `fleet/teams.go`        |
-| Members per team                  | 100                                                  | same                    |
-| Pending invites per team          | 50                                                   | same                    |
+| Organizations a user may own      | 20                                                   | `fleet/teams.go`        |
+| Members per organization          | 100                                                  | same                    |
+| Pending invites per organization  | 50                                                   | same                    |
+| Extra teams per organization      | 100                                                  | `fleet/orgteams.go`     |
+| Groups per extra team             | 200                                                  | same                    |
 | Shares per group                  | 50                                                   | `fleet/sharing.go`      |
 | Pending share links per group     | 50                                                   | same                    |
 
@@ -211,7 +214,11 @@ On each managed server esa logs in as a system user `esa` whose key can only run
 
 ## Teams and sharing
 
-Every account-owned query starts from the caller's account, and one visibility helper adds what is shared with it. Roles are `owner`, `admin`, and `viewer`; logs need admin. A shared group gives another team `view` or `operate` access to the group and the servers in it at that moment. The owning team keeps the SSH key, host keys, enrollment, settings, and deletion. A run's servers must all belong to one owning account. API tokens cannot create or accept invites or share links. The full rules, including how invites and share links stop working when their creator loses authority, are in [teams.md](teams.md). Tests in `apps/esa/internal/fleet/isolation_test.go` and `sharing_test.go` check these boundaries.
+Every account-owned query starts from the caller's account, and one visibility helper adds what is shared with it. Organization roles are `owner`, `admin`, and `viewer`, and new members start as viewers.
+
+Anything that acts on a server group or its servers uses the caller's role on that group (`roleOn` in `apps/esa/internal/fleet/roles.go`). It is the organization role, except that a viewer who is in a team holding the group is admin of it. A team can hold its organization's groups and groups another organization shares in. On a shared group the role is then limited by the share: `view` stays viewer, `operate` gives admin at most. Admin on a group allows runs, service and container actions, update checks, logs, cron command lines, and, for the organization's own groups, editing the group's settings. Everything else stays on the organization role: adding, changing, moving, and deleting servers, host keys, helper reinstall, enrollment, creating and deleting groups, sharing, alert rules, channels, certificates, members, and teams. Token scopes apply on top in every case. Server and group responses carry `yourRole` so the web app can hide controls, but the API makes the decision.
+
+A shared group gives another organization `view` or `operate` access to the group and the servers in it at that moment. The owning organization keeps the SSH key, host keys, enrollment, settings, and deletion. A run's servers must all belong to one owning account. API tokens cannot create or accept invites or share links. The full rules, including how invites and share links stop working when their creator loses authority, are in [teams.md](teams.md). Tests in `apps/esa/internal/fleet/isolation_test.go`, `sharing_test.go`, and `roles_test.go` check these boundaries.
 
 ## Audit log
 
@@ -221,11 +228,11 @@ Recorded actions include:
 
 | Area                 | Actions                                                                                                                                                                                                                                     |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`                                                                                                                                                                  |
+| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`, `org.create`, `org.rename`, `org.rename_team`, `org.delete`                                                                                                      |
 | Servers              | `server.probe`, `server.add`, `server.enroll_start`, `server.enroll_token`, `server.enroll_complete`, `server.update`, `server.delete`, `server.reinstall_helper`, `server.accept_host_key`, `server.host_key_mismatch`, `server.read_logs` |
 | Operations           | `run.start`, `service.<action>`, `container.<action>`, `container.update`                                                                                                                                                                   |
 | Settings             | `group.*`, `alert_rule.update`, `channel.*`, `cert.add`, `cert.delete`, `token.create`, `token.revoke`                                                                                                                                      |
-| Teams and sharing    | `team.create`, `team.rename`, `team.delete`, `member.role`, `member.remove`, `member.leave`, `invite.create`, `invite.revoke`, `invite.accept`, `share.link_create`, `share.link_revoke`, `share.accept`, `share.update`, `share.remove`    |
+| Teams and sharing    | `team.create`, `team.update`, `team.delete`, `team.add_member`, `team.remove_member`, `member.role`, `member.remove`, `member.leave`, `invite.create`, `invite.revoke`, `invite.accept`, `share.link_create`, `share.link_revoke`, `share.accept`, `share.update`, `share.remove` |
 
 When someone acts on a server through a share, the entry goes to the owning account with `via_account_id`, and a copy goes to the caller's account with `owner_account_id`. Reading logs is recorded too, because logs can hold secrets.
 

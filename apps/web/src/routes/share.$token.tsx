@@ -19,7 +19,7 @@ import {
   Loading,
   Notice,
 } from '#/components/kit'
-import { LinkShell, useSessionReset } from '#/components/team'
+import { LinkShell, useSessionReset } from '#/components/org'
 import { Button } from '#/components/ui/button'
 
 export const Route = createFileRoute('/share/$token')({
@@ -46,9 +46,9 @@ export const Route = createFileRoute('/share/$token')({
 })
 
 const accessText = {
-  view: 'Your team sees its servers, metrics, runs, and alerts.',
+  view: 'Your organization sees its servers, metrics, runs, and alerts.',
   operate:
-    'Your team sees its servers. Your admins and owners can also start runs, act on services and containers, and read logs.',
+    'Your organization sees its servers. Your owners and admins, and teams that hold the group, can also start runs, act on services and containers, and read logs.',
 } as const
 
 function linkError(e: unknown): string {
@@ -66,7 +66,7 @@ function SharePage() {
   const preview = useQuery(q.sharePreview(token))
   const p = preview.data
   const [picked, setPicked] = useState<string | null>(null)
-  // One team to pick from: pick it.
+  // One organization to pick from: pick it.
   const teamId =
     picked ?? (p?.teams.length === 1 ? String(p.teams[0]?.id) : null)
 
@@ -105,7 +105,7 @@ function SharePage() {
         <>
           <p className="text-sm text-ink-2">
             {p.ownerTeam} shares this group and its servers with one of your
-            teams.
+            organizations.
           </p>
           <dl className="space-y-2">
             <KeyValue k="Owner" v={p.ownerTeam} />
@@ -120,13 +120,14 @@ function SharePage() {
           {p.teams.length === 0 ? (
             <>
               <Notice tone="warn">
-                To accept it, you need to be an owner or admin of a team other
-                than {p.ownerTeam}. A personal space cannot receive shared
-                groups. Create a team, then open this link again.
+                To accept it, you need to be an owner or admin of an
+                organization other than {p.ownerTeam}. A personal space cannot
+                receive shared groups. Create an organization, then open this
+                link again.
               </Notice>
               <Button asChild variant="outline" className="w-full">
-                <Link to="/app/team">
-                  <PlusIcon /> Create a team
+                <Link to="/app/org">
+                  <PlusIcon /> Create an organization
                 </Link>
               </Button>
             </>
@@ -140,7 +141,7 @@ function SharePage() {
             >
               <Field label="Add it to">
                 <Choice
-                  placeholder="Pick a team"
+                  placeholder="Pick an organization"
                   value={teamId ?? ''}
                   onChange={setPicked}
                   options={p.teams.map((t) => ({

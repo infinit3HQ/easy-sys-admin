@@ -35,7 +35,7 @@ func (q *Queries) GetUser(ctx context.Context, id int64) (User, error) {
 	return u, notFound(err)
 }
 
-// CreateAccount inserts a new team account.
+// CreateAccount inserts a new organization.
 func (q *Queries) CreateAccount(ctx context.Context, name string, now time.Time) (Account, error) {
 	a := Account{Name: name, CreatedAt: now}
 	err := q.with(ctx).Omit(clause.Associations).Create(&a).Error

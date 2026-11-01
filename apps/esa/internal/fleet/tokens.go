@@ -56,8 +56,9 @@ func (s *Service) ListTokens(ctx context.Context, a Actor) ([]TokenView, error) 
 }
 
 // CreateToken issues a token. The secret is returned once and never stored.
-// Scopes beyond the user's role are refused. A zero ttl means
-// DefaultTokenTTL; otherwise it must be one day to MaxTokenTTL.
+// Scopes beyond the user's role are refused: admin needs an org admin, and
+// logs:read and actions need an org admin or a viewer in a team. A zero ttl
+// means DefaultTokenTTL; otherwise it must be one day to MaxTokenTTL.
 func (s *Service) CreateToken(ctx context.Context, a Actor, name string, scopes []Scope, ttl time.Duration) (TokenView, string, error) {
 	if a.TokenID != 0 || a.Source == SourceSystem {
 		return TokenView{}, "", ErrForbidden
@@ -76,16 +77,29 @@ func (s *Service) CreateToken(ctx context.Context, a Actor, name string, scopes 
 		scopes = []Scope{ScopeRead}
 	}
 	var clean []Scope
+	inTeam, teamChecked := false, false
 	for _, sc := range scopes {
 		if !slices.Contains(AllScopes, sc) {
 			return TokenView{}, "", invalid("scopes", "unknown scope %q", sc)
 		}
-		need := RoleViewer
-		switch sc {
-		case ScopeLogs, ScopeActions, ScopeAdmin:
-			need = RoleAdmin
+		// Org admins may grant any scope. A viewer may grant logs:read and
+		// actions only when a team of the organization makes them admin of
+		// some groups; each use is still checked on the group.
+		ok := a.Role.AtLeast(RoleAdmin)
+		switch {
+		case ok:
+		case sc == ScopeRead:
+			ok = a.Role.AtLeast(RoleViewer)
+		case (sc == ScopeLogs || sc == ScopeActions) && a.Role == RoleViewer:
+			if !teamChecked {
+				if inTeam, err = s.inAnyTeam(ctx, a); err != nil {
+					return TokenView{}, "", err
+				}
+				teamChecked = true
+			}
+			ok = inTeam
 		}
-		if !a.Role.AtLeast(need) {
+		if !ok {
 			return TokenView{}, "", invalid("scopes", "your role cannot grant %q", sc)
 		}
 		if !slices.Contains(clean, sc) {

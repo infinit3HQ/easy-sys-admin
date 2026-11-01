@@ -34,18 +34,21 @@ tags:
   - name: runs
   - name: alerts
   - name: settings
-  - name: teams
+  - name: organizations
     description: |
-      Every user has one personal space, private to them. Teams are spaces
-      with several members. The API calls a space an account; the current
+      Every user has one personal space, private to them. An organization
+      is a space with several members, each an owner, admin, or viewer.
+      Inside an organization, teams give their members admin rights on
+      chosen server groups. The API calls a space an account; the current
       account is the one the session works in (see switchAccount).
   - name: sharing
     description: |
-      A team can share a group, and the servers in it, with another team.
-      The owning team keeps the SSH key, the group's settings and schedules,
-      and alerts. "view" lets the other team see the servers; "operate" also
-      lets its admins start runs, act on services and containers, and read
-      logs. Runs they start are recorded in the owning team.
+      An organization can share a group, and the servers in it, with
+      another organization. The owner keeps the SSH key, the group's
+      settings and schedules, and alerts. "view" lets the other organization
+      see the servers; "operate" also lets its admins start runs, act on
+      services and containers, and read logs. Runs they start are recorded
+      in the owning organization.
 
 paths:
   /auth/config:
@@ -93,72 +96,72 @@ paths:
               schema: { $ref: '#/components/schemas/Me' }
         default: { $ref: '#/components/responses/Error' }
 
-  /teams:
+  /orgs:
     post:
-      operationId: createTeam
-      summary: Create a team; the caller becomes its owner (browser sessions only)
-      tags: [teams]
+      operationId: createOrganization
+      summary: Create an organization; the caller becomes its owner (browser sessions only)
+      tags: [organizations]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TeamInput' }
+            schema: { $ref: '#/components/schemas/OrganizationInput' }
       responses:
         '201':
-          description: The caller's membership in the new team. Switch to it with switchAccount.
+          description: The caller's membership in the new organization. Switch to it with switchAccount.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AccountMembership' }
         default: { $ref: '#/components/responses/Error' }
 
-  /team:
+  /org:
     get:
-      operationId: getTeam
+      operationId: getOrganization
       summary: The current account
-      tags: [teams]
+      tags: [organizations]
       responses:
         '200':
-          description: Team
+          description: Organization
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Team' }
+              schema: { $ref: '#/components/schemas/Organization' }
         default: { $ref: '#/components/responses/Error' }
     patch:
-      operationId: updateTeam
-      summary: Rename the current account (owners)
-      tags: [teams]
+      operationId: updateOrganization
+      summary: Rename the current account or its two built-in teams (owners and admins)
+      tags: [organizations]
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/TeamInput' }
+            schema: { $ref: '#/components/schemas/UpdateOrganizationRequest' }
       responses:
         '200':
-          description: The renamed team
+          description: The organization
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Team' }
+              schema: { $ref: '#/components/schemas/Organization' }
         default: { $ref: '#/components/responses/Error' }
     delete:
-      operationId: deleteTeam
-      summary: Delete the current team with its servers, groups and history (owners; not the personal space)
-      tags: [teams]
+      operationId: deleteOrganization
+      summary: Delete the current organization with its servers, groups and history (owners only; not the personal space)
+      tags: [organizations]
       parameters:
         - name: confirm
           in: query
           required: true
-          description: The team's exact name.
+          description: The organization's exact name.
           schema: { type: string }
       responses:
         '204':
           description: Deleted. Sessions working in it move to the caller's personal space.
         default: { $ref: '#/components/responses/Error' }
 
-  /team/members:
+  /org/members:
     get:
       operationId: listMembers
       summary: Members of the current account
-      tags: [teams]
+      tags: [organizations]
       responses:
         '200':
           description: Members
@@ -167,13 +170,13 @@ paths:
               schema: { $ref: '#/components/schemas/MemberList' }
         default: { $ref: '#/components/responses/Error' }
 
-  /team/members/{userId}:
+  /org/members/{userId}:
     parameters:
       - $ref: '#/components/parameters/UserId'
     patch:
       operationId: updateMember
-      summary: Change a member's role (owners). A team always keeps at least one owner.
-      tags: [teams]
+      summary: Change a member's role. Owners and admins move people between admin and viewer; only owners grant or take away owner. An organization always keeps at least one owner.
+      tags: [organizations]
       requestBody:
         required: true
         content:
@@ -188,18 +191,99 @@ paths:
         default: { $ref: '#/components/responses/Error' }
     delete:
       operationId: removeMember
-      summary: Remove a member (owners), or leave the team (your own user id). The last owner cannot leave.
-      tags: [teams]
+      summary: Remove a member (owners and admins; only owners remove owners), or leave the organization (your own user id). The last owner cannot leave.
+      tags: [organizations]
       responses:
         '204':
           description: Removed
         default: { $ref: '#/components/responses/Error' }
 
-  /team/invites:
+  /org/teams:
+    get:
+      operationId: listTeams
+      summary: Teams of the current organization. The two built-in teams (admins and viewers) are the organization roles and are not listed here.
+      tags: [organizations]
+      responses:
+        '200':
+          description: Teams
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TeamList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createTeam
+      summary: Create a team that gives its members admin rights on chosen server groups (owners and admins)
+      tags: [organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInput' }
+      responses:
+        '201':
+          description: The new team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /org/teams/{teamId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+    put:
+      operationId: updateTeam
+      summary: Rename a team and replace its server groups (owners and admins)
+      tags: [organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TeamInput' }
+      responses:
+        '200':
+          description: The team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team. Its members keep their organization role (owners and admins)
+      tags: [organizations]
+      responses:
+        '204':
+          description: Deleted
+        default: { $ref: '#/components/responses/Error' }
+
+  /org/teams/{teamId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/TeamId'
+      - $ref: '#/components/parameters/UserId'
+    put:
+      operationId: addTeamMember
+      summary: Add a member of the organization to a team (owners and admins)
+      tags: [organizations]
+      responses:
+        '200':
+          description: The team
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Team' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: removeTeamMember
+      summary: Take a member out of a team (owners and admins)
+      tags: [organizations]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /org/invites:
     get:
       operationId: listInvites
-      summary: Pending invites of the current team (owners and admins)
-      tags: [teams]
+      summary: Pending invites of the current organization (owners and admins)
+      tags: [organizations]
       responses:
         '200':
           description: Invites
@@ -210,7 +294,7 @@ paths:
     post:
       operationId: createInvite
       summary: Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once.
-      tags: [teams]
+      tags: [organizations]
       requestBody:
         required: true
         content:
@@ -224,7 +308,7 @@ paths:
               schema: { $ref: '#/components/schemas/CreatedInvite' }
         default: { $ref: '#/components/responses/Error' }
 
-  /team/invites/{inviteId}:
+  /org/invites/{inviteId}:
     parameters:
       - name: inviteId
         in: path
@@ -233,7 +317,7 @@ paths:
     delete:
       operationId: revokeInvite
       summary: Revoke a pending invite
-      tags: [teams]
+      tags: [organizations]
       responses:
         '204':
           description: Revoked
@@ -245,7 +329,7 @@ paths:
     get:
       operationId: getInvite
       summary: What an invite link offers, for the signed-in user
-      tags: [teams]
+      tags: [organizations]
       responses:
         '200':
           description: Invite preview
@@ -259,8 +343,8 @@ paths:
       - $ref: '#/components/parameters/LinkToken'
     post:
       operationId: acceptInvite
-      summary: Join the team and switch this session to it (browser sessions only)
-      tags: [teams]
+      summary: Join the organization and switch this session to it (browser sessions only)
+      tags: [organizations]
       responses:
         '200':
           description: The new membership
@@ -1150,6 +1234,11 @@ components:
       in: path
       required: true
       schema: { type: integer, format: int64 }
+    TeamId:
+      name: teamId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     LinkToken:
       name: token
       in: path
@@ -1244,27 +1333,88 @@ components:
       properties:
         accountId: { type: integer, format: int64 }
 
-    TeamInput:
+    OrganizationInput:
       type: object
       required: [name]
       properties:
         name: { type: string, minLength: 1, maxLength: 100 }
 
-    Team:
+    UpdateOrganizationRequest:
       type: object
-      required: [id, name, personal, role, memberCount, createdAt]
+      description: Fields left out stay as they are.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100, description: Owners only. }
+        adminTeamName: { type: string, minLength: 1, maxLength: 100, description: Display name of the built-in team of admins. }
+        viewerTeamName: { type: string, minLength: 1, maxLength: 100, description: Display name of the built-in team of viewers. }
+
+    Organization:
+      type: object
+      required: [id, name, personal, role, memberCount, adminTeamName, viewerTeamName, createdAt]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         personal: { type: boolean }
         role: { $ref: '#/components/schemas/Role', description: "The caller's role." }
         memberCount: { type: integer }
+        adminTeamName: { type: string, description: Display name of the built-in team holding everyone with the admin role. }
+        viewerTeamName: { type: string, description: Display name of the built-in team holding everyone with the viewer role. }
         createdAt: { type: string, format: date-time }
+
+    TeamInput:
+      type: object
+      required: [name, groupIds]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 100 }
+        groupIds:
+          type: array
+          description: Server groups the team's members are admins of. Groups of this organization, or groups another organization shares with it.
+          items: { type: integer, format: int64 }
+
+    TeamMember:
+      type: object
+      required: [userId, name, email]
+      properties:
+        userId: { type: integer, format: int64 }
+        name: { type: string }
+        email: { type: string }
+
+    Team:
+      type: object
+      required: [id, name, groups, members, createdAt]
+      description: A team gives its members admin rights on its server groups, on top of their organization role.
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        groups:
+          type: array
+          items: { $ref: '#/components/schemas/TeamGroup' }
+        members:
+          type: array
+          items: { $ref: '#/components/schemas/TeamMember' }
+        createdAt: { type: string, format: date-time }
+
+    TeamGroup:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        ownerTeam: { type: string, nullable: true, description: Set when another organization shares the group. }
+
+    TeamList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Team' } }
 
     Member:
       type: object
-      required: [userId, name, email, role, joinedAt, you]
+      required: [userId, name, email, role, joinedAt, you, teamIds]
       properties:
+        teamIds:
+          type: array
+          description: Teams (from listTeams) the member is in.
+          items: { type: integer, format: int64 }
         userId: { type: integer, format: int64 }
         name: { type: string }
         email: { type: string }
@@ -1324,6 +1474,17 @@ components:
         invitedBy: { type: string }
         expiresAt: { type: string, format: date-time }
         alreadyMember: { type: boolean }
+
+    EffectiveRole:
+      type: string
+      description: |
+        What the caller may do with this group or server: their organization
+        role, raised to admin by a team that holds the group, and limited by
+        the share when another organization owns it. admin can start runs,
+        act on services and containers, read logs, and (for own groups) edit
+        the group's settings. owner is only reported for the caller's own
+        organization when they are an owner.
+      enum: [owner, admin, viewer]
 
     GroupAccess:
       type: string
@@ -1448,12 +1609,13 @@ components:
 
     Server:
       type: object
-      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access]
+      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         access: { $ref: '#/components/schemas/GroupAccess' }
-        ownerTeam: { type: string, nullable: true, description: Set when the server is in a group another team shares. }
+        yourRole: { $ref: '#/components/schemas/EffectiveRole' }
+        ownerTeam: { type: string, nullable: true, description: Set when the server is in a group another organization shares. }
         host: { type: string }
         port: { type: integer }
         username: { type: string, description: 'SSH user the control plane uses, normally esa.' }
@@ -1962,12 +2124,13 @@ components:
 
     Group:
       type: object
-      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns, access]
+      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns, access, yourRole]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         access: { $ref: '#/components/schemas/GroupAccess' }
-        ownerTeam: { type: string, nullable: true, description: Set when another team shares the group. }
+        yourRole: { $ref: '#/components/schemas/EffectiveRole' }
+        ownerTeam: { type: string, nullable: true, description: Set when another organization shares the group. }
         shareId: { type: integer, format: int64, nullable: true, description: Set when another team shares the group; removeGroupShare takes it. }
         timezone: { type: string }
         clean: { $ref: '#/components/schemas/CleanPolicy' }

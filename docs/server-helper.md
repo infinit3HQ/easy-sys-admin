@@ -248,4 +248,4 @@ fi
 rm -rf /var/lib/esa /usr/local/lib/esa
 ```
 
-The `esa` user and its home are deleted only when the user carries esa's comment and home. Deleting a server without removing esa, or deleting a team, leaves the user, the key, and the sudo rule on the server. To clean up by hand, run the script above as root.
+The `esa` user and its home are deleted only when the user carries esa's comment and home. Deleting a server without removing esa, or deleting an organization, leaves the user, the key, and the sudo rule on the server. To clean up by hand, run the script above as root.

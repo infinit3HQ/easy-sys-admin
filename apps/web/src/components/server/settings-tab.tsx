@@ -30,7 +30,7 @@ export function SettingsTab({ serverId }: { serverId: number }) {
   const navigate = useNavigate()
   const { data } = useSuspenseQuery(q.server(serverId))
   const s = data.server
-  // Owner-only: a server another team shares is changed by that team.
+  // Owner-only: a server another organization shares is changed by that organization.
   const { canManage: canAct, isOwn, ownerTeam } = useServerAccess(s)
   // Servers go only into this account's own groups; a shared server shows the group it is in.
   const groups = (useQuery(q.groups()).data?.items ?? []).filter(
@@ -96,9 +96,9 @@ export function SettingsTab({ serverId }: { serverId: number }) {
     <div className="grid gap-6 xl:grid-cols-2">
       {!isOwn && (
         <Notice className="xl:col-span-2">
-          {ownerTeam} owns this server. Only that team can rename it, move it to
-          another group, change protected containers, reinstall the helper,
-          accept a new host key, or remove it.
+          {ownerTeam} owns this server. Only that organization can rename it,
+          move it to another group, change protected containers, reinstall the
+          helper, accept a new host key, or remove it.
         </Notice>
       )}
       <Panel title="Settings">

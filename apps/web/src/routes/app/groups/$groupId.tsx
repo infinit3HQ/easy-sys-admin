@@ -31,6 +31,7 @@ import {
   StatusDot,
 } from '#/components/kit'
 import { Button } from '#/components/ui/button'
+import { useGroupAccess } from '#/components/server/use-access'
 import { useRole } from '../route'
 
 export const Route = createFileRoute('/app/groups/$groupId')({
@@ -61,9 +62,9 @@ function GroupPage() {
   const [confirm, setConfirm] = useState<RunKind | 'delete' | 'unshare' | null>(
     null,
   )
-  // A group another team shares: its settings stay theirs, runs need operate access.
-  const own = g.access === 'own'
-  const canRun = canAct && g.access !== 'view'
+  // Runs and settings follow yourRole, which counts teams that hold the
+  // group. A group another organization shares keeps its settings there.
+  const { isOwn: own, canRun, canEdit, canManage } = useGroupAccess(g)
 
   const save = useMutation({
     mutationFn: (body: GroupInput) =>
@@ -126,27 +127,24 @@ function GroupPage() {
         }
         title={g.name}
       >
-        {canAct && (
+        {canRun && (
           <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto">
             <Button
               variant="outline"
               onClick={() => run.mutate('measure')}
               busy={run.isPending && run.variables === 'measure'}
-              disabled={empty || !canRun}
+              disabled={empty}
             >
               <GaugeIcon /> Measure
             </Button>
             <Button
               variant="outline"
               onClick={() => setConfirm('clean')}
-              disabled={empty || !canRun}
+              disabled={empty}
             >
               <BrushCleaningIcon /> Clean
             </Button>
-            <Button
-              onClick={() => setConfirm('update')}
-              disabled={empty || !canRun}
-            >
+            <Button onClick={() => setConfirm('update')} disabled={empty}>
               <DownloadIcon /> Update
             </Button>
           </div>
@@ -155,7 +153,7 @@ function GroupPage() {
       {!own && (
         <Notice className="mb-6">
           Shared by {g.ownerTeam}. You can {g.access} its servers.{' '}
-          {g.access === 'operate' && !canAct
+          {g.access === 'operate' && !canRun
             ? 'Your viewer role keeps you read only. '
             : ''}
           Its settings and schedules stay with {g.ownerTeam}.
@@ -219,26 +217,27 @@ function GroupPage() {
             submitLabel="Save group"
             busy={save.isPending}
             error={save.error}
-            disabled={!canAct || !own}
+            disabled={!canEdit}
             onSubmit={(b) => save.mutate(b)}
           />
-          {canAct && own && <GroupSharing groupId={g.id} />}
+          {canManage && <GroupSharing groupId={g.id} />}
           {canAct && !own && g.shareId != null && (
-            <Panel title="Shared with this team" className="mt-6">
+            <Panel title="Shared with this organization" className="mt-6">
               <p className="mb-3 text-xs text-muted-foreground">
-                Remove the group and its servers from this team. {g.ownerTeam}{' '}
-                keeps them, and needs to send a new link to share them again.
+                Remove the group and its servers from this organization.{' '}
+                {g.ownerTeam} keeps them, and needs to send a new link to share
+                them again.
               </p>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirm('unshare')}
               >
-                <UnlinkIcon /> Remove from this team
+                <UnlinkIcon /> Remove from this organization
               </Button>
             </Panel>
           )}
-          {canAct && own && (
+          {canManage && (
             <Panel title="Danger zone" className="mt-6 border-fail/30">
               <p className="mb-3 text-xs text-muted-foreground">
                 Its servers stay, without a group, and stop being cleaned and
@@ -286,9 +285,9 @@ function GroupPage() {
       />
       <ConfirmDialog
         open={confirm === 'unshare'}
-        title={`Remove ${g.name} from this team`}
+        title={`Remove ${g.name} from this organization`}
         danger
-        body={`This team stops seeing the group and its servers. ${g.ownerTeam ?? 'The owner'} keeps them.`}
+        body={`This organization stops seeing the group and its servers. ${g.ownerTeam ?? 'The owner'} keeps them.`}
         actionLabel="Remove"
         busy={unshare.isPending}
         error={unshare.error}

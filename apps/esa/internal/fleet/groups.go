@@ -61,6 +61,9 @@ type GroupView struct {
 	// OwnerTeam and ShareID are set when another account shares the group.
 	OwnerTeam string
 	ShareID   *int64
+	// YourRole is the actor's effective role on the group (see roleOn),
+	// limited by the share when another account owns it.
+	YourRole Role
 }
 
 func toGroupView(g store.Group) GroupView {
@@ -186,6 +189,7 @@ func (s *Service) ListGroups(ctx context.Context, a Actor) ([]GroupView, error) 
 		}
 	}
 	out := make([]GroupView, 0, len(groups))
+	rc := s.roles(a)
 	for _, g := range groups {
 		v := toGroupView(g)
 		v.ServerCount = counts[g.ID]
@@ -196,6 +200,9 @@ func (s *Service) ListGroups(ctx context.Context, a Actor) ([]GroupView, error) 
 				continue
 			}
 			v.Access, v.OwnerTeam, v.ShareID = Access(sh.Access), ownerNames[g.AccountID], &sh.ID
+		}
+		if v.YourRole, err = rc.forAccess(ctx, v.Access, &g.ID); err != nil {
+			return nil, err
 		}
 		out = append(out, v)
 	}
@@ -213,6 +220,9 @@ func (s *Service) GetGroup(ctx context.Context, a Actor, id int64) (GroupView, e
 	}
 	v := toGroupView(g)
 	v.Access = acc
+	if v.YourRole, err = s.roles(a).forAccess(ctx, acc, &g.ID); err != nil {
+		return GroupView{}, err
+	}
 	if sh != nil {
 		names, err := s.accountNames(ctx, []int64{g.AccountID})
 		if err != nil {
@@ -249,14 +259,22 @@ func (s *Service) CreateGroup(ctx context.Context, a Actor, in GroupInput) (Grou
 	return s.GetGroup(ctx, a, g.ID)
 }
 
-// UpdateGroup replaces a group's settings.
+// UpdateGroup replaces a group's settings. Org admins can, and so can a
+// viewer whose team holds the group.
 func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupInput) (GroupView, error) {
-	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
-		return GroupView{}, err
+	if !a.hasScope(ScopeAdmin) {
+		return GroupView{}, ErrForbidden
 	}
 	var g store.Group
 	if err := s.scoped(ctx, a).Where("id = ?", id).Take(&g).Error; err != nil {
 		return GroupView{}, mapStore(err)
+	}
+	role, err := s.roleOn(ctx, a, &g.ID)
+	if err != nil {
+		return GroupView{}, err
+	}
+	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
+		return GroupView{}, err
 	}
 	if err := s.applyGroupInput(&g, in); err != nil {
 		return GroupView{}, err
