@@ -126,9 +126,9 @@ The schema is the set of structs in `apps/esa/internal/store/models*.go`. `store
 An account is a space that owns a fleet. Every server, group, run, alert, channel, certificate, token, and SSH key belongs to one account. There are two kinds:
 
 - A personal space. Every user gets exactly one at first sign-in. `accounts.personal_of` holds the user id. It has no other members.
-- A team. `accounts.personal_of` is NULL. Any user can create one and invite others with the roles `owner`, `admin`, or `viewer`.
+- An organization. `accounts.personal_of` is NULL. Any user can create one and invite others with the roles `owner`, `admin`, or `viewer`. New members join as viewers. Extra teams (`teams`, `team_members`, `team_groups`) grant admin rights on chosen groups and own nothing. The admin and viewer role names live on the account (`admin_team_name`, `viewer_team_name`).
 
-A session works in one account at a time. A team can share a group, and the servers in it, with another team at `view` or `operate` access. The full rules are in [teams.md](teams.md).
+A session works in one account at a time. An account can share a group, and the servers in it, with another organization at `view` or `operate` access. A personal space can share out and cannot receive. The full rules are in [teams.md](teams.md).
 
 ### Tables
 
@@ -136,7 +136,7 @@ Identity and access:
 
 | Table         | Holds                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------- |
-| `accounts`    | Personal spaces and teams.                                                                         |
+| `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels. |
 | `users`       | People, keyed by OIDC issuer and subject. Password users have issuer `local` and an argon2id hash. |
 | `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                          |
 | `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                   |
@@ -147,9 +147,12 @@ Teams and sharing:
 
 | Table          | Holds                                                                         |
 | -------------- | ----------------------------------------------------------------------------- |
-| `invites`      | One-time links that add a user to a team. Token stored as SHA-256.            |
-| `share_links`  | One-time links that share a group with another team. Token stored as SHA-256. |
-| `group_shares` | A group shared with a receiving account, with `view` or `operate` access.     |
+| `invites`      | One-time links that add a user to an organization. Token stored as SHA-256.            |
+| `share_links`  | One-time links that share a group with another organization. Token stored as SHA-256. |
+| `group_shares` | A group shared with a receiving account, with `view` or `operate` access.             |
+| `teams`        | Extra teams of an organization. They own no servers.                                  |
+| `team_members` | Which organization members are in an extra team.                                      |
+| `team_groups`  | Server groups an extra team holds, including groups shared in.                        |
 
 Fleet:
 

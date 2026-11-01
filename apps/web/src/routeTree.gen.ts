@@ -18,8 +18,8 @@ import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppActivityRouteImport } from './routes/app/activity'
 import { Route as AppAlertsRouteImport } from './routes/app/alerts'
+import { Route as AppOrgRouteImport } from './routes/app/org'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
-import { Route as AppTeamRouteImport } from './routes/app/team'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as EnrollSplatRouteImport } from './routes/enroll/$'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
@@ -77,14 +77,14 @@ const AppAlertsRoute = AppAlertsRouteImport.update({
   path: '/alerts',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppOrgRoute = AppOrgRouteImport.update({
+  id: '/org',
+  path: '/org',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => AppRouteRoute,
-} as any)
-const AppTeamRoute = AppTeamRouteImport.update({
-  id: '/team',
-  path: '/team',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AuthSplatRoute = AuthSplatRouteImport.update({
@@ -152,8 +152,8 @@ export interface FileRoutesByFullPath {
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
   '/app/alerts': typeof AppAlertsRoute
+  '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
-  '/app/team': typeof AppTeamRoute
   '/auth/$': typeof AuthSplatRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -175,8 +175,8 @@ export interface FileRoutesByTo {
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
   '/app/alerts': typeof AppAlertsRoute
+  '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
-  '/app/team': typeof AppTeamRoute
   '/auth/$': typeof AuthSplatRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -200,8 +200,8 @@ export interface FileRoutesById {
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
   '/app/alerts': typeof AppAlertsRoute
+  '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
-  '/app/team': typeof AppTeamRoute
   '/auth/$': typeof AuthSplatRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -226,8 +226,8 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/app/activity'
     | '/app/alerts'
+    | '/app/org'
     | '/app/settings'
-    | '/app/team'
     | '/auth/$'
     | '/enroll/$'
     | '/invite/$token'
@@ -249,8 +249,8 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/app/activity'
     | '/app/alerts'
+    | '/app/org'
     | '/app/settings'
-    | '/app/team'
     | '/auth/$'
     | '/enroll/$'
     | '/invite/$token'
@@ -273,8 +273,8 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/app/activity'
     | '/app/alerts'
+    | '/app/org'
     | '/app/settings'
-    | '/app/team'
     | '/auth/$'
     | '/enroll/$'
     | '/invite/$token'
@@ -367,18 +367,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAlertsRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/org': {
+      id: '/app/org'
+      path: '/org'
+      fullPath: '/app/org'
+      preLoaderRoute: typeof AppOrgRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/settings': {
       id: '/app/settings'
       path: '/settings'
       fullPath: '/app/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
-      parentRoute: typeof AppRouteRoute
-    }
-    '/app/team': {
-      id: '/app/team'
-      path: '/team'
-      fullPath: '/app/team'
-      preLoaderRoute: typeof AppTeamRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/auth/$': {
@@ -464,8 +464,8 @@ declare module '@tanstack/react-router' {
 interface AppRouteRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
   AppAlertsRoute: typeof AppAlertsRoute
+  AppOrgRoute: typeof AppOrgRoute
   AppSettingsRoute: typeof AppSettingsRoute
-  AppTeamRoute: typeof AppTeamRoute
   AppIndexRoute: typeof AppIndexRoute
   AppGroupsGroupIdRoute: typeof AppGroupsGroupIdRoute
   AppGroupsNewRoute: typeof AppGroupsNewRoute
@@ -479,8 +479,8 @@ interface AppRouteRouteChildren {
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppActivityRoute: AppActivityRoute,
   AppAlertsRoute: AppAlertsRoute,
+  AppOrgRoute: AppOrgRoute,
   AppSettingsRoute: AppSettingsRoute,
-  AppTeamRoute: AppTeamRoute,
   AppIndexRoute: AppIndexRoute,
   AppGroupsGroupIdRoute: AppGroupsGroupIdRoute,
   AppGroupsNewRoute: AppGroupsNewRoute,

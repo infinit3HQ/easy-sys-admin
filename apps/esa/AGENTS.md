@@ -27,6 +27,8 @@ This Go module builds three things: the control plane (`esa serve`), the `esa` C
 
 - Every exported fleet operation takes an `Actor` as its first argument after `ctx`.
 - Check permission first: `if err := a.can(role, scope); err != nil { return ..., err }`. `can` checks the role and the token scope together. Browser sessions have `Scopes == nil`, which means no scope limit.
+- `a.Role` is the organization role. For anything group- or server-scoped (runs, host actions, logs, update checks, group settings), use the effective role from `s.roleOn(ctx, a, groupID)` in `fleet/roles.go` and check it with `canAct(a, role, min, scope)`. A viewer is admin of the groups their teams hold. Check the scope first with `a.hasScope`, then load the row, then check the role on its group. In a loop, use one `s.roles(a)` so the team groups load once.
+- Organization-level work stays on `a.can` with the organization role: adding, changing, moving, and deleting servers, host keys, helper reinstall, enrollment, creating and deleting groups, sharing, alert rules, channels, certificates, members, teams, and `admin` tokens.
 - Pick the least role and scope that fit: `RoleViewer`/`ScopeRead` for reads, `RoleAdmin`/`ScopeLogs` for logs, `RoleAdmin`/`ScopeActions` for runs and host actions, `RoleAdmin`/`ScopeAdmin` for configuration. Owner-only work uses `RoleOwner`.
 - Return `ErrForbidden`, `ErrNotFound`, `invalid(field, ...)`, `ConflictError`, or `UnavailableError`. `api/handlers.go` maps them to HTTP codes. Do not write HTTP responses from `fleet`.
 - Never trust an id from the request on its own. Load the row through one of the helpers below.
@@ -35,7 +37,7 @@ This Go module builds three things: the control plane (`esa serve`), the `esa` C
 
 - Start every read of an account-owned table from `s.scoped(ctx, a)` or from a visibility helper in `fleet/sharing.go`: `visibleServers`, `visibleGroups`, `visibleRuns`, `loadVisibleServer`, `loadVisibleGroup`.
 - Do not write new visibility SQL. The fragments in `sharing.go` are the only place that decides what a share exposes.
-- For an action on a server the actor may see through a share, use `operableServer` or `canOperateServer`. A `view` share never acts. An `operate` share needs admin plus the scope.
+- For an action on a server the actor may see through a share, use `operableServer` or `s.canOperateServer`. Both use the effective role on the server's group. A `view` share never acts. An `operate` share needs admin on the group (capped at admin) plus the scope.
 - Keep owner-only writes on `s.scoped` or `loadServer`, so shared rows are not found. This covers server settings, delete, host key, helper reinstall, enrollment, group settings, and assigning a server to a group.
 - A run's servers must all belong to one owning account. Never mix own and shared servers in one run.
 - Add a test to `isolation_test.go` or `sharing_test.go` when you add a read or write path.
@@ -66,7 +68,7 @@ This Go module builds three things: the control plane (`esa serve`), the `esa` C
 - Models live in `internal/store/models.go`, `models_fleet.go`, `models_ops.go`, and `models_teams.go`.
 - Add new models to `Models()` in `models.go`.
 - `AutoMigrate` runs on start and only adds tables, columns, indexes, and constraints. It never drops or renames.
-- Put drops, renames, and backfills in `postMigrate` in `store/migrate.go` as SQL. Each step must be safe to run on every start. Use `schema_flags` for one-time steps.
+- Put drops, renames, and data fixes in `postMigrate` in `store/migrate.go` as SQL. Each step must be safe to run on every start. Do not add a conversion for data that never shipped.
 
 ## Host changes
 

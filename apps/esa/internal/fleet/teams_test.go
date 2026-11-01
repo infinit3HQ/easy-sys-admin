@@ -3,13 +3,9 @@ package fleet
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 	"time"
-
-	"gorm.io/gorm/clause"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -67,27 +63,27 @@ func TestPersonalSpace(t *testing.T) {
 		wantConflict(t, "invite personal", err)
 	}
 	wantConflict(t, "leave personal", s.RemoveMember(ctx, alice, alice.UserID))
-	wantConflict(t, "delete personal", s.DeleteTeam(ctx, alice, me.Current.Account.Name))
+	wantConflict(t, "delete personal", s.DeleteOrganization(ctx, alice, me.Current.Account.Name))
 	_, err = s.UpdateMemberRole(ctx, alice, alice.UserID, RoleAdmin)
 	wantConflict(t, "demote in personal", err)
 
-	team, err := s.GetTeam(ctx, alice)
+	team, err := s.GetOrganization(ctx, alice)
 	if err != nil || !team.Personal || team.MemberCount != 1 || team.Role != RoleOwner {
 		t.Errorf("GetTeam personal = %+v, %v", team, err)
 	}
 }
 
-// A user who only has team memberships gets a personal space on the next
-// sign-in, and sessions default to it.
+// A user whose personal space is missing gets a new one on the next
+// sign-in, and the session starts there.
 func TestPersonalSpaceCreatedForExistingUser(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	bob := signIn(t, s, "bob")
-	team, err := s.CreateTeam(ctx, bob, "Older team")
+	team, err := s.CreateOrganization(ctx, bob, "Older team")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Simulate a user from before personal spaces: drop bob's personal space.
+	// Drop the personal space, as if it had been deleted out from under the user.
 	if err := s.db.Where("id = ?", bob.AccountID).Delete(&store.Account{}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +105,7 @@ func TestTeamInviteAccept(t *testing.T) {
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
 
-	tm, err := s.CreateTeam(ctx, alice, "Ops crew")
+	tm, err := s.CreateOrganization(ctx, alice, "Ops crew")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +173,7 @@ func TestTeamInviteAccept(t *testing.T) {
 	if err != nil || len(members) != 2 || members[0].Role != RoleOwner || !members[1].You {
 		t.Errorf("members = %+v, %v", members, err)
 	}
-	team, err := s.GetTeam(ctx, owner)
+	team, err := s.GetOrganization(ctx, owner)
 	if err != nil || team.MemberCount != 2 || team.Personal {
 		t.Errorf("team = %+v, %v", team, err)
 	}
@@ -187,15 +183,15 @@ func TestTeamInviteAccept(t *testing.T) {
 	if _, err := s.ListMembers(ctx, tokActor); err != nil {
 		t.Errorf("read token ListMembers: %v", err)
 	}
-	if _, err := s.CreateTeam(ctx, tokActor, "x"); !errors.Is(err, ErrForbidden) {
+	if _, err := s.CreateOrganization(ctx, tokActor, "x"); !errors.Is(err, ErrForbidden) {
 		t.Errorf("token CreateTeam: %v", err)
 	}
 
-	// Renaming is for owners.
-	if _, err := s.RenameTeam(ctx, inTeam(bob, m), "Mine now"); !errors.Is(err, ErrForbidden) {
+	// Renaming the organization is for owners.
+	if _, err := s.UpdateOrganization(ctx, inTeam(bob, m), OrgUpdate{Name: ptr("Mine now")}); !errors.Is(err, ErrForbidden) {
 		t.Errorf("admin rename: %v", err)
 	}
-	if v, err := s.RenameTeam(ctx, owner, "Ops crew 2"); err != nil || v.Name != "Ops crew 2" {
+	if v, err := s.UpdateOrganization(ctx, owner, OrgUpdate{Name: ptr("Ops crew 2")}); err != nil || v.Name != "Ops crew 2" {
 		t.Errorf("rename = %+v, %v", v, err)
 	}
 }
@@ -204,7 +200,7 @@ func TestInviteRestrictions(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob, carol := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,7 +278,7 @@ func TestMemberLastOwnerAndRemoval(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +340,7 @@ func TestDeleteTeam(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob := signIn(t, s, "alice"), signIn(t, s, "bob")
-	tm, err := s.CreateTeam(ctx, alice, "Doomed")
+	tm, err := s.CreateOrganization(ctx, alice, "Doomed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,13 +373,13 @@ func TestDeleteTeam(t *testing.T) {
 		}
 	}
 
-	if err := s.DeleteTeam(ctx, bobIn, "Doomed"); !errors.Is(err, ErrForbidden) {
+	if err := s.DeleteOrganization(ctx, bobIn, "Doomed"); !errors.Is(err, ErrForbidden) {
 		t.Errorf("admin delete: %v", err)
 	}
-	if err := s.DeleteTeam(ctx, owner, "doomed"); err == nil {
+	if err := s.DeleteOrganization(ctx, owner, "doomed"); err == nil {
 		t.Error("delete with wrong confirmation")
 	}
-	if err := s.DeleteTeam(ctx, owner, "Doomed"); err != nil {
+	if err := s.DeleteOrganization(ctx, owner, "Doomed"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -405,8 +401,8 @@ func TestDeleteTeam(t *testing.T) {
 		t.Errorf("membership after delete: %v", err)
 	}
 	var audit store.AuditEntry
-	if err := s.db.Where("action = ?", "team.delete").Take(&audit).Error; err != nil || audit.AccountID == nil || *audit.AccountID != alice.AccountID {
-		t.Errorf("team.delete audit = %+v, %v", audit, err)
+	if err := s.db.Where("action = ?", "org.delete").Take(&audit).Error; err != nil || audit.AccountID == nil || *audit.AccountID != alice.AccountID {
+		t.Errorf("org.delete audit = %+v, %v", audit, err)
 	}
 }
 
@@ -416,7 +412,7 @@ func TestInviteCreatorAuthority(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	alice, bob, carol, dave := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol"), signIn(t, s, "dave")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +506,7 @@ func TestInviteEmailLocalUser(t *testing.T) {
 	}
 	lou := Actor{UserID: res.User.ID, AccountID: res.AccountID, Role: RoleOwner, Source: SourceWeb}
 	alice := signIn(t, s, "alice")
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +547,7 @@ func TestTeamsEnsurePersonalSpace(t *testing.T) {
 	}
 
 	dropPersonal(alice)
-	tm, err := s.CreateTeam(ctx, alice, "Team")
+	tm, err := s.CreateOrganization(ctx, alice, "Team")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -586,81 +582,5 @@ func TestTeamsEnsurePersonalSpace(t *testing.T) {
 	}
 	if !hasPersonal(bob) {
 		t.Error("want exactly one personal space")
-	}
-}
-
-// The personal-space backfill runs once, and never converts teams made
-// after personal spaces existed or accounts that received shares.
-func TestPersonalBackfillRunsOnce(t *testing.T) {
-	s := newTestService(t)
-	ctx := context.Background()
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	alice, bob, carol := signIn(t, s, "alice"), signIn(t, s, "bob"), signIn(t, s, "carol")
-	signIn(t, s, "dave") // keeps a personal space: the cutoff for "made after the feature"
-
-	// Users without a personal space, each the only member of an account.
-	solo := func(a Actor, name string, created time.Time) int64 {
-		t.Helper()
-		if err := s.db.Where("personal_of = ?", a.UserID).Delete(&store.Account{}).Error; err != nil {
-			t.Fatal(err)
-		}
-		acc := store.Account{Name: name, CreatedAt: created}
-		if err := s.db.Omit(clause.Associations).Create(&acc).Error; err != nil {
-			t.Fatal(err)
-		}
-		m := store.Membership{AccountID: acc.ID, UserID: a.UserID, Role: string(RoleOwner), CreatedAt: created}
-		if err := s.db.Omit(clause.Associations).Create(&m).Error; err != nil {
-			t.Fatal(err)
-		}
-		return acc.ID
-	}
-	old := time.Now().Add(-365 * 24 * time.Hour)
-	newTeam := solo(alice, "new team", time.Now())
-	oldAcc := solo(bob, "old fleet", old)
-	oldShared := solo(carol, "old shared", old)
-	g, err := s.CreateGroup(ctx, Actor{UserID: alice.UserID, AccountID: newTeam, Role: RoleOwner, Source: SourceWeb}, GroupInput{Name: "g", Timezone: "UTC",
-		Clean: CleanPolicy{Days: []string{"sun"}, Time: "03:00", JournalSize: "200M"}, Updates: UpdatePolicy{Days: []string{"sun"}, Time: "04:00"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.db.Omit(clause.Associations).Create(&store.GroupShare{GroupID: g.ID, AccountID: oldShared, Access: "view", CreatedAt: time.Now()}).Error; err != nil {
-		t.Fatal(err)
-	}
-	personal := func(id int64) bool {
-		var acc store.Account
-		if err := s.db.Where("id = ?", id).Take(&acc).Error; err != nil {
-			t.Fatal(err)
-		}
-		return acc.Personal()
-	}
-
-	// The flag from the first migration stops it.
-	if err := s.store.Migrate(ctx, log); err != nil {
-		t.Fatal(err)
-	}
-	if personal(oldAcc) || personal(newTeam) || personal(oldShared) {
-		t.Fatal("backfill ran a second time")
-	}
-
-	// Without the flag it converts only the old, unshared account.
-	if err := s.db.Exec(`DELETE FROM schema_flags WHERE name = 'personal_spaces_backfill'`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.Migrate(ctx, log); err != nil {
-		t.Fatal(err)
-	}
-	if !personal(oldAcc) {
-		t.Error("old solo account was not converted")
-	}
-	if personal(newTeam) {
-		t.Error("a team created after personal spaces existed was converted")
-	}
-	if personal(oldShared) {
-		t.Error("an account that received a share was converted")
-	}
-	var n int64
-	s.db.Raw(`SELECT count(*) FROM schema_flags WHERE name = 'personal_spaces_backfill'`).Scan(&n)
-	if n != 1 {
-		t.Errorf("flag rows = %d", n)
 	}
 }

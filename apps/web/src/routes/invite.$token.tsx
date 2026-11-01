@@ -10,7 +10,7 @@ import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Until } from '#/components/time'
 import { ErrorBanner, KeyValue, Loading, Notice } from '#/components/kit'
-import { LinkShell, roleText, useSessionReset } from '#/components/team'
+import { LinkShell, roleText, useSessionReset } from '#/components/org'
 import { Button } from '#/components/ui/button'
 
 export const Route = createFileRoute('/invite/$token')({
@@ -55,11 +55,11 @@ function InvitePage() {
         api().POST('/invites/{token}/accept', { params: { path: { token } } }),
       )
       // Accepting switches the session already; this also covers a member
-      // who opens an invite to a team they are in.
+      // who opens an invite to an organization they are in.
       await call(api().PUT('/me/account', { body: { accountId: m.id } }))
       return m
     },
-    onSuccess: () => reset(() => navigate({ to: '/app/team' })),
+    onSuccess: () => reset(() => navigate({ to: '/app/org' })),
   })
 
   const p = invite.data
@@ -70,7 +70,10 @@ function InvitePage() {
   )
 
   return (
-    <LinkShell kicker="Invite" title={p ? `Join ${p.teamName}` : 'Join a team'}>
+    <LinkShell
+      kicker="Invite"
+      title={p ? `Join ${p.teamName}` : 'Join an organization'}
+    >
       {invite.isLoading ? (
         <Loading label="Reading the invite" />
       ) : !p ? (
@@ -84,7 +87,7 @@ function InvitePage() {
       ) : (
         <>
           <p className="text-sm text-ink-2">
-            {p.invitedBy} invited you to the team {p.teamName}.
+            {p.invitedBy} invited you to the organization {p.teamName}.
           </p>
           <dl className="space-y-2">
             <KeyValue k="Role" v={p.role} />
@@ -104,7 +107,7 @@ function InvitePage() {
             onClick={() => accept.mutate()}
           >
             <UsersIcon />{' '}
-            {p.alreadyMember ? 'Open the team' : 'Accept and join'}
+            {p.alreadyMember ? 'Open the organization' : 'Accept and join'}
           </Button>
           {signedIn}
         </>

@@ -25,7 +25,7 @@ import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Choice, cn } from '#/components/kit'
-import { CreateTeamDialog } from '#/components/team'
+import { CreateOrganizationDialog } from '#/components/org'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -65,7 +65,7 @@ const nav: ReadonlyArray<{
     | '/app/runs'
     | '/app/alerts'
     | '/app/activity'
-    | '/app/team'
+    | '/app/org'
     | '/app/settings'
   label: string
   icon: LucideIcon
@@ -76,7 +76,7 @@ const nav: ReadonlyArray<{
   { to: '/app/runs', label: 'Runs', icon: HistoryIcon },
   { to: '/app/alerts', label: 'Alerts', icon: BellIcon },
   { to: '/app/activity', label: 'Activity', icon: ActivityIcon },
-  { to: '/app/team', label: 'Team', icon: UsersIcon },
+  { to: '/app/org', label: 'Organization', icon: UsersIcon },
   { to: '/app/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
@@ -94,7 +94,12 @@ function AppShell() {
 
       {/* Narrow screens: a top bar with the page name and a menu button. */}
       <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b bg-bg/85 px-4 backdrop-blur-md lg:hidden">
-        <Link to="/app" className="flex items-center gap-2" aria-label="Board">
+        <Link
+          to="/app"
+          activeOptions={{ exact: true }}
+          className="flex items-center gap-2"
+          aria-label="Board"
+        >
           <img src="/favicon.svg" alt="" className="size-6" />
           <span className="font-display text-lg leading-none font-bold tracking-wide uppercase">
             esa
@@ -197,8 +202,8 @@ function NavLinks({
   )
 }
 
-// The switcher's last item opens the create-team dialog instead of switching.
-const NEW_TEAM = 'new-team'
+// The switcher's last item opens the create-organization dialog instead of switching.
+const NEW_ORG = 'new-org'
 
 /** Account switcher and the signed-in user, with sign-out in a menu. */
 function AccountBox({
@@ -213,7 +218,7 @@ function AccountBox({
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const who = me.user.name || me.user.email
-  // The personal space first, then teams in the order the API lists them.
+  // The personal space first, then organizations in the order the API lists them.
   const spaces = [
     ...me.accounts.filter((a) => a.personal),
     ...me.accounts.filter((a) => !a.personal),
@@ -232,16 +237,16 @@ function AccountBox({
             label: a.personal ? 'Personal' : a.name,
           })),
           {
-            value: NEW_TEAM,
+            value: NEW_ORG,
             label: (
               <span className="flex items-center gap-2 text-amber">
-                <PlusIcon className="text-amber" /> Create team
+                <PlusIcon className="text-amber" /> Create organization
               </span>
             ),
           },
         ]}
         onChange={async (v) => {
-          if (v === NEW_TEAM) {
+          if (v === NEW_ORG) {
             setCreating(true)
             return
           }
@@ -263,7 +268,7 @@ function AccountBox({
           await router.invalidate()
         }}
       />
-      <CreateTeamDialog
+      <CreateOrganizationDialog
         open={creating}
         onClose={() => setCreating(false)}
         onCreated={onNavigate}

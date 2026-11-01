@@ -71,7 +71,7 @@ func toServer(v fleet.ServerView) Server {
 		HasStoredLogin: v.HasStoredLogin, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
 		Reasons: nonNil(v.Reasons), LastSeenAt: v.LastSeenAt, LastError: v.LastError,
 		HostKeyMismatch: v.HostKeyMismatch, PresentedFingerprint: v.PresentedFingerprint,
-		Access: groupAccess(v.Access), OwnerTeam: optional(v.OwnerTeam),
+		Access: groupAccess(v.Access), OwnerTeam: optional(v.OwnerTeam), YourRole: EffectiveRole(v.YourRole),
 	}
 	if snap := v.Snapshot; snap != nil {
 		m := ServerMetrics{
@@ -132,7 +132,7 @@ func toDays(ds []string) []Day {
 func toGroup(g fleet.GroupView) Group {
 	return Group{
 		Id: g.ID, Name: g.Name, Timezone: g.Timezone, ServerCount: g.ServerCount, CreatedAt: g.CreatedAt,
-		Access: groupAccess(g.Access), OwnerTeam: optional(g.OwnerTeam), ShareId: g.ShareID,
+		Access: groupAccess(g.Access), OwnerTeam: optional(g.OwnerTeam), ShareId: g.ShareID, YourRole: EffectiveRole(g.YourRole),
 		NextClean: g.NextClean, NextUpdate: g.NextUpdate, LastRuns: mapSlice(g.LastRuns, toRun),
 		Clean: CleanPolicy{
 			Enabled: g.Clean.Enabled, Days: toDays(g.Clean.Days), Time: g.Clean.Time, BuildCache: g.Clean.BuildCache,

@@ -106,8 +106,10 @@ type RunServerView struct {
 // StartRun creates a run and executes it in the background.
 func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunView, error) {
 	scope := ScopeActions
-	if err := a.can(RoleAdmin, scope); err != nil {
-		return RunView{}, err
+	// The role is checked per group below: the effective role on the
+	// target group, or on every server's group, must be admin.
+	if !a.hasScope(scope) {
+		return RunView{}, ErrForbidden
 	}
 	switch req.Kind {
 	case RunMeasure, RunClean, RunUpdate, RunReboot:
@@ -120,12 +122,13 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	var group *store.Group
 	var servers []store.Server
 	var ownerID int64
+	rc := s.roles(a)
 	if req.GroupID != nil {
 		g, acc, _, err := s.loadVisibleGroup(ctx, a, *req.GroupID)
 		if err != nil {
 			return RunView{}, err
 		}
-		if err := canOperateServer(a, acc, RoleAdmin, scope); err != nil {
+		if err := rc.canOperate(ctx, acc, &g.ID, RoleAdmin, scope); err != nil {
 			return RunView{}, err
 		}
 		group, ownerID = &g, g.AccountID
@@ -153,7 +156,7 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 			if err != nil {
 				return RunView{}, err
 			}
-			if err := canOperateServer(a, acc, RoleAdmin, scope); err != nil {
+			if err := rc.canOperate(ctx, acc, srv.GroupID, RoleAdmin, scope); err != nil {
 				return RunView{}, err
 			}
 		}

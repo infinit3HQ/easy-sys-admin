@@ -55,7 +55,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/teams": {
+    "/orgs": {
         parameters: {
             query?: never;
             header?: never;
@@ -64,15 +64,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a team; the caller becomes its owner (browser sessions only) */
-        post: operations["createTeam"];
+        /** Create an organization; the caller becomes its owner (browser sessions only) */
+        post: operations["createOrganization"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/team": {
+    "/org": {
         parameters: {
             query?: never;
             header?: never;
@@ -80,18 +80,18 @@ export interface paths {
             cookie?: never;
         };
         /** The current account */
-        get: operations["getTeam"];
+        get: operations["getOrganization"];
         put?: never;
         post?: never;
-        /** Delete the current team with its servers, groups and history (owners; not the personal space) */
-        delete: operations["deleteTeam"];
+        /** Delete the current organization with its servers, groups and history (owners only; not the personal space) */
+        delete: operations["deleteOrganization"];
         options?: never;
         head?: never;
-        /** Rename the current account (owners) */
-        patch: operations["updateTeam"];
+        /** Rename the current account or its two built-in teams (owners and admins) */
+        patch: operations["updateOrganization"];
         trace?: never;
     };
-    "/team/members": {
+    "/org/members": {
         parameters: {
             query?: never;
             header?: never;
@@ -108,7 +108,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/team/members/{userId}": {
+    "/org/members/{userId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -120,22 +120,81 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove a member (owners), or leave the team (your own user id). The last owner cannot leave. */
+        /** Remove a member (owners and admins; only owners remove owners), or leave the organization (your own user id). The last owner cannot leave. */
         delete: operations["removeMember"];
         options?: never;
         head?: never;
-        /** Change a member's role (owners). A team always keeps at least one owner. */
+        /** Change a member's role. Owners and admins move people between admin and viewer; only owners grant or take away owner. An organization always keeps at least one owner. */
         patch: operations["updateMember"];
         trace?: never;
     };
-    "/team/invites": {
+    "/org/teams": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Pending invites of the current team (owners and admins) */
+        /** Teams of the current organization. The two built-in teams (admins and viewers) are the organization roles and are not listed here. */
+        get: operations["listTeams"];
+        put?: never;
+        /** Create a team that gives its members admin rights on chosen server groups (owners and admins) */
+        post: operations["createTeam"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/teams/{teamId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename a team and replace its server groups (owners and admins) */
+        put: operations["updateTeam"];
+        post?: never;
+        /** Delete a team. Its members keep their organization role (owners and admins) */
+        delete: operations["deleteTeam"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/teams/{teamId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Add a member of the organization to a team (owners and admins) */
+        put: operations["addTeamMember"];
+        post?: never;
+        /** Take a member out of a team (owners and admins) */
+        delete: operations["removeTeamMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/org/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending invites of the current organization (owners and admins) */
         get: operations["listInvites"];
         put?: never;
         /** Create a one-time invite link (owners and admins; only owners invite owners). The link is shown once. */
@@ -146,7 +205,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/team/invites/{inviteId}": {
+    "/org/invites/{inviteId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -197,7 +256,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Join the team and switch this session to it (browser sessions only) */
+        /** Join the organization and switch this session to it (browser sessions only) */
         post: operations["acceptInvite"];
         delete?: never;
         options?: never;
@@ -1047,10 +1106,19 @@ export interface components {
             /** Format: int64 */
             accountId: number;
         };
-        TeamInput: {
+        OrganizationInput: {
             name: string;
         };
-        Team: {
+        /** @description Fields left out stay as they are. */
+        UpdateOrganizationRequest: {
+            /** @description Owners only. */
+            name?: string;
+            /** @description Display name of the built-in team of admins. */
+            adminTeamName?: string;
+            /** @description Display name of the built-in team of viewers. */
+            viewerTeamName?: string;
+        };
+        Organization: {
             /** Format: int64 */
             id: number;
             name: string;
@@ -1058,10 +1126,47 @@ export interface components {
             /** @description The caller's role. */
             role: components["schemas"]["Role"];
             memberCount: number;
+            /** @description Display name of the built-in team holding everyone with the admin role. */
+            adminTeamName: string;
+            /** @description Display name of the built-in team holding everyone with the viewer role. */
+            viewerTeamName: string;
             /** Format: date-time */
             createdAt: string;
         };
+        TeamInput: {
+            name: string;
+            /** @description Server groups the team's members are admins of. Groups of this organization, or groups another organization shares with it. */
+            groupIds: number[];
+        };
+        TeamMember: {
+            /** Format: int64 */
+            userId: number;
+            name: string;
+            email: string;
+        };
+        /** @description A team gives its members admin rights on its server groups, on top of their organization role. */
+        Team: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            groups: components["schemas"]["TeamGroup"][];
+            members: components["schemas"]["TeamMember"][];
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TeamGroup: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description Set when another organization shares the group. */
+            ownerTeam?: string | null;
+        };
+        TeamList: {
+            items: components["schemas"]["Team"][];
+        };
         Member: {
+            /** @description Teams (from listTeams) the member is in. */
+            teamIds: number[];
             /** Format: int64 */
             userId: number;
             name: string;
@@ -1111,6 +1216,16 @@ export interface components {
             expiresAt: string;
             alreadyMember: boolean;
         };
+        /**
+         * @description What the caller may do with this group or server: their organization
+         *     role, raised to admin by a team that holds the group, and limited by
+         *     the share when another organization owns it. admin can start runs,
+         *     act on services and containers, read logs, and (for own groups) edit
+         *     the group's settings. owner is only reported for the caller's own
+         *     organization when they are an owner.
+         * @enum {string}
+         */
+        EffectiveRole: "owner" | "admin" | "viewer";
         /**
          * @description own: the group belongs to the current account. view or operate: another team shares it.
          * @enum {string}
@@ -1215,7 +1330,8 @@ export interface components {
             id: number;
             name: string;
             access: components["schemas"]["GroupAccess"];
-            /** @description Set when the server is in a group another team shares. */
+            yourRole: components["schemas"]["EffectiveRole"];
+            /** @description Set when the server is in a group another organization shares. */
             ownerTeam?: string | null;
             host: string;
             port: number;
@@ -1632,7 +1748,8 @@ export interface components {
             id: number;
             name: string;
             access: components["schemas"]["GroupAccess"];
-            /** @description Set when another team shares the group. */
+            yourRole: components["schemas"]["EffectiveRole"];
+            /** @description Set when another organization shares the group. */
             ownerTeam?: string | null;
             /**
              * Format: int64
@@ -1895,6 +2012,7 @@ export interface components {
         GroupId: number;
         ChannelId: number;
         UserId: number;
+        TeamId: number;
         /** @description The secret part of an invite or share link. */
         LinkToken: string;
     };
@@ -1971,7 +2089,7 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    createTeam: {
+    createOrganization: {
         parameters: {
             query?: never;
             header?: never;
@@ -1980,11 +2098,11 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TeamInput"];
+                "application/json": components["schemas"]["OrganizationInput"];
             };
         };
         responses: {
-            /** @description The caller's membership in the new team. Switch to it with switchAccount. */
+            /** @description The caller's membership in the new organization. Switch to it with switchAccount. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -1996,7 +2114,7 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    getTeam: {
+    getOrganization: {
         parameters: {
             query?: never;
             header?: never;
@@ -2005,22 +2123,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Team */
+            /** @description Organization */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Team"];
+                    "application/json": components["schemas"]["Organization"];
                 };
             };
             default: components["responses"]["Error"];
         };
     };
-    deleteTeam: {
+    deleteOrganization: {
         parameters: {
             query: {
-                /** @description The team's exact name. */
+                /** @description The organization's exact name. */
                 confirm: string;
             };
             header?: never;
@@ -2039,7 +2157,7 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
-    updateTeam: {
+    updateOrganization: {
         parameters: {
             query?: never;
             header?: never;
@@ -2048,17 +2166,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["TeamInput"];
+                "application/json": components["schemas"]["UpdateOrganizationRequest"];
             };
         };
         responses: {
-            /** @description The renamed team */
+            /** @description The organization */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Team"];
+                    "application/json": components["schemas"]["Organization"];
                 };
             };
             default: components["responses"]["Error"];
@@ -2129,6 +2247,146 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Member"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listTeams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Teams */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TeamList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamInput"];
+            };
+        };
+        responses: {
+            /** @description The new team */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    updateTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamInput"];
+            };
+        };
+        responses: {
+            /** @description The team */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    addTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The team */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Team"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    removeTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                teamId: components["parameters"]["TeamId"];
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

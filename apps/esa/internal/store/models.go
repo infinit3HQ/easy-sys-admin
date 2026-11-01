@@ -29,19 +29,27 @@ func Models() []any {
 		&Invite{},
 		&ShareLink{},
 		&GroupShare{},
+		&Team{},
+		&TeamMember{},
+		&TeamGroup{},
 	}
 }
 
-// Account is a space that owns a fleet: a user's personal space or a team.
+// Account is a space that owns a fleet: a user's personal space or an
+// organization.
 // Every server, group, and run belongs to one account.
 type Account struct {
 	ID   int64  `gorm:"primaryKey"`
 	Name string `gorm:"not null;size:200"`
 	// PersonalOf is the user whose private space this is. It is NULL for
-	// teams. Each user has exactly one personal space, and it never has
-	// other members.
+	// an organization. Each user has exactly one personal space, and it
+	// never has other members.
 	PersonalOf *int64    `gorm:"uniqueIndex"`
 	CreatedAt  time.Time `gorm:"not null"`
+	// Display names of the two built-in teams of an organization: the
+	// members with the admin role and those with the viewer role.
+	AdminTeamName  string `gorm:"not null;size:100;default:'Admins'"`
+	ViewerTeamName string `gorm:"not null;size:100;default:'Viewers'"`
 
 	PersonalUser *User `gorm:"foreignKey:PersonalOf;constraint:OnDelete:CASCADE"`
 }

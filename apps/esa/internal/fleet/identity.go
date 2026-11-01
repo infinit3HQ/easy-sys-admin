@@ -76,8 +76,7 @@ func (s *Service) UserAllowed(ctx context.Context, userID int64) (bool, error) {
 }
 
 // ensurePersonal returns the user's membership in their personal space,
-// creating the space when they have none (a new user, or one who joined a
-// team through an invite before ever having a space of their own).
+// creating the space when they have none.
 func (s *Service) ensurePersonal(ctx context.Context, q *store.Queries, u store.User, source Source) (store.Membership, error) {
 	// Lock the user row so two first sign-ins at once cannot both create a
 	// space (accounts.personal_of is unique). NO KEY UPDATE serialises

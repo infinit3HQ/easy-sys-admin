@@ -204,7 +204,7 @@ There are no frontend unit tests. Check UI changes in a browser against the dev 
    - Check permissions first with `a.can(role, scope)`, for example `a.can(RoleViewer, ScopeRead)` for reads and `a.can(RoleAdmin, ScopeAdmin)` for changes. The role is the caller's role in the account. The scope limits API tokens. Browser sessions have no scope limit.
    - Load only rows the caller may see, for example with `loadVisibleServer` or `operableServer`.
    - Return `ValidationError`, `ErrNotFound`, `ErrForbidden`, or `ConflictError` for expected failures.
-   - Record every change in the audit log with `s.audit(ctx, nil, a, "thing.verb", target, detail)`, or `s.auditOn` when the change touches a server another team owns.
+   - Record every change in the audit log with `s.audit(ctx, nil, a, "thing.verb", target, detail)`, or `s.auditOn` when the change touches a server another organization owns.
 5. Add a test in the fleet package. Use `newTestService(t)` and `signIn(t, s, "name")`. Check that a viewer cannot change anything and that another account cannot see the data, as `isolation_test.go` does.
 6. Use the endpoint in the web app. Add a query to `q` in `apps/web/src/lib/queries.ts` with `queryOptions` and `call(api().GET('/path', { params }))`. For changes, use `useMutation` in the component with `call(api().POST(...))` and invalidate the affected queries. Export a named type from `packages/api/src/index.ts` if components need the schema.
 7. Run the [full check](#full-check).

@@ -132,7 +132,7 @@ function Board() {
   )
 }
 
-/** Names the team that shares a server with this one. */
+/** Names the organization that shares a server with this one. */
 function OwnerTag({ s }: { s: Server }) {
   if (s.access === 'own' || !s.ownerTeam) return null
   return (

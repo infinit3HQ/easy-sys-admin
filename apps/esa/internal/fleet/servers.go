@@ -30,6 +30,9 @@ type ServerView struct {
 	Access Access
 	// OwnerTeam names the owning account of a shared server; empty for own.
 	OwnerTeam string
+	// YourRole is the actor's effective role on the server's group (see
+	// roleOn), limited by the share when another account owns it.
+	YourRole Role
 
 	Status               ServerStatus
 	Reasons              []string
@@ -163,6 +166,7 @@ func (s *Service) serverViews(ctx context.Context, a Actor, ids []int64) ([]Serv
 	}
 
 	views := make([]ServerView, 0, len(servers))
+	rc := s.roles(a)
 	for _, srv := range servers {
 		v := toView(srv, byID[srv.ID], hasLogin[srv.ID])
 		v.Access = AccessOwn
@@ -174,6 +178,11 @@ func (s *Service) serverViews(ctx context.Context, a Actor, ids []int64) ([]Serv
 			}
 			v.Access, v.OwnerTeam = Access(sh.Access), ownerNames[srv.AccountID]
 		}
+		role, err := rc.forAccess(ctx, v.Access, srv.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		v.YourRole = role
 		views = append(views, v)
 	}
 	return views, nil
@@ -236,7 +245,7 @@ func (s *Service) loadServer(ctx context.Context, a Actor, id int64) (store.Serv
 
 // loadVisibleServer returns a server the actor can see, own or shared, and
 // the actor's access to it. Reads and operations use it; operations then
-// check canOperateServer.
+// check s.canOperateServer.
 func (s *Service) loadVisibleServer(ctx context.Context, a Actor, id int64) (store.Server, Access, error) {
 	var srv store.Server
 	if err := s.visibleServers(ctx, a).Where("servers.id = ?", id).Take(&srv).Error; err != nil {

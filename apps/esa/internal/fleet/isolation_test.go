@@ -158,13 +158,24 @@ func TestViewerCannotChange(t *testing.T) {
 	owner := signIn(t, s, "owner")
 	viewer := owner
 	viewer.Role = RoleViewer
-	if _, err := s.CreateGroup(ctx, viewer, GroupInput{Name: "g", Timezone: "UTC"}); !errors.Is(err, ErrForbidden) {
+	g, err := s.CreateGroup(ctx, owner, testGroup("g", "UTC"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := addTestServer(t, s, owner, &g.ID, "web-1")
+	if _, err := s.CreateGroup(ctx, viewer, GroupInput{Name: "g2", Timezone: "UTC"}); !errors.Is(err, ErrForbidden) {
 		t.Errorf("viewer CreateGroup: %v", err)
 	}
-	if _, err := s.StartRun(ctx, viewer, RunRequest{Kind: RunMeasure, ServerIDs: []int64{1}}); !errors.Is(err, ErrForbidden) {
+	if _, err := s.UpdateGroup(ctx, viewer, g.ID, testGroup("g", "UTC")); !errors.Is(err, ErrForbidden) {
+		t.Errorf("viewer UpdateGroup: %v", err)
+	}
+	if _, err := s.StartRun(ctx, viewer, RunRequest{Kind: RunMeasure, ServerIDs: []int64{srv.ID}}); !errors.Is(err, ErrForbidden) {
 		t.Errorf("viewer StartRun: %v", err)
 	}
-	if _, err := s.Logs(ctx, viewer, 1, LogQuery{Unit: "ssh.service"}); !errors.Is(err, ErrForbidden) {
+	if _, err := s.StartRun(ctx, viewer, RunRequest{Kind: RunMeasure, GroupID: &g.ID}); !errors.Is(err, ErrForbidden) {
+		t.Errorf("viewer StartRun on a group: %v", err)
+	}
+	if _, err := s.Logs(ctx, viewer, srv.ID, LogQuery{Unit: "ssh.service"}); !errors.Is(err, ErrForbidden) {
 		t.Errorf("viewer Logs: %v", err)
 	}
 	if _, _, err := s.CreateToken(ctx, viewer, "x", []Scope{ScopeActions}, 0); err == nil {

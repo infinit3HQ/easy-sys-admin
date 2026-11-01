@@ -27,12 +27,12 @@ const accessOptions: ReadonlyArray<{ value: ShareAccess; label: string }> = [
 ]
 
 const accessHint: Record<ShareAccess, string> = {
-  view: 'The other team sees the servers, metrics, runs, and alerts.',
+  view: 'The other organization sees the servers, metrics, runs, and alerts.',
   operate:
     'Its admins can also start runs, act on services and containers, and read logs.',
 }
 
-/** Who a group is shared with, and one-time links to share it further. For admins of the owning team. */
+/** Who a group is shared with, and one-time links to share it further. For admins of the owning organization. */
 export function GroupSharing({ groupId }: { groupId: number }) {
   const qc = useQueryClient()
   const shares = useQuery(q.groupShares(groupId))
@@ -96,15 +96,15 @@ export function GroupSharing({ groupId }: { groupId: number }) {
   return (
     <Panel title="Sharing" className="mt-6">
       <p className="mb-4 text-xs text-muted-foreground">
-        Share this group and the servers in it with another team. You keep its
-        settings, schedules, SSH key, and alerts. Moving a server out of the
-        group ends the other team&apos;s access to it.
+        Share this group and the servers in it with another organization. You
+        keep its settings, schedules, SSH key, and alerts. Moving a server out
+        of the group ends the other organization&apos;s access to it.
       </p>
 
       <div className="label mb-3">Shared with · {shareList.length}</div>
       {shareList.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          {shares.isLoading ? 'Reading…' : 'Not shared with any team.'}
+          {shares.isLoading ? 'Reading…' : 'Not shared with any organization.'}
         </p>
       ) : (
         <ul className="space-y-3">
@@ -148,9 +148,9 @@ export function GroupSharing({ groupId }: { groupId: number }) {
           </Notice>
           <CopyBlock value={created.url} />
           <p className="text-xs text-muted-foreground">
-            Send it to an owner or admin of the other team. They open it and
-            pick which of their teams gets the group, with {created.link.access}{' '}
-            access. It works once and expires{' '}
+            Send it to an owner or admin of the other organization. They open it
+            and pick which of their organizations gets the group, with{' '}
+            {created.link.access} access. It works once and expires{' '}
             <Until iso={created.link.expiresAt} />.
           </p>
         </div>
@@ -221,7 +221,7 @@ export function GroupSharing({ groupId }: { groupId: number }) {
         open={!!stopping}
         title={`Stop sharing with ${stopping?.team ?? ''}`}
         danger
-        body="That team loses access to this group and its servers right away. To share it again, send a new link."
+        body="That organization loses access to this group and its servers right away. To share it again, send a new link."
         actionLabel="Stop"
         busy={stop.isPending}
         error={stop.error}

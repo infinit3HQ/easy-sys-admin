@@ -7,7 +7,7 @@
 | [deployment.md](deployment.md)       | Deploy with compose or GitHub Actions, upgrade, back up or roll back           |
 | [development.md](development.md)     | Run it locally, use the scripts, add an API endpoint or a helper action        |
 | [server-helper.md](server-helper.md) | Know what esa installs on a server, what it may do there, and how to remove it |
-| [teams.md](teams.md)                 | Understand personal spaces, teams, invites and shared groups                   |
+| [teams.md](teams.md)                 | Personal spaces, organizations, extra teams, invites, and shared groups |
 | [security.md](security.md)           | Review secrets, sign-in, tokens, limits, headers and the audit log             |
 | [cli.md](cli.md)                     | Use the `esa` command line                                                     |
 | [mcp.md](mcp.md)                     | Connect an AI agent to `/mcp`                                                  |

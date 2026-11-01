@@ -1,6 +1,6 @@
 # easy-sys-admin
 
-One board for a fleet of Linux servers. Add servers, put them in groups, and set when each group gets its disks cleaned and its packages patched. The board shows live status, and you can share a group with another team. AI agents read the same data, and can start runs, over MCP.
+One board for a fleet of Linux servers. Add servers, put them in groups, and set when each group gets its disks cleaned and its packages patched. The board shows live status, and you can share a group with another organization. AI agents read the same data, and can start runs, over MCP.
 
 Nothing listens on your servers. The control plane connects over SSH as a restricted `esa` user that can only run one small helper binary.
 
@@ -11,7 +11,7 @@ Nothing listens on your servers. The control plane connects over SSH as a restri
 - Cleanups that stay small and strict: idle Docker build cache, old VS Code server copies, a journal size cap. Never volumes, never images in use.
 - Services, containers, logs, scheduled jobs, access and security reports for each server.
 - Alerts for disk, inodes, memory, unreachable servers, failed units, unhealthy containers, certificates and failed runs, sent to ntfy, webhooks, Discord, Slack or email.
-- A private personal space for every user, teams with invites and roles, and groups shared between teams with view or operate access.
+- A private personal space for every user, organizations with owner, admin, and viewer roles, extra teams that grant admin on chosen groups, and groups shared between organizations with view or operate access.
 - A web app, a CLI and an MCP endpoint on top of one API.
 
 ## How it fits together
@@ -84,7 +84,7 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 | [deployment.md](docs/deployment.md)          | Compose, GitHub Actions, upgrades, backups, rollbacks            |
 | [development.md](docs/development.md)        | Local setup, scripts, tests, adding endpoints and helper actions |
 | [server-helper.md](docs/server-helper.md)    | What runs on a managed server and its safety rules               |
-| [teams.md](docs/teams.md)                    | Personal spaces, teams, invites, shared groups                   |
+| [teams.md](docs/teams.md)                    | Personal spaces, organizations, teams, invites, shared groups    |
 | [security.md](docs/security.md)              | Security model and how to report a vulnerability                 |
 | [cli.md](docs/cli.md), [mcp.md](docs/mcp.md) | The command line and the MCP endpoint                            |
 | [decisions.md](docs/decisions.md)            | Why the stack and design are what they are                       |

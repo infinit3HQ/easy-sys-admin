@@ -143,20 +143,14 @@ func canReadServer(acc Access) error {
 	return nil
 }
 
-// canOperateServer checks an action on a server. On own servers the actor
-// needs ownMin and scope, as before sharing existed. On a shared server the
-// effective permission is the lower of the actor's role and the share:
-// operate shares need admin or owner plus the scope, view shares never act.
-func canOperateServer(a Actor, acc Access, ownMin Role, scope Scope) error {
-	switch acc {
-	case AccessOwn:
-		return a.can(ownMin, scope)
-	case AccessOperate:
-		return a.can(RoleAdmin, scope)
-	case AccessView:
-		return ErrForbidden
-	}
-	return ErrNotFound
+// canOperateServer checks an action on a server. The role that counts is
+// the actor's effective role on the server's group (roleOn): their
+// organization role, raised to admin by a team that holds the group. On own
+// servers it must be at least ownMin. On a shared server the effective
+// permission is the lower of that role and the share: operate shares need
+// admin plus the scope, view shares never act.
+func (s *Service) canOperateServer(ctx context.Context, a Actor, srv store.Server, acc Access, ownMin Role, scope Scope) error {
+	return s.roles(a).canOperate(ctx, acc, srv.GroupID, ownMin, scope)
 }
 
 // loadVisibleGroup returns a group the actor can see, its access, and the
@@ -182,7 +176,7 @@ func (s *Service) operableServer(ctx context.Context, a Actor, id int64, ownMin 
 	if err != nil {
 		return srv, err
 	}
-	return srv, canOperateServer(a, acc, ownMin, scope)
+	return srv, s.canOperateServer(ctx, a, srv, acc, ownMin, scope)
 }
 
 // groupServerCounts counts each group's servers. Only servers owned by the

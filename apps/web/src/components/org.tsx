@@ -19,10 +19,12 @@ import { Input } from '#/components/ui/input'
 
 /** What each role may do, in one line. */
 export const roleText: Record<Role, string> = {
-  owner: 'Everything, including members, invites, and deleting the team.',
+  owner:
+    'Everything, including owners, renaming, and deleting the organization.',
   admin:
-    'Servers, groups, runs, logs, and sharing. Can invite admins and viewers.',
-  viewer: 'Read only. Cannot read logs.',
+    'Manages everything in the organization: servers, groups, runs, logs, sharing, members, and teams.',
+  viewer:
+    'Sees everything and changes nothing. A team can make them an admin of some server groups.',
 }
 
 /**
@@ -40,8 +42,8 @@ export function useSessionReset() {
   }
 }
 
-/** Asks for a name, creates the team, and switches the session to it. */
-export function CreateTeamDialog({
+/** Asks for a name, creates the organization, and switches the session to it. */
+export function CreateOrganizationDialog({
   open,
   onClose,
   onCreated,
@@ -55,16 +57,14 @@ export function CreateTeamDialog({
   const [name, setName] = useState('')
   const create = useMutation({
     mutationFn: async () => {
-      const m = await call(
-        api().POST('/teams', { body: { name: name.trim() } }),
-      )
+      const m = await call(api().POST('/orgs', { body: { name: name.trim() } }))
       await call(api().PUT('/me/account', { body: { accountId: m.id } }))
       return m
     },
     onSuccess: async () => {
       onClose()
       onCreated?.()
-      await reset(() => navigate({ to: '/app/team' }))
+      await reset(() => navigate({ to: '/app/org' }))
     },
   })
   const { reset: resetCreate } = create
@@ -86,10 +86,10 @@ export function CreateTeamDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Create a team</DialogTitle>
+            <DialogTitle>Create an organization</DialogTitle>
             <DialogDescription className="text-ink-2">
-              You become its owner. Invite people from the team page once it
-              exists.
+              You become its owner. Invite people from the organization page
+              once it exists.
             </DialogDescription>
           </DialogHeader>
           <Field label="Name">
@@ -113,7 +113,7 @@ export function CreateTeamDialog({
               busy={create.isPending}
               disabled={!name.trim()}
             >
-              Create team
+              Create organization
             </Button>
           </DialogFooter>
         </form>

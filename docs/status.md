@@ -18,7 +18,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 - Groups with schedules. A slot runs once; a slot missed by over an hour is recorded as missed (tests).
 - Alerts fire after their duration and resolve (tests). ntfy delivery. TLS certificate checks.
 - API tokens with scopes, account isolation, and an audit log that marks web, API and MCP calls.
-- Personal spaces, teams with invites and roles, and groups shared between teams with view or operate access (tests and a two-user browser run).
+- Personal spaces, organizations with owner, admin, and viewer roles, extra teams that grant admin on chosen groups, invites, and groups shared between organizations with view or operate access (tests in `teams_test.go`, `roles_test.go`, `sharing_test.go`, and `isolation_test.go`).
 - The web app in a real browser at desktop and phone widths.
 - CLI: login, status, servers, groups, runs (with `--wait`), alerts.
 - MCP: tools follow scopes; `fleet_summary`, `list_groups`, `list_updates`, `start_run`.
@@ -28,8 +28,8 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 
 - Password reset by email.
 - Email verification for password accounts. Email-restricted invites refuse password accounts for now.
-- CLI commands for teams and sharing. They are in the web app and the API only.
-- On a run shared with another team, the overall status can reflect servers that team cannot see.
+- CLI commands for organizations, teams, and sharing. They are in the web app and the API only.
+- On a run shared with another organization, the overall status can reflect servers that organization cannot see.
 - The helper protocol version is reported but not checked. A new helper action needs a reinstall on older servers.
 - Rotating `ESA_MASTER_KEY` has no re-seal step, so old keys must stay in the list.
 - The audit log is never pruned.

@@ -2,7 +2,7 @@ package store
 
 import "time"
 
-// Invite is a one-time link that adds a user to a team. Only the SHA-256 of
+// Invite is a one-time link that adds a user to an organization. Only the SHA-256 of
 // the link's token is stored. Accepting the invite deletes it.
 type Invite struct {
 	ID        int64  `gorm:"primaryKey"`
@@ -19,8 +19,8 @@ type Invite struct {
 	Creator *User   `gorm:"foreignKey:CreatedBy;constraint:OnDelete:SET NULL"`
 }
 
-// ShareLink is a one-time link that shares a group with another team. The
-// receiving team is chosen when an admin of it accepts. Only the SHA-256 of
+// ShareLink is a one-time link that shares a group with another organization. The
+// receiving organization is chosen when an admin of it accepts. Only the SHA-256 of
 // the token is stored; accepting deletes the link.
 type ShareLink struct {
 	ID        int64  `gorm:"primaryKey"`
@@ -50,4 +50,38 @@ type GroupShare struct {
 	Group   Group   `gorm:"constraint:OnDelete:CASCADE"`
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Creator *User   `gorm:"foreignKey:CreatedBy;constraint:OnDelete:SET NULL"`
+}
+
+// Team is a named set of an organization's members who are admins of the
+// team's server groups, on top of their organization role. The two
+// built-in teams (admins and viewers) are not rows here: they are the
+// organization roles, with names on the account.
+type Team struct {
+	ID        int64     `gorm:"primaryKey"`
+	AccountID int64     `gorm:"not null;uniqueIndex:teams_account_name_key,priority:1"`
+	Name      string    `gorm:"not null;size:100;uniqueIndex:teams_account_name_key,priority:2"`
+	CreatedAt time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// TeamMember puts a member of the team's organization in the team.
+// Removing the user from the organization must remove these rows too.
+type TeamMember struct {
+	TeamID    int64     `gorm:"primaryKey;autoIncrement:false"`
+	UserID    int64     `gorm:"primaryKey;autoIncrement:false;index"`
+	CreatedAt time.Time `gorm:"not null"`
+
+	Team Team `gorm:"constraint:OnDelete:CASCADE"`
+	User User `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// TeamGroup gives a team admin rights on a server group: one of its
+// organization's groups, or a group another organization shares with it.
+type TeamGroup struct {
+	TeamID  int64 `gorm:"primaryKey;autoIncrement:false"`
+	GroupID int64 `gorm:"primaryKey;autoIncrement:false;index"`
+
+	Team  Team  `gorm:"constraint:OnDelete:CASCADE"`
+	Group Group `gorm:"constraint:OnDelete:CASCADE"`
 }

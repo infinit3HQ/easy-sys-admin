@@ -66,8 +66,8 @@ export function HostKeyAlert({
       ) : (
         <p className="text-sm text-ink-2">
           {server.access === 'own'
-            ? 'An admin of this team'
-            : (server.ownerTeam ?? 'The team that owns it')}{' '}
+            ? 'An admin of this organization'
+            : (server.ownerTeam ?? 'The organization that owns it')}{' '}
           needs to check and accept the new key.
         </p>
       )}
@@ -101,7 +101,7 @@ export function PendingEnrollment({
         <p className="mt-2 text-sm text-ink-2">
           {canManage
             ? 'Run the enroll command on the server. If it expired, get a new one.'
-            : `${server.access === 'own' ? 'An admin of this team' : (server.ownerTeam ?? 'The team that owns it')} needs to run the enroll command on the server.`}
+            : `${server.access === 'own' ? 'An admin of this organization' : (server.ownerTeam ?? 'The organization that owns it')} needs to run the enroll command on the server.`}
         </p>
       </div>
       {!canManage ? null : enrollment ? (

@@ -15,7 +15,6 @@ import {
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
-import { useRole } from '#/routes/app/route'
 import { useServerAccess } from '#/components/server/use-access'
 
 const priorities = [
@@ -26,7 +25,6 @@ const priorities = [
 ]
 
 export function LogsTab({ serverId }: { serverId: number }) {
-  const { canAct: isAdmin } = useRole()
   const { data: detail } = useSuspenseQuery(q.server(serverId))
   const { canOperate: canAct, ownerTeam } = useServerAccess(detail.server)
   const containers = useQuery(q.containers(serverId))
@@ -75,17 +73,19 @@ export function LogsTab({ serverId }: { serverId: number }) {
       ),
   })
 
-  if (!isAdmin)
+  if (detail.server.access === 'view')
     return (
       <Notice>
-        Logs can contain secrets, so reading them needs the admin role.
+        Logs need operate access. {ownerTeam} shares this server with view
+        access only.
       </Notice>
     )
   if (!canAct)
     return (
       <Notice>
-        Logs need operate access. {ownerTeam} shares this server with view
-        access only.
+        Logs can contain secrets, so reading them needs admin rights on this
+        server. Ask an admin of the organization to add you to a team that holds
+        its group.
       </Notice>
     )
 
