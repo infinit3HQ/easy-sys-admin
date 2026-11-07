@@ -80,20 +80,22 @@ Deploys share the concurrency group `deploy-production`. A new deploy waits for 
 ### Set up the repository
 
 1. In Settings > Environments, create an environment named `production`. Under "Deployment branches and tags", choose "Selected branches and tags" and add `main`. This keeps the environment's secrets away from every other branch. You can also add a required reviewer. On private repositories that needs a paid GitHub plan.
-2. Add these environment secrets to `production`:
+2. On the `production` environment, add secrets for anything that must stay hidden:
    - `ESA_MASTER_KEY` (required)
    - `POSTGRES_PASSWORD` (required)
    - `ESA_OIDC_CLIENT_SECRET` (with OIDC)
    - `ESA_GOOGLE_CLIENT_SECRET` (with Google)
+   - `ESA_SMTP_PASSWORD` (when system mail is on)
 
-   Keep them as environment secrets, not repository secrets, so only jobs that deploy from `main` can read them.
+   Keep them as environment secrets, not repository secrets, so only jobs that deploy from `main` can read them. A secret is masked in logs and cannot be read back from GitHub.
 
-3. In Settings > Secrets and variables > Actions > Variables, add repository variables:
+3. On the same `production` environment, add variables for the rest. These are visible in the environment settings, which is fine because they are not credentials:
    - `ESA_HOST`, for example `esa.example.com` (required)
-   - `DEPLOY_ENABLED=true`, once you want pushes to `main` to deploy
-   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md). Set `ESA_BETA_LIMITS` to `true` for the hosted beta. Leave it unset for a self-hosted install. `ESA_SMTP_PASSWORD` is a production secret. Leave the host empty to send no auth mail.
+   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md). Set `ESA_BETA_LIMITS` to `true` for the hosted beta. Leave it unset for a self-hosted install. Leave `ESA_SMTP_HOST` empty to send no auth mail.
 
-4. Set up Traefik on the host as in step 1 of [Deploy with docker compose](#deploy-with-docker-compose).
+4. Add one repository variable, `DEPLOY_ENABLED=true`, once you want pushes to `main` to deploy. This one cannot live on the environment. The workflow checks it before GitHub selects the `production` environment, so an environment variable would be invisible there.
+
+5. Set up Traefik on the host as in step 1 of [Deploy with docker compose](#deploy-with-docker-compose).
 
 ### Set up the self-hosted runner
 

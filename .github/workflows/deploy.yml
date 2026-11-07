@@ -2,8 +2,10 @@ name: Deploy
 
 # Builds the images on the server and restarts the stack with compose.
 # Runs on the self-hosted runner on Server_One, under its own user.
-# Secrets come from the production environment, variables from the
-# repository; the env file exists only for the length of the job.
+# Secrets and variables both come from the production environment.
+# DEPLOY_ENABLED stays a repository variable, because the job checks it
+# before GitHub applies the environment. The env file exists only for the
+# length of the job.
 #
 # Pushes to main of this repository deploy after CI passes when the
 # repository variable DEPLOY_ENABLED is "true". "Run workflow" deploys on
