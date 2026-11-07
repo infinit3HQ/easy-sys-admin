@@ -10,7 +10,7 @@ export const column = 'mx-auto w-full max-w-7xl px-4 sm:px-6'
  * The source repo is private, so the public pages do not offer a self-hosted
  * install. Turn this on when the repo and the deploy files are public.
  */
-export const showSelfHost = false
+export const showSelfHost = false as boolean
 
 const legal = [
   { to: '/terms', label: 'Terms' },
