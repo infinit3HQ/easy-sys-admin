@@ -51,14 +51,61 @@ func TestPasswordSignUpAndSignIn(t *testing.T) {
 		t.Fatalf("sign in: %+v, %v", got, err)
 	}
 
-	// A Google account with the same address is a different user, so
-	// neither can take over the other.
+	// Google with the same address is the same user, and the address counts
+	// as confirmed because Google already checked it.
 	g, err := s.SignIn(ctx, Identity{Issuer: "https://accounts.google.com", Subject: "1234", Email: "ana@example.com", Name: "Ana G"}, SourceWeb)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.User.ID == res.User.ID || g.AccountID == res.AccountID {
-		t.Fatal("a Google sign-in must not land in the password account")
+	if g.User.ID != res.User.ID || g.AccountID != res.AccountID {
+		t.Fatalf("google sign-in landed in user %d account %d, password user is %d account %d", g.User.ID, g.AccountID, res.User.ID, res.AccountID)
+	}
+	var gu store.User
+	if err := s.db.Where("id = ?", g.User.ID).Take(&gu).Error; err != nil || !gu.EmailConfirmed {
+		t.Fatalf("google sign-in confirmed=%v err=%v", gu.EmailConfirmed, err)
+	}
+	again, err := s.SignIn(ctx, Identity{Issuer: "https://accounts.google.com", Subject: "1234", Email: "ana@example.com", Name: "Ana G"}, SourceWeb)
+	if err != nil || again.User.ID != res.User.ID {
+		t.Fatalf("second google sign-in: %+v %v", again, err)
+	}
+}
+
+func TestPasswordJoinsProviderAccount(t *testing.T) {
+	s := newTestService(t)
+	s.signup = true
+	ctx := context.Background()
+	g, err := s.SignIn(ctx, Identity{Issuer: "https://accounts.google.com", Subject: "1234", Email: "ana@example.com", Name: "Ana"}, SourceWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SignUpPassword(ctx, "Ana", "ana@example.com", "correct horse battery"); !errors.Is(err, ErrProviderAccount) {
+		t.Fatalf("password sign-up without mail: %v", err)
+	}
+	var n int64
+	s.db.Model(&store.User{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("%d users, want 1", n)
+	}
+
+	box := &mailBox{}
+	s.authMail = box
+	res, err := s.SignUpPassword(ctx, "Ana", "ana@example.com", "correct horse battery")
+	if err != nil || !res.NeedsConfirm || res.User.ID != g.User.ID {
+		t.Fatalf("sign up onto google user: %+v %v", res, err)
+	}
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); !errors.Is(err, ErrBadCredentials) {
+		t.Fatalf("password before the link: %v", err)
+	}
+	if err := s.ConfirmEmail(ctx, mailToken(t, box.last)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery")
+	if err != nil || got.User.ID != g.User.ID || got.AccountID != g.AccountID {
+		t.Fatalf("password after confirm: %+v %v", got, err)
+	}
+	s.db.Model(&store.User{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("%d users after confirm, want 1", n)
 	}
 }
 
@@ -150,5 +197,67 @@ func TestTokenAllowListAndExpiry(t *testing.T) {
 	s.allowed = map[string]bool{"ana@example.com": true}
 	if _, ok, err := s.AuthenticateToken(ctx, secret, SourceAPI); !ok || err != nil {
 		t.Fatalf("token of an allowed user: %v, %v", ok, err)
+	}
+}
+
+type mailBox struct{ last string }
+
+func (b *mailBox) Send(_ context.Context, _, _, body string) error {
+	b.last = body
+	return nil
+}
+
+func mailToken(t *testing.T, body string) string {
+	t.Helper()
+	const key = "token="
+	i := strings.Index(body, key)
+	if i < 0 {
+		t.Fatalf("no token in %q", body)
+	}
+	token := body[i+len(key):]
+	if n := strings.IndexAny(token, "&\n "); n >= 0 {
+		token = token[:n]
+	}
+	return token
+}
+
+func TestAuthMailConfirmAndReset(t *testing.T) {
+	s := newTestService(t)
+	s.signup = true
+	box := &mailBox{}
+	s.authMail = box
+	ctx := context.Background()
+
+	res, err := s.SignUpPassword(ctx, "Ana", "ana@example.com", "correct horse battery")
+	if err != nil || res.AccountID == 0 || !strings.Contains(box.last, "token=") {
+		t.Fatalf("sign up = %+v, %v, mail %q", res, err, box.last)
+	}
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); !errors.Is(err, ErrEmailUnconfirmed) {
+		t.Fatalf("sign in before confirm: %v", err)
+	}
+	if err := s.ConfirmEmail(ctx, mailToken(t, box.last)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmEmail(ctx, mailToken(t, box.last)); !errors.Is(err, ErrAuthToken) {
+		t.Fatalf("second confirm: %v", err)
+	}
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.RequestPasswordReset(ctx, "missing@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequestPasswordReset(ctx, "ana@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ResetPassword(ctx, mailToken(t, box.last), "a different long password"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); !errors.Is(err, ErrBadCredentials) {
+		t.Fatalf("old password: %v", err)
+	}
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "a different long password"); err != nil {
+		t.Fatal(err)
 	}
 }

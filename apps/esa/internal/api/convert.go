@@ -51,6 +51,7 @@ func toMe(me fleet.Me, a fleet.Actor) Me {
 		Account:  toMembership(me.Current),
 		Accounts: mapSlice(me.Accounts, toMembership),
 		ViaToken: a.TokenID != 0,
+		Limits:   AccountLimits{MaxServers: me.MaxServers, MaxOrganizations: me.MaxOrganizations},
 	}
 	if a.TokenID != 0 {
 		scopes := make([]Scope, 0, len(a.Scopes))

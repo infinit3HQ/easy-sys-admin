@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -76,6 +77,9 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			case errors.Is(err, fleet.ErrSignInNotAllowed):
 				loginError(w, r, "not_allowed")
 				return
+			case errors.Is(err, fleet.ErrEmailUnconfirmed):
+				http.Redirect(w, r, "/login?mode=verify&email="+url.QueryEscape(email), http.StatusSeeOther)
+				return
 			case busy(err):
 				log.Warn("password sign in", "err", err)
 				loginError(w, r, "busy")
@@ -113,19 +117,111 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			case errors.Is(err, fleet.ErrEmailTaken):
 				signupError(w, r, "email_taken")
 				return
+			case errors.Is(err, fleet.ErrProviderAccount):
+				signupError(w, r, "use_provider")
+				return
 			case errors.Is(err, fleet.ErrSignInNotAllowed):
 				signupError(w, r, "not_allowed")
 				return
 			case errors.As(err, &verr):
 				signupError(w, r, "invalid_"+verr.Field)
 				return
+			case errors.Is(err, fleet.ErrMailFailed):
+				log.Error("confirmation email", "err", err)
+				http.Redirect(w, r, "/login?mode=verify&error=mail_failed&email="+url.QueryEscape(formEmail(r)), http.StatusSeeOther)
+				return
 			case err != nil:
 				log.Error("password sign up", "err", err)
 				signupError(w, r, "failed")
 				return
 			}
+			if res.NeedsConfirm {
+				http.Redirect(w, r, "/login?mode=verify&sent=confirm&email="+url.QueryEscape(res.User.Email), http.StatusSeeOther)
+				return
+			}
 			start(w, r, res)
 		})
+		if a.Mail {
+			// Confirmation and reset mail. The counts include successful
+			// sends: 3 an hour per address, 10 an hour per client, and 20
+			// link submissions an hour per client.
+			sendEmail := newFailureLimiter(3, time.Hour)
+			sendIP := newFailureLimiter(10, time.Hour)
+			submitIP := newFailureLimiter(20, time.Hour)
+			mux.HandleFunc("POST /auth/password/forgot", func(w http.ResponseWriter, r *http.Request) {
+				email := formEmail(r)
+				ip := clientIP(r)
+				if sendEmail.Blocked(email) || sendIP.Blocked(ip) {
+					http.Redirect(w, r, "/login?mode=forgot&error=rate_limited", http.StatusSeeOther)
+					return
+				}
+				sendEmail.Fail(email)
+				sendIP.Fail(ip)
+				if err := fl.RequestPasswordReset(r.Context(), r.FormValue("email")); err != nil {
+					var verr *fleet.ValidationError
+					if errors.As(err, &verr) {
+						http.Redirect(w, r, "/login?mode=forgot&error=invalid_email", http.StatusSeeOther)
+						return
+					}
+					log.Error("password reset email", "err", err)
+					http.Redirect(w, r, "/login?mode=forgot&error=mail_failed", http.StatusSeeOther)
+					return
+				}
+				http.Redirect(w, r, "/login?sent=reset", http.StatusSeeOther)
+			})
+			mux.HandleFunc("POST /auth/email/resend", func(w http.ResponseWriter, r *http.Request) {
+				email := formEmail(r)
+				ip := clientIP(r)
+				if sendEmail.Blocked("confirm:"+email) || sendIP.Blocked("confirm:"+ip) {
+					http.Redirect(w, r, verifyRedirect(email, "rate_limited", ""), http.StatusSeeOther)
+					return
+				}
+				sendEmail.Fail("confirm:" + email)
+				sendIP.Fail("confirm:" + ip)
+				if err := fl.ResendConfirmation(r.Context(), r.FormValue("email")); err != nil {
+					var verr *fleet.ValidationError
+					if errors.As(err, &verr) {
+						http.Redirect(w, r, verifyRedirect(email, "invalid_email", ""), http.StatusSeeOther)
+						return
+					}
+					log.Error("confirmation email", "err", err)
+					http.Redirect(w, r, verifyRedirect(email, "mail_failed", ""), http.StatusSeeOther)
+					return
+				}
+				http.Redirect(w, r, verifyRedirect(email, "", "confirm"), http.StatusSeeOther)
+			})
+			mux.HandleFunc("POST /auth/email/confirm", func(w http.ResponseWriter, r *http.Request) {
+				ip := clientIP(r)
+				if submitIP.Blocked("confirm:" + ip) {
+					http.Redirect(w, r, "/login?mode=confirm&error=rate_limited", http.StatusSeeOther)
+					return
+				}
+				submitIP.Fail("confirm:" + ip)
+				if err := fl.ConfirmEmail(r.Context(), r.FormValue("token")); err != nil {
+					http.Redirect(w, r, "/login?mode=confirm&error=confirm_invalid", http.StatusSeeOther)
+					return
+				}
+				http.Redirect(w, r, "/login?confirmed=1", http.StatusSeeOther)
+			})
+			mux.HandleFunc("POST /auth/password/reset", func(w http.ResponseWriter, r *http.Request) {
+				ip := clientIP(r)
+				if submitIP.Blocked("reset:" + ip) {
+					http.Redirect(w, r, "/login?mode=reset&error=rate_limited", http.StatusSeeOther)
+					return
+				}
+				submitIP.Fail("reset:" + ip)
+				err := fl.ResetPassword(r.Context(), r.FormValue("token"), r.FormValue("password"))
+				var verr *fleet.ValidationError
+				switch {
+				case errors.As(err, &verr):
+					http.Redirect(w, r, "/login?mode=reset&error=invalid_"+verr.Field, http.StatusSeeOther)
+				case err != nil:
+					http.Redirect(w, r, "/login?mode=reset&error=reset_invalid", http.StatusSeeOther)
+				default:
+					http.Redirect(w, r, "/login?reset=1", http.StatusSeeOther)
+				}
+			})
+		}
 	}
 
 	if a.Dev {
@@ -190,4 +286,28 @@ func loopbackRequest(r *http.Request) bool {
 
 func signupError(w http.ResponseWriter, r *http.Request, code string) {
 	http.Redirect(w, r, "/login?mode=signup&error="+code, http.StatusSeeOther)
+}
+
+// verifyRedirect is the "check your email" page. sent is "confirm" after a
+// message goes out. code is an error when it does not.
+func verifyRedirect(email, code, sent string) string {
+	q := url.Values{"mode": {"verify"}}
+	if email != "" {
+		q.Set("email", email)
+	}
+	if code != "" {
+		q.Set("error", code)
+	}
+	if sent != "" {
+		q.Set("sent", sent)
+	}
+	return "/login?" + q.Encode()
+}
+
+func formEmail(r *http.Request) string {
+	email, err := fleet.NormalizeEmail(r.FormValue("email"))
+	if err != nil {
+		return strings.ToLower(strings.TrimSpace(r.FormValue("email")))
+	}
+	return email
 }

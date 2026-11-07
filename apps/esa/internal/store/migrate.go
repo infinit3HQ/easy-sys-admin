@@ -44,5 +44,18 @@ func (s *Store) Migrate(ctx context.Context, log *slog.Logger) error {
 // be safe to run on every start.
 func (s *Store) postMigrate(ctx context.Context) error {
 	// Left over from a one-time account conversion. Nothing reads this table.
-	return s.db.WithContext(ctx).Exec(`DROP TABLE IF EXISTS schema_flags`).Error
+	if err := s.db.WithContext(ctx).Exec(`DROP TABLE IF EXISTS schema_flags`).Error; err != nil {
+		return err
+	}
+	// One row per existing user, so a provider sign-in still finds them
+	// after identities became their own table.
+	return s.db.WithContext(ctx).Exec(`
+		INSERT INTO user_identities (user_id, issuer, subject, created_at)
+		SELECT u.id, u.issuer, u.subject, u.created_at
+		FROM users u
+		WHERE NOT EXISTS (
+			SELECT 1 FROM user_identities i
+			WHERE i.issuer = u.issuer AND i.subject = u.subject
+		)
+	`).Error
 }

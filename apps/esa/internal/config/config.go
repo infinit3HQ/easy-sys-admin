@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/url"
 	"os"
 	"strconv"
@@ -42,6 +43,13 @@ type Config struct {
 	SSHConnectTimeout time.Duration
 	// MaxServersPerAccount caps the servers one account can add.
 	MaxServersPerAccount int
+	// MaxOrgsPerUser caps organizations one user can own, not counting
+	// their personal space.
+	MaxOrgsPerUser int
+	// BetaLimits is ESA_BETA_LIMITS. When set, each user may own one
+	// organization besides their personal space, and each account may add
+	// 10 servers. A self-hosted install leaves it off.
+	BetaLimits bool
 	// MetricsRawRetention is how long per-poll metric samples are kept.
 	MetricsRawRetention time.Duration
 	// MetricsHourlyRetention is how long hourly metric averages are kept.
@@ -50,6 +58,18 @@ type Config struct {
 	Metrics bool
 
 	Auth AuthConfig
+	// SMTP sends confirmation and password-reset mail. Zero value means
+	// those messages are off and password sign-up works without them.
+	SMTP SMTPConfig
+}
+
+// SMTPConfig is the install's own mail account, not a notification channel.
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
 }
 
 // AuthConfig holds sign-in settings. Any combination of methods can be on.
@@ -70,6 +90,9 @@ type AuthConfig struct {
 	Providers []OIDCProvider
 	// AllowedEmails limits who may sign in with any method. Empty allows everyone.
 	AllowedEmails []string
+	// Mail is true when system SMTP is configured, so the sign-in page can
+	// offer confirmation and password reset.
+	Mail bool
 }
 
 // OIDCProvider is one OpenID Connect client.
@@ -158,8 +181,40 @@ func parse(getenv func(string) string) (Config, error) {
 	if err := parseLimits(&cfg, get); err != nil {
 		return Config{}, err
 	}
+	if err := parseSMTP(&cfg, get); err != nil {
+		return Config{}, err
+	}
+	cfg.Auth.Mail = cfg.SMTP.Host != ""
 
 	return cfg, nil
+}
+
+// parseSMTP reads the system mail account. All of it is optional. Setting
+// the host turns confirmation and password reset on, and then the from
+// address is required. Port defaults to 587 (STARTTLS). Port 465 uses
+// implicit TLS. The connection is refused when the server offers neither.
+func parseSMTP(cfg *Config, get func(string, string) string) error {
+	cfg.SMTP.Host = get("ESA_SMTP_HOST", "")
+	if cfg.SMTP.Host == "" {
+		return nil
+	}
+	var err error
+	if cfg.SMTP.Port, err = parseInt(get("ESA_SMTP_PORT", "587"), 1, 65535); err != nil {
+		return fmt.Errorf("ESA_SMTP_PORT: %w", err)
+	}
+	cfg.SMTP.Username = get("ESA_SMTP_USERNAME", "")
+	cfg.SMTP.Password = get("ESA_SMTP_PASSWORD", "")
+	if cfg.SMTP.Username != "" && cfg.SMTP.Password == "" {
+		return errors.New("ESA_SMTP_PASSWORD is required when ESA_SMTP_USERNAME is set")
+	}
+	cfg.SMTP.From = get("ESA_SMTP_FROM", "")
+	if cfg.SMTP.From == "" {
+		return errors.New("ESA_SMTP_FROM is required when ESA_SMTP_HOST is set")
+	}
+	if _, err := mail.ParseAddress(cfg.SMTP.From); err != nil {
+		return fmt.Errorf("ESA_SMTP_FROM: %w", err)
+	}
+	return nil
 }
 
 // parseLimits reads polling, retention, cap, and metrics settings.
@@ -173,6 +228,16 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 	}
 	if cfg.MaxServersPerAccount, err = parseInt(get("ESA_MAX_SERVERS_PER_ACCOUNT", "500"), 1, 100000); err != nil {
 		return fmt.Errorf("ESA_MAX_SERVERS_PER_ACCOUNT: %w", err)
+	}
+	cfg.MaxOrgsPerUser = 20
+	if cfg.BetaLimits, err = parseBool(get("ESA_BETA_LIMITS", "false")); err != nil {
+		return fmt.Errorf("ESA_BETA_LIMITS: %w", err)
+	}
+	// The flag is the hosted beta. It replaces the server and organization
+	// caps, including an explicit ESA_MAX_SERVERS_PER_ACCOUNT.
+	if cfg.BetaLimits {
+		cfg.MaxServersPerAccount = 10
+		cfg.MaxOrgsPerUser = 1
 	}
 	if cfg.MetricsRawRetention, err = parseDuration(get("ESA_METRICS_RAW_RETENTION", "48h"), 2*time.Hour, 0); err != nil {
 		return fmt.Errorf("ESA_METRICS_RAW_RETENTION: %w", err)

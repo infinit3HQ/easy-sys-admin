@@ -480,6 +480,15 @@ type AcceptShareRequest struct {
 // AccessReport defines model for AccessReport.
 type AccessReport = proto.AccessReport
 
+// AccountLimits Caps for the signed-in user. The hosted beta sets these lower; a self-hosted install keeps the defaults.
+type AccountLimits struct {
+	// MaxOrganizations Organizations one person can own, not counting their personal space.
+	MaxOrganizations int `json:"maxOrganizations"`
+
+	// MaxServers Servers one account (a personal space or an organization) can add.
+	MaxServers int `json:"maxServers"`
+}
+
 // AccountMembership defines model for AccountMembership.
 type AccountMembership struct {
 	Id   int64  `json:"id"`
@@ -593,6 +602,9 @@ type AlertRuleList struct {
 type AuthConfig struct {
 	// Dev Local-only dev login without an identity provider.
 	Dev bool `json:"dev"`
+
+	// Mail The install sends confirmation and password-reset email.
+	Mail bool `json:"mail"`
 
 	// Password Email and password sign-in is on.
 	Password bool `json:"password"`
@@ -964,6 +976,9 @@ type LoginRecord = proto.Login
 type Me struct {
 	Account  AccountMembership   `json:"account"`
 	Accounts []AccountMembership `json:"accounts"`
+
+	// Limits Caps for the signed-in user. The hosted beta sets these lower; a self-hosted install keeps the defaults.
+	Limits AccountLimits `json:"limits"`
 
 	// Scopes The token's scopes; absent for browser sessions.
 	Scopes *[]Scope `json:"scopes,omitempty"`

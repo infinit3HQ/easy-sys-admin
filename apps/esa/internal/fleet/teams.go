@@ -30,8 +30,8 @@ var (
 	errPersonalLeave   = &ConflictError{Message: "you cannot leave your personal space"}
 	errLastOwner       = &ConflictError{Message: "an organization needs at least one owner; make another member an owner first"}
 	errInviteEmail     = &ConflictError{Message: "this invite is for a different email address; sign in with the address it was sent to"}
-	// Email and password accounts do not verify their address.
-	errInviteUnverified = &ConflictError{Message: "this invite is for a specific address; sign in with a provider that verifies it, or ask for an open invite link"}
+	// A password account has to open its confirmation link before it can use an address-restricted invite.
+	errInviteUnverified = &ConflictError{Message: "this invite is for a specific address; confirm your email first, sign in with a provider that verifies it, or ask for an open invite link"}
 )
 
 // OrgView is the caller's current account: an organization or their
@@ -120,8 +120,11 @@ func (s *Service) CreateOrganization(ctx context.Context, a Actor, name string) 
 			Count(&n).Error; err != nil {
 			return err
 		}
-		if n >= maxOrgsPerUser {
-			return &ConflictError{Message: "you already own " + strconv.Itoa(maxOrgsPerUser) + " organizations; delete one first"}
+		if n >= int64(s.maxOrgs) {
+			if s.maxOrgs == 1 {
+				return &ConflictError{Message: "you already own an organization; this install allows one besides your personal space"}
+			}
+			return &ConflictError{Message: "you already own " + strconv.Itoa(s.maxOrgs) + " organizations; delete one first"}
 		}
 		now := s.now()
 		acc, err := q.CreateAccount(ctx, name, now)
@@ -905,14 +908,14 @@ func (s *Service) findInvite(ctx context.Context, db *gorm.DB, token string) (st
 }
 
 // inviteEmailCheck refuses an invite restricted to one address unless the
-// user's email comes from a provider that verifies it. Email and password
-// accounts never prove they own their address, so they cannot use such
-// invites at all.
+// user's email was verified. A password account qualifies after it opens
+// the confirmation link. Without system mail, password accounts stay
+// unconfirmed and cannot use these invites.
 func inviteEmailCheck(inv store.Invite, u store.User) error {
 	switch {
 	case inv.Email == "":
 		return nil
-	case u.Issuer == LocalIssuer:
+	case u.Issuer == LocalIssuer && !u.EmailConfirmed:
 		return errInviteUnverified
 	case !strings.EqualFold(strings.TrimSpace(u.Email), inv.Email):
 		return errInviteEmail

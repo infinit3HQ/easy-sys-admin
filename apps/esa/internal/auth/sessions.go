@@ -175,8 +175,14 @@ func (m *Sessions) resolveActor(r *http.Request) (fleet.Actor, bool, error) {
 	if !now.Before(sess.ExpiresAt) || now.Sub(sess.LastSeenAt) >= idleTTL {
 		return fleet.Actor{}, false, m.store.DeleteSession(ctx, hash)
 	}
-	// Removing someone from the allow list ends their sessions.
+	// Removing someone from the allow list ends their sessions. An
+	// unconfirmed password account cannot keep a session either.
 	if ok, err := m.fleet.UserAllowed(ctx, sess.UserID); err != nil {
+		return fleet.Actor{}, false, err
+	} else if !ok {
+		return fleet.Actor{}, false, m.store.DeleteSession(ctx, hash)
+	}
+	if ok, err := m.fleet.LoginAllowed(ctx, sess.UserID); err != nil {
 		return fleet.Actor{}, false, err
 	} else if !ok {
 		return fleet.Actor{}, false, m.store.DeleteSession(ctx, hash)

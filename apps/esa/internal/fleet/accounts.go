@@ -13,6 +13,9 @@ type Me struct {
 	User     store.User
 	Current  store.Membership
 	Accounts []store.Membership
+	// MaxServers and MaxOrganizations are the caps for this install.
+	MaxServers       int
+	MaxOrganizations int
 }
 
 // Me returns the caller's user, current account, and memberships.
@@ -27,7 +30,7 @@ func (s *Service) Me(ctx context.Context, a Actor) (Me, error) {
 	}
 	for _, m := range ms {
 		if m.Account.ID == a.AccountID {
-			return Me{User: u, Current: m, Accounts: ms}, nil
+			return Me{User: u, Current: m, Accounts: ms, MaxServers: s.maxServers, MaxOrganizations: s.maxOrgs}, nil
 		}
 	}
 	return Me{}, ErrForbidden

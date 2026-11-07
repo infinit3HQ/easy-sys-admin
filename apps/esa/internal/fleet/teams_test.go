@@ -100,6 +100,25 @@ func TestPersonalSpaceCreatedForExistingUser(t *testing.T) {
 	}
 }
 
+func TestBetaAllowsOneOrganization(t *testing.T) {
+	s := newTestService(t)
+	s.maxOrgs = 1
+	ctx := context.Background()
+	alice := signIn(t, s, "alice")
+	if _, err := s.CreateOrganization(ctx, alice, "One"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.CreateOrganization(ctx, alice, "Two")
+	var conflict *ConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("second organization: %v", err)
+	}
+	me, err := s.Me(ctx, alice)
+	if err != nil || me.MaxOrganizations != 1 {
+		t.Fatalf("Me limits = %+v, %v", me, err)
+	}
+}
+
 func TestTeamInviteAccept(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()

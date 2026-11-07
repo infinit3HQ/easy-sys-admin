@@ -20,11 +20,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         },
         { name: 'color-scheme', content: 'dark' },
         { name: 'theme-color', content: '#0b0d0c' },
-        { title: 'easy-sys-admin: one board for your whole server fleet' },
+        { title: 'Easy Sys Admin' },
         {
           name: 'description',
           content:
-            'Watch every server on one page, clean disks and patch packages on a schedule, and let AI agents read the fleet over MCP.',
+            'Easy Sys Admin is a web app for people who administer their own Linux servers. It shows the fleet on one board, installs updates, and cleans disks on a schedule.',
         },
       ],
       links: [

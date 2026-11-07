@@ -137,7 +137,7 @@ Identity and access:
 | Table         | Holds                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------- |
 | `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels. |
-| `users`       | People, keyed by OIDC issuer and subject. Password users have issuer `local` and an argon2id hash. |
+| `users`       | People. The first sign-in stores its issuer and subject. `user_identities` records later providers. The same verified email joins the existing user. |
 | `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                          |
 | `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                   |
 | `api_tokens`  | CLI and MCP tokens. Stores the SHA-256 of the token, its scopes, and its expiry.                   |

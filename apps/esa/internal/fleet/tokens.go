@@ -164,6 +164,9 @@ func (s *Service) AuthenticateToken(ctx context.Context, secret string, source S
 	if ok, err := s.UserAllowed(ctx, t.UserID); err != nil || !ok {
 		return Actor{}, false, err
 	}
+	if ok, err := s.LoginAllowed(ctx, t.UserID); err != nil || !ok {
+		return Actor{}, false, err
+	}
 	if t.LastUsedAt == nil || now.Sub(*t.LastUsedAt) > time.Minute {
 		s.db.WithContext(ctx).Model(&store.APIToken{}).Where("id = ?", t.ID).Update("last_used_at", now)
 	}

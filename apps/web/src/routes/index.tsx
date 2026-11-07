@@ -1,13 +1,66 @@
+import { createServerFn } from '@tanstack/react-start'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowRightIcon } from 'lucide-react'
 import { CopyBlock, StatusDot, cn } from '#/components/kit'
-import { column, showSelfHost, SiteFrame } from '#/components/site-frame'
+import {
+  column,
+  productName,
+  showSelfHost,
+  SiteFrame,
+} from '#/components/site-frame'
 import { siteOrigin } from '#/lib/origin'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
 
-export const Route = createFileRoute('/')({ component: Landing })
+const loadPublicPolicy = createServerFn({ method: 'GET' }).handler(
+  async () => {
+    // Same variables as the control plane. Unset means a self-hosted install:
+    // full caps, and sign-up closed except for the first account.
+    const betaLimits = process.env.ESA_BETA_LIMITS === 'true'
+    let signup = ['1', 'true', 'yes', 'on'].includes(
+      (process.env.ESA_SIGNUP ?? '').toLowerCase(),
+    )
+    try {
+      const origin = process.env.ESA_API_URL ?? 'http://127.0.0.1:8080'
+      const res = await fetch(new URL('/api/v1/auth/config', origin), {
+        signal: AbortSignal.timeout(2000),
+      })
+      if (res.ok) {
+        const body = (await res.json()) as { signup?: boolean }
+        if (typeof body.signup === 'boolean') signup = body.signup
+      }
+    } catch {
+      // The control plane is the source of truth when it answers. An allow
+      // list there turns ESA_SIGNUP off, which this env value cannot see.
+    }
+    return { betaLimits, signup }
+  },
+)
+
+const purpose =
+  'Easy Sys Admin is a web app for people who administer their own Linux servers. It shows every server on one board, installs package updates, and cleans disks on a schedule. You can read this page without signing in.'
+
+export const Route = createFileRoute('/')({
+  ssr: true,
+  loader: () => loadPublicPolicy(),
+  head: () => {
+    const origin = siteOrigin()
+    return {
+      meta: [
+        { title: `${productName}: one board for your Linux servers` },
+        { name: 'description', content: purpose },
+        { name: 'robots', content: 'index, follow' },
+        { property: 'og:title', content: productName },
+        { property: 'og:description', content: purpose },
+        { property: 'og:type', content: 'website' },
+        { property: 'og:url', content: origin ? `${origin}/` : '/' },
+      ],
+      links: [{ rel: 'canonical', href: origin ? `${origin}/` : '/' }],
+    }
+  },
+  component: Landing,
+})
 
 const demo: Array<{
   name: string
@@ -71,6 +124,7 @@ function Landing() {
   return (
     <SiteFrame>
       <Hero />
+      <Beta />
       <Watches />
       <Touch />
       <Agents />
@@ -85,9 +139,7 @@ function Hero() {
       <div className={column}>
         <div className="grid items-end gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:gap-12">
           <div className="animate-rise">
-            <p className="label mb-6 !text-amber">
-              Public beta · fleet control room
-            </p>
+            <p className="label mb-6 !text-amber">Easy Sys Admin · public beta</p>
             <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
               One board
               <br />
@@ -100,12 +152,19 @@ function Hero() {
         </div>
         <div className="mt-10 sm:mt-12">
           <p className="text-base leading-relaxed text-ink-2 sm:text-lg">
-            See every server on one page, refreshed each minute. Put servers in
-            groups, set when their disks get cleaned and their packages patched,
-            and stop logging in to each machine. AI agents read the same data
-            over MCP. The board on this site is the public beta.
+            {purpose} See every server on one page, refreshed each minute. Put
+            servers in groups, choose when their disks get cleaned and their
+            packages patched, and stop logging in to each machine. The board
+            reaches each server over SSH. Nothing from Easy Sys Admin listens
+            on those servers.
           </p>
-          <div className="mt-8 flex flex-wrap justify-end gap-3">
+          <div className="mt-8 flex flex-wrap items-center justify-end gap-3">
+            <Link
+              to="/privacy"
+              className="mr-auto font-mono text-xs text-ink-2 hover:text-ink"
+            >
+              Privacy policy
+            </Link>
             {showSelfHost && (
               <Button asChild size="lg" variant="outline">
                 <a href="#install">Self-host it</a>
@@ -245,6 +304,59 @@ function StepNumber({ n }: { n: number }) {
   )
 }
 
+function facts(policy: {
+  betaLimits: boolean
+  signup: boolean
+}): Array<[string, string]> {
+  return [
+    [
+      'Price',
+      'The public beta is free. There is no charge to sign in or to add a server.',
+    ],
+    [
+      'Limit',
+      policy.betaLimits
+        ? 'You get one personal space and one organization. Each can hold 10 servers, 20 in total.'
+        : 'One account can hold 500 servers. One person can own 20 organizations besides their personal space.',
+    ],
+    [
+      'Sign-up',
+      policy.signup
+        ? 'Sign-up is open. Create an account with Google, or with an email and a password.'
+        : 'Sign-up is closed. The first account can be created while no one has signed up yet.',
+    ],
+    [
+      'Where data sits',
+      'Account details, server hostnames, metrics, and encrypted logins stay in the database for this website. They are not sold.',
+    ],
+  ]
+}
+
+function Beta() {
+  const policy = Route.useLoaderData()
+  return (
+    <section id="beta" className="scroll-mt-14 border-t py-16 sm:py-20">
+      <div className={column}>
+        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+          This beta
+        </h2>
+        <dl className="mt-10 grid gap-px overflow-hidden rounded-md border bg-line sm:grid-cols-2">
+          {facts(policy).map(([title, body]) => (
+            <div key={title} className="bg-bg p-5 sm:p-6">
+              <dt className="font-display text-2xl font-semibold tracking-wide uppercase">
+                {title}
+              </dt>
+              <dd className="mt-3 text-sm leading-relaxed text-ink-2">
+                {body}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </section>
+  )
+}
+
 function Watches() {
   return (
     <section id="watch" className="scroll-mt-14 border-t py-16 sm:py-20">
@@ -363,8 +475,9 @@ function Agents() {
 }
 
 function Install() {
-  const steps = showSelfHost
-    ? ([
+  const policy = Route.useLoaderData()
+  const steps: Array<[string, string]> = showSelfHost
+    ? [
         [
           'Start',
           'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
@@ -377,11 +490,13 @@ function Install() {
           'Use the CLI',
           'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
         ],
-      ] as const)
-    : ([
+      ]
+    : [
         [
           'Sign in',
-          'Open the board.\nCreate an account if sign-up allows your email.',
+          policy.signup
+            ? 'Create an account or sign in, then open the board.'
+            : 'Sign in, then open the board.',
         ],
         [
           'Add a server',
@@ -391,7 +506,7 @@ function Install() {
           'Set a group',
           'Put the server in a group.\nChoose when it cleans disks and installs updates.',
         ],
-      ] as const)
+      ]
   return (
     <section id="install" className="scroll-mt-14 border-t py-16 sm:py-20">
       {/* One step per row. The commands run to about 60 characters, so three

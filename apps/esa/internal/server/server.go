@@ -14,6 +14,7 @@ import (
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/api"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/auth"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/authmail"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/config"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/crypto"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
@@ -53,12 +54,17 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	bgCtx, stopBackground := context.WithCancel(context.WithoutCancel(ctx))
 	defer stopBackground()
 
+	var mailer fleet.AuthMailer
+	if cfg.Auth.Mail {
+		mailer = authmail.New(cfg.SMTP, cfg.AllowPrivateNetworks)
+	}
 	fl := fleet.New(bgCtx, fleet.Deps{
 		Store: st, Box: box, Pool: pool, Helpers: helpers.Get, Notifier: notify.New(cfg.AllowPrivateNetworks),
 		PublicURL: cfg.PublicURL, AllowedEmails: cfg.Auth.AllowedEmails, Signup: cfg.Auth.Signup,
-		AllowPrivateNetworks: cfg.AllowPrivateNetworks, Logger: log,
+		AllowPrivateNetworks: cfg.AllowPrivateNetworks, Logger: log, AuthMail: mailer,
 		PollConcurrency: cfg.PollConcurrency, SSHConnectTimeout: cfg.SSHConnectTimeout,
 		MaxServersPerAccount: cfg.MaxServersPerAccount,
+		MaxOrgsPerUser:       cfg.MaxOrgsPerUser,
 		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)

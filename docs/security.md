@@ -45,9 +45,9 @@ Sign-in methods are set with environment variables (`apps/esa/internal/config/co
 
 | Method             | Settings                                                                                    | Notes                                                                                                                                                               |
 | ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Email and password | `ESA_AUTH_PASSWORD` (default `true`), `ESA_SIGNUP` (default `false`)                        | Passwords are 10 to 200 characters, hashed with argon2id (19 MiB, 2 iterations, 1 lane, 16-byte salt). Email addresses are not verified.                            |
+| Email and password | `ESA_AUTH_PASSWORD` (default `true`), `ESA_SIGNUP` (default `false`), optional `ESA_SMTP_*` | Passwords are 10 to 200 characters, hashed with argon2id (19 MiB, 2 iterations, 1 lane, 16-byte salt). With SMTP configured, a password account cannot sign in until it opens the confirmation link. Google sign-in does not send or require that link. |
 | OpenID Connect     | `ESA_OIDC_ISSUER`, `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`, `ESA_OIDC_PROVIDER_NAME` | Authorization code flow with PKCE (S256), with state and nonce checked. An email is stored only when the provider says `email_verified` is true.                    |
-| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`.                                                                                                           |
+| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`. The user is stored with the email marked confirmed.                                                       |
 | Dev mode           | `ESA_AUTH_MODE=dev`                                                                         | Signs everyone in as one local user. Refused unless `ESA_LISTEN` and `ESA_PUBLIC_URL` are loopback addresses, and `/auth/dev-login` only answers loopback requests. |
 
 More rules:
@@ -55,6 +55,7 @@ More rules:
 - `ESA_ALLOWED_EMAILS` limits who may sign in with any method. It is checked on every session and token use, so removing someone from the list ends their sessions and disables their tokens.
 - When `ESA_ALLOWED_EMAILS` is set, `ESA_SIGNUP=true` is ignored with a warning at startup, because a password sign-up cannot prove the person owns the address.
 - The first user of an empty database can always create a password account while password sign-in is on.
+- The same email is one user. Google or OIDC sign-in with a verified address joins the account that already uses that email and marks it confirmed. A password sign-up for an address that already uses Google adds a password to that account only after the person opens the link. With system mail off, that sign-up is refused and the person uses the provider instead.
 - Argon2 work runs in at most as many slots as the machine has CPUs. A sign-in that waits more than 5 seconds for a slot gets a "busy" answer instead of piling up memory.
 - After sign-in, the `return_to` target must be a same-site path. Anything else redirects to `/app`.
 
@@ -164,10 +165,10 @@ Two more limits protect the servers and the control plane:
 
 | Item                              | Cap                                                  | Source                  |
 | --------------------------------- | ---------------------------------------------------- | ----------------------- |
-| Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT` | `fleet/limits_state.go` |
+| Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT`. 10 when `ESA_BETA_LIMITS` is on | `fleet/limits_state.go` |
 | Certificates per account          | 200                                                  | same                    |
 | Notification channels per account | 25                                                   | same                    |
-| Organizations a user may own      | 20                                                   | `fleet/teams.go`        |
+| Organizations a user may own      | 20, or 1 when `ESA_BETA_LIMITS` is on. The personal space is not counted | `fleet/teams.go`        |
 | Members per organization          | 100                                                  | same                    |
 | Pending invites per organization  | 50                                                   | same                    |
 | Extra teams per organization      | 100                                                  | `fleet/orgteams.go`     |

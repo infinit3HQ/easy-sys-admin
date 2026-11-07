@@ -262,6 +262,11 @@ function AccountBox({
     ...me.accounts.filter((a) => a.personal),
     ...me.accounts.filter((a) => !a.personal),
   ]
+  const ownedOrgs = me.accounts.filter(
+    (a) => !a.personal && a.role === 'owner',
+  ).length
+  const canCreateOrg =
+    !me.viaToken && ownedOrgs < me.limits.maxOrganizations
   async function switchSpace(accountId: number) {
     if (accountId === me.account.id) return
     await call(api().PUT('/me/account', { body: { accountId } }))
@@ -315,13 +320,17 @@ function AccountBox({
               {a.id === me.account.id && <CheckIcon className="text-ink" />}
             </DropdownMenuItem>
           ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() => setCreating(true)}
-            className="text-amber focus:text-amber"
-          >
-            <PlusIcon className="text-amber" /> Create organization
-          </DropdownMenuItem>
+          {canCreateOrg && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => setCreating(true)}
+                className="text-amber focus:text-amber"
+              >
+                <PlusIcon className="text-amber" /> Create organization
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <CreateOrganizationDialog

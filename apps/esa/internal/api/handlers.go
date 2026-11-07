@@ -125,7 +125,7 @@ func (h *Handlers) GetAuthConfig(ctx context.Context, _ GetAuthConfigRequestObje
 	for _, p := range h.auth.Providers {
 		providers = append(providers, AuthProvider{Id: p.ID, Name: p.Name})
 	}
-	return GetAuthConfig200JSONResponse{Dev: h.auth.Dev, Password: h.auth.Password, Signup: h.auth.Password && open, Providers: providers}, nil
+	return GetAuthConfig200JSONResponse{Dev: h.auth.Dev, Password: h.auth.Password, Signup: h.auth.Password && open, Mail: h.auth.Mail, Providers: providers}, nil
 }
 
 func (h *Handlers) GetMe(ctx context.Context, _ GetMeRequestObject) (GetMeResponseObject, error) {

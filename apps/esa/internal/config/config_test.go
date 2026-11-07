@@ -91,8 +91,52 @@ func TestLimitDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.PollConcurrency != 64 || cfg.SSHConnectTimeout != 5*time.Second || cfg.MaxServersPerAccount != 500 ||
+		cfg.MaxOrgsPerUser != 20 || cfg.BetaLimits ||
 		cfg.MetricsRawRetention != 48*time.Hour || cfg.MetricsHourlyRetention != 90*24*time.Hour || !cfg.Metrics {
 		t.Errorf("defaults: %+v", cfg)
+	}
+}
+
+func TestSMTPSettings(t *testing.T) {
+	m := base()
+	cfg, err := parse(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Mail || cfg.SMTP.Host != "" {
+		t.Fatalf("mail on by default: %+v", cfg.SMTP)
+	}
+	m["ESA_SMTP_HOST"] = "smtp.example.com"
+	m["ESA_SMTP_FROM"] = "Easy Sys Admin <mail@example.com>"
+	m["ESA_SMTP_USERNAME"] = "mail@example.com"
+	m["ESA_SMTP_PASSWORD"] = "secret"
+	cfg, err = parse(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Auth.Mail || cfg.SMTP.Port != 587 || cfg.SMTP.From == "" {
+		t.Fatalf("smtp: %+v mail %v", cfg.SMTP, cfg.Auth.Mail)
+	}
+	m["ESA_SMTP_FROM"] = ""
+	if _, err := parse(env(m)); err == nil || !strings.Contains(err.Error(), "ESA_SMTP_FROM") {
+		t.Fatalf("missing from: %v", err)
+	}
+}
+
+func TestBetaLimits(t *testing.T) {
+	m := base()
+	m["ESA_BETA_LIMITS"] = "true"
+	m["ESA_MAX_SERVERS_PER_ACCOUNT"] = "2000"
+	cfg, err := parse(env(m))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.BetaLimits || cfg.MaxServersPerAccount != 10 || cfg.MaxOrgsPerUser != 1 {
+		t.Errorf("beta: %+v", cfg)
+	}
+	m["ESA_BETA_LIMITS"] = "nope"
+	if _, err := parse(env(m)); err == nil || !strings.Contains(err.Error(), "ESA_BETA_LIMITS") {
+		t.Errorf("bad flag: %v", err)
 	}
 }
 

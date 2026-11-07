@@ -36,6 +36,7 @@ func newServeCommand() *cobra.Command {
   ESA_GOOGLE_CLIENT_ID    Google sign-in client id
   ESA_GOOGLE_CLIENT_SECRET Google sign-in client secret
   ESA_ALLOWED_EMAILS      comma-separated allow list, empty allows everyone
+  ESA_SMTP_HOST           system SMTP for confirmation and password reset, empty leaves them off
   ESA_ALLOW_PRIVATE_NETWORKS  allow private addresses; default true unless sign-up is open
   ESA_LOG_FORMAT          text (default) or json`,
 		Args: cobra.NoArgs,

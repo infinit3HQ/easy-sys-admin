@@ -91,7 +91,7 @@ Deploys share the concurrency group `deploy-production`. A new deploy waits for 
 3. In Settings > Secrets and variables > Actions > Variables, add repository variables:
    - `ESA_HOST`, for example `esa.example.com` (required)
    - `DEPLOY_ENABLED=true`, once you want pushes to `main` to deploy
-   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md).
+   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md). Set `ESA_BETA_LIMITS` to `true` for the hosted beta. Leave it unset for a self-hosted install. `ESA_SMTP_PASSWORD` is a production secret. Leave the host empty to send no auth mail.
 
 4. Set up Traefik on the host as in step 1 of [Deploy with docker compose](#deploy-with-docker-compose).
 

@@ -6,6 +6,11 @@ import { cn } from '#/lib/utils'
 /** The plotting grid stays full width. The type sits in one centered column. */
 export const column = 'mx-auto w-full max-w-7xl px-4 sm:px-6'
 
+/** The name on the public site. It matches the Google sign-in screen. */
+export const productName = 'EASY-SYS-ADMIN'
+
+export const supportEmail = 'support@easysysadmin.app'
+
 /**
  * The source repo is private, so the public pages do not offer a self-hosted
  * install. Turn this on when the repo and the deploy files are public.
@@ -28,7 +33,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
           <Link to="/" className="flex min-w-0 items-center gap-2.5">
             <img src="/favicon.svg" alt="" className="size-6 shrink-0" />
             <span className="truncate font-display text-lg font-bold tracking-wide uppercase sm:text-xl">
-              easy-sys-admin
+              {productName}
             </span>
             <span className="shrink-0 rounded-sm border border-amber/70 px-1.5 py-0.5 font-mono text-[10px] tracking-widest text-amber uppercase">
               Beta
@@ -70,15 +75,21 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             <div className="flex items-center gap-2.5">
               <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
               <span className="font-display text-lg font-bold tracking-wide uppercase">
-                easy-sys-admin
+                {productName}
               </span>
               <span className="rounded-sm border border-amber/70 px-1.5 py-0.5 font-mono text-[10px] tracking-widest text-amber uppercase">
                 Beta
               </span>
             </div>
             <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-              One board for a fleet of Linux servers.
+              A board for people who administer their own Linux servers.
             </p>
+            <a
+              href={`mailto:${supportEmail}`}
+              className="mt-1 inline-block font-mono text-[11px] text-ink-2 hover:text-ink"
+            >
+              {supportEmail}
+            </a>
           </div>
           <nav className="flex gap-6 font-mono text-xs text-ink-2">
             {legal.map((item) => (

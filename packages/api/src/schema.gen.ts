@@ -1066,6 +1066,8 @@ export interface components {
             password: boolean;
             /** @description New people can create an email and password account. */
             signup: boolean;
+            /** @description The install sends confirmation and password-reset email. */
+            mail: boolean;
             /** @description OpenID Connect providers. Start sign-in at /auth/login/{id}. */
             providers: components["schemas"]["AuthProvider"][];
         };
@@ -1093,12 +1095,20 @@ export interface components {
             /** @description The user's own private space. It has no other members. */
             personal: boolean;
         };
+        /** @description Caps for the signed-in user. The hosted beta sets these lower; a self-hosted install keeps the defaults. */
+        AccountLimits: {
+            /** @description Servers one account (a personal space or an organization) can add. */
+            maxServers: number;
+            /** @description Organizations one person can own, not counting their personal space. */
+            maxOrganizations: number;
+        };
         Me: {
             user: components["schemas"]["User"];
             account: components["schemas"]["AccountMembership"];
             accounts: components["schemas"]["AccountMembership"][];
             /** @description True when the request used an API token. */
             viaToken: boolean;
+            limits: components["schemas"]["AccountLimits"];
             /** @description The token's scopes; absent for browser sessions. */
             scopes?: components["schemas"]["Scope"][];
         };

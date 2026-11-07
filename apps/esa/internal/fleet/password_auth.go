@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/mail"
 	"strings"
 	"unicode/utf8"
@@ -14,10 +15,8 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// LocalIssuer marks email and password accounts. Accounts from Google or
-// another provider have that provider's issuer, so an email and password
-// account can never take over a Google account with the same address, or
-// the other way round.
+// LocalIssuer marks an account that started with email and password.
+// A later Google sign-in with the same verified email joins that account.
 const LocalIssuer = "local"
 
 var (
@@ -25,8 +24,19 @@ var (
 	ErrBadCredentials = errors.New("fleet: wrong email or password")
 	// ErrEmailTaken means an email and password account already uses the address.
 	ErrEmailTaken = errors.New("fleet: an account with this email already exists")
+	// ErrProviderAccount means this address already signs in with Google or
+	// another provider, and system mail is off so a password cannot be added
+	// safely. The person should use that provider. It is the same account.
+	ErrProviderAccount = errors.New("fleet: email already signs in with a provider")
 	// ErrSignupClosed means sign-up is off and the install already has users.
 	ErrSignupClosed = errors.New("fleet: sign-up is closed")
+	// ErrEmailUnconfirmed means the password was right but the address has
+	// not opened its confirmation link. Google accounts never hit this.
+	ErrEmailUnconfirmed = errors.New("fleet: email is not confirmed")
+	// ErrAuthToken means a confirmation or reset link is missing, used, or expired.
+	ErrAuthToken = errors.New("fleet: auth email token is invalid")
+	// ErrMailFailed means the account change was saved but the message was not sent.
+	ErrMailFailed = errors.New("fleet: could not send auth email")
 )
 
 const (
@@ -79,11 +89,8 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 	if len(s.allowed) > 0 && !s.allowed[email] {
 		return SignInResult{}, ErrSignInNotAllowed
 	}
-	if n := utf8.RuneCountInString(pw); n < minPasswordLen || n > maxPasswordLen {
-		return SignInResult{}, invalid("password", "use %d to %d characters", minPasswordLen, maxPasswordLen)
-	}
-	if strings.EqualFold(pw, email) {
-		return SignInResult{}, invalid("password", "must not be your email address")
+	if err := validPassword(pw, email); err != nil {
+		return SignInResult{}, err
 	}
 	name = strings.TrimSpace(name)
 	if utf8.RuneCountInString(name) > 100 {
@@ -92,6 +99,26 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 	hash, err := password.Hash(ctx, pw)
 	if err != nil {
 		return SignInResult{}, err
+	}
+
+	existing, findErr := userByEmail(s.db.WithContext(ctx), email)
+	if findErr == nil && (existing.PasswordHash != "" || existing.Issuer == LocalIssuer) {
+		return SignInResult{}, ErrEmailTaken
+	}
+	if findErr == nil {
+		// Same person, already signed in with a provider. The password is
+		// stored only after they open the link, so knowing the address is
+		// not enough to take the account.
+		if s.authMail == nil {
+			return SignInResult{}, ErrProviderAccount
+		}
+		if mailErr := s.sendAuthMail(ctx, existing.ID, existing.Email, "confirm", hash); mailErr != nil {
+			return SignInResult{User: existing}, fmt.Errorf("%w: %w", ErrMailFailed, mailErr)
+		}
+		return SignInResult{User: existing, NeedsConfirm: true}, nil
+	}
+	if !errors.Is(findErr, gorm.ErrRecordNotFound) {
+		return SignInResult{}, findErr
 	}
 
 	var res SignInResult
@@ -113,13 +140,22 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 			detail["bootstrap"] = true
 		}
 		now := s.now()
-		u := store.User{Issuer: LocalIssuer, Subject: email, Email: email, Name: name, PasswordHash: hash, CreatedAt: now, LastLoginAt: now}
+		u := store.User{
+			Issuer: LocalIssuer, Subject: email, Email: email, Name: name, PasswordHash: hash,
+			EmailConfirmed: false, CreatedAt: now, LastLoginAt: now,
+		}
 		r := q.Raw().Clauses(clause.OnConflict{DoNothing: true}).Create(&u)
 		if r.Error != nil {
 			return r.Error
 		}
 		if r.RowsAffected == 0 {
 			return ErrEmailTaken
+		}
+		// GORM skips a false bool when the column has a default, so set it
+		// explicitly. A password account stays unconfirmed until it opens
+		// the link. Without system mail it can still sign in.
+		if err := q.Raw().Model(&store.User{}).Where("id = ?", u.ID).Update("email_confirmed", false).Error; err != nil {
+			return err
 		}
 		acc, err := q.CreatePersonalAccount(ctx, u.ID, defaultAccountName(u), now)
 		if err != nil {
@@ -134,7 +170,14 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 		s.audit(ctx, q, a, "auth.sign_up", email, detail)
 		return nil
 	})
-	return res, err
+	if err != nil || s.authMail == nil {
+		return res, err
+	}
+	res.NeedsConfirm = true
+	if mailErr := s.sendAuthMail(ctx, res.User.ID, res.User.Email, "confirm", ""); mailErr != nil {
+		return res, fmt.Errorf("%w: %w", ErrMailFailed, mailErr)
+	}
+	return res, nil
 }
 
 // SignInPassword checks an email and password. It returns password.ErrBusy
@@ -148,7 +191,7 @@ func (s *Service) SignInPassword(ctx context.Context, email, pw string) (SignInR
 		return SignInResult{}, ErrBadCredentials // no account has a longer one
 	}
 	var u store.User
-	err = s.db.WithContext(ctx).Where("issuer = ? AND subject = ?", LocalIssuer, email).Take(&u).Error
+	err = s.db.WithContext(ctx).Where("email = ? AND password_hash <> ''", email).Order("id").Take(&u).Error
 	if err != nil || u.PasswordHash == "" {
 		// Same cost as a real check.
 		if _, err := password.Check(ctx, password.Dummy, pw); busy(ctx, err) {
@@ -162,6 +205,9 @@ func (s *Service) SignInPassword(ctx context.Context, email, pw string) (SignInR
 	}
 	if err != nil || !ok {
 		return SignInResult{}, ErrBadCredentials
+	}
+	if s.authMail != nil && !u.EmailConfirmed {
+		return SignInResult{}, ErrEmailUnconfirmed
 	}
 	if len(s.allowed) > 0 && !s.allowed[email] {
 		return SignInResult{}, ErrSignInNotAllowed
@@ -182,6 +228,16 @@ func (s *Service) SignInPassword(ctx context.Context, email, pw string) (SignInR
 
 // busy reports whether a password check failed for lack of capacity rather
 // than a wrong password.
+func validPassword(pw, email string) error {
+	if n := utf8.RuneCountInString(pw); n < minPasswordLen || n > maxPasswordLen {
+		return invalid("password", "use %d to %d characters", minPasswordLen, maxPasswordLen)
+	}
+	if email != "" && strings.EqualFold(pw, email) {
+		return invalid("password", "must not be your email address")
+	}
+	return nil
+}
+
 func busy(ctx context.Context, err error) bool {
 	return errors.Is(err, password.ErrBusy) || (err != nil && ctx.Err() != nil)
 }

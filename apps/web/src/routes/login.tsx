@@ -21,6 +21,14 @@ const errors: Record<string, string> = {
     'Too many attempts from your network. Wait 15 minutes and try again.',
   busy: 'The server is busy. Try again in a moment.',
   email_taken: 'An account with this email already exists. Sign in instead.',
+  use_provider:
+    'This email already signs in with Google or another provider. Use that button. It is the same account.',
+  email_unconfirmed:
+    'Open the confirmation link we emailed you, then sign in. Google accounts skip this.',
+  mail_failed: 'The email could not be sent. Try again in a minute.',
+  confirm_invalid: 'This confirmation link is invalid or has expired.',
+  reset_invalid:
+    'This reset link is invalid or has expired. Ask for a new one.',
   signup_closed:
     'Sign-up is closed on this install. Ask the owner for an invite.',
   invalid_email: 'Enter a valid email address.',
@@ -36,7 +44,14 @@ export const Route = createFileRoute('/login')({
     error: z.string().optional(),
     signed_out: z.coerce.string().optional(),
     return_to: z.string().optional(),
-    mode: z.enum(['signin', 'signup']).optional(),
+    mode: z
+      .enum(['signin', 'signup', 'forgot', 'reset', 'confirm', 'verify'])
+      .optional(),
+    email: z.string().max(320).optional(),
+    token: z.string().max(200).optional(),
+    sent: z.enum(['confirm', 'reset']).optional(),
+    confirmed: z.coerce.string().optional(),
+    reset: z.coerce.string().optional(),
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(q.authConfig()),
   head: () => ({ meta: [{ title: 'Sign in · easy-sys-admin' }] }),
@@ -60,13 +75,27 @@ function ProviderIcon({ id }: { id: string }) {
 }
 
 function Login() {
-  const { error, signed_out, return_to, mode = 'signin' } = Route.useSearch()
+  const {
+    error,
+    signed_out,
+    return_to,
+    mode = 'signin',
+    email,
+    token,
+    sent,
+    confirmed,
+    reset,
+  } = Route.useSearch()
   const { data: cfg } = useSuspenseQuery(q.authConfig())
   const returnTo =
     return_to?.startsWith('/') && !return_to.startsWith('//')
       ? return_to
       : '/app'
   const signup = mode === 'signup' && cfg.signup
+  const forgot = mode === 'forgot' && cfg.mail
+  const resetting = mode === 'reset' && cfg.mail && !!token
+  const confirming = mode === 'confirm' && cfg.mail && !!token
+  const verify = mode === 'verify' && cfg.mail
 
   return (
     <div className="grid min-h-dvh place-items-center px-4 py-10 sm:px-6">
@@ -74,18 +103,40 @@ function Login() {
         <a href="/" className="mb-8 flex items-center gap-2.5">
           <img src="/favicon.svg" alt="" className="size-7" />
           <span className="font-display text-2xl font-bold tracking-wide uppercase">
-            easy-sys-admin
+            Easy Sys Admin
           </span>
         </a>
         <Card>
           <CardContent className="p-5 sm:p-6">
             <h1 className="font-display text-4xl font-bold uppercase">
-              {signup ? 'Create account' : 'Sign in'}
+              {confirming
+                ? 'Confirm email'
+                : verify
+                  ? 'Check your email'
+                  : resetting
+                    ? 'New password'
+                    : forgot
+                      ? 'Reset password'
+                      : signup
+                        ? 'Create account'
+                        : 'Sign in'}
             </h1>
             <p className="mt-2 text-sm text-ink-2">
-              {signup
-                ? 'You get your own fleet. Add servers once you are in.'
-                : 'The board, groups, and runs for your fleet.'}
+              {confirming
+                ? 'This confirms the address on your account.'
+                : verify
+                  ? sent === 'confirm'
+                    ? 'We sent a confirmation link. Open it, then sign in. It works for 24 hours.'
+                    : 'This address is not confirmed yet. We can send the link again.'
+                  : resetting
+                  ? 'Choose a password of at least 10 characters.'
+                  : forgot
+                    ? 'If this address has a password account, we will email a link.'
+                    : signup
+                      ? cfg.mail
+                        ? 'We email a confirmation link. Open it, then sign in. Google skips this.'
+                        : 'You get your own fleet. Add servers once you are in.'
+                      : 'The board, groups, and runs for your fleet.'}
             </p>
             {error && (
               <ErrorBanner
@@ -96,8 +147,98 @@ function Login() {
             {signed_out && !error && (
               <Notice className="mt-4">You are signed out.</Notice>
             )}
+            {sent === 'confirm' && !error && (
+              <Notice className="mt-4">
+                Check your email for a confirmation link. It works for 24
+                hours.
+              </Notice>
+            )}
+            {sent === 'reset' && !error && (
+              <Notice className="mt-4">
+                If that address has a password account, a reset link is on its
+                way. It works for 1 hour.
+              </Notice>
+            )}
+            {confirmed && !error && (
+              <Notice className="mt-4">Email confirmed. Sign in.</Notice>
+            )}
+            {reset && !error && (
+              <Notice className="mt-4">
+                Password updated. Sign in with the new one.
+              </Notice>
+            )}
 
-            {cfg.password && (
+            {confirming && (
+              <form method="post" action="/auth/email/confirm" className="mt-6">
+                <input type="hidden" name="token" value={token} />
+                <Button type="submit" className="w-full">
+                  Confirm email
+                </Button>
+              </form>
+            )}
+
+            {resetting && (
+              <form
+                method="post"
+                action="/auth/password/reset"
+                className="mt-6 space-y-4"
+              >
+                <input type="hidden" name="token" value={token} />
+                <Field label="New password" hint="At least 10 characters.">
+                  <Input
+                    type="password"
+                    name="password"
+                    autoComplete="new-password"
+                    minLength={10}
+                    required
+                  />
+                </Field>
+                <Button type="submit" className="w-full">
+                  Save password
+                </Button>
+              </form>
+            )}
+
+            {forgot && (
+              <form
+                method="post"
+                action="/auth/password/forgot"
+                className="mt-6 space-y-4"
+              >
+                <Field label="Email">
+                  <Input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    autoCapitalize="off"
+                    required
+                  />
+                </Field>
+                <Button type="submit" className="w-full">
+                  Email reset link
+                </Button>
+              </form>
+            )}
+
+            {verify && (
+              <form method="post" action="/auth/email/resend" className="mt-6 space-y-4">
+                <Field label="Email">
+                  <Input
+                    type="email"
+                    name="email"
+                    autoComplete="email"
+                    autoCapitalize="off"
+                    required
+                    defaultValue={email}
+                  />
+                </Field>
+                <Button type="submit" className="w-full">
+                  Send the link again
+                </Button>
+              </form>
+            )}
+
+            {cfg.password && !forgot && !resetting && !confirming && !verify && (
               <form
                 method="post"
                 action={
@@ -138,7 +279,25 @@ function Login() {
               </form>
             )}
 
-            {cfg.providers.length > 0 && (
+            {cfg.mail &&
+              cfg.password &&
+              !signup &&
+              !forgot &&
+              !resetting &&
+              !confirming &&
+              !verify && (
+                <p className="mt-4 text-center text-sm">
+                  <Link
+                    to="/login"
+                    search={{ mode: 'forgot', return_to }}
+                    className="text-muted-foreground underline underline-offset-4"
+                  >
+                    Forgot password?
+                  </Link>
+                </p>
+              )}
+
+            {cfg.providers.length > 0 && !forgot && !resetting && !confirming && !verify && (
               <>
                 {cfg.password && (
                   <div className="my-5 flex items-center gap-3 font-mono text-[10px] tracking-widest text-faint uppercase">
@@ -184,7 +343,19 @@ function Login() {
               </form>
             )}
 
-            {cfg.signup && (
+            {verify && (
+              <p className="mt-5 text-center text-sm text-muted-foreground">
+                <Link
+                  to="/login"
+                  search={{ return_to }}
+                  className="text-amber underline underline-offset-4"
+                >
+                  Back to sign in
+                </Link>
+              </p>
+            )}
+
+            {cfg.signup && !verify && (
               <p className="mt-5 text-center text-sm text-muted-foreground">
                 {signup ? 'Have an account? ' : 'New here? '}
                 <Link

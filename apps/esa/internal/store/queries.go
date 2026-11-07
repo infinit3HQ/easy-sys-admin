@@ -14,12 +14,14 @@ import (
 // UpsertUser creates the user on first sign-in or refreshes email, name, and
 // last login on later ones.
 func (q *Queries) UpsertUser(ctx context.Context, issuer, subject, email, name string, now time.Time) (User, error) {
-	u := User{Issuer: issuer, Subject: subject, Email: email, Name: name, CreatedAt: now, LastLoginAt: now}
+	// Provider sign-in (Google, OIDC, dev) has already checked the address,
+	// so the row is confirmed. Password accounts do not use this path.
+	u := User{Issuer: issuer, Subject: subject, Email: email, Name: name, EmailConfirmed: true, CreatedAt: now, LastLoginAt: now}
 	err := q.with(ctx).
 		Clauses(
 			clause.OnConflict{
 				Columns:   []clause.Column{{Name: "issuer"}, {Name: "subject"}},
-				DoUpdates: clause.AssignmentColumns([]string{"email", "name", "last_login_at"}),
+				DoUpdates: clause.AssignmentColumns([]string{"email", "name", "last_login_at", "email_confirmed"}),
 			},
 			// Return the stored row so CreatedAt is the original sign-up time.
 			clause.Returning{},

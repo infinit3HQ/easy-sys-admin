@@ -54,7 +54,7 @@ Programs the helper starts get a fixed environment (`PATH`, `HOME=/root`, `LC_AL
 
 ## Enrolling a server
 
-Both paths need the admin role (and the `admin` scope for an API token). An account can have at most 500 servers.
+Both paths need the admin role (and the `admin` scope for an API token). An account can have at most 500 servers by default, or 10 when `ESA_BETA_LIMITS` is on.
 
 |                    | Path A: enroll command                                                             | Path B: one-time sudo login                                   |
 | ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------- |

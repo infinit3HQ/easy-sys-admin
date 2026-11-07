@@ -59,11 +59,17 @@ type Deps struct {
 	SSHConnectTimeout time.Duration
 	// MaxServersPerAccount caps servers per account. Zero uses 500.
 	MaxServersPerAccount int
+	// MaxOrgsPerUser caps organizations one user can own, not counting
+	// their personal space. Zero uses 20.
+	MaxOrgsPerUser int
 	// MetricsRawRetention and MetricsHourlyRetention say how long metric
 	// samples and hourly averages are kept. Zero uses 48 hours and 90 days.
 	MetricsRawRetention    time.Duration
 	MetricsHourlyRetention time.Duration
 	Logger                 *slog.Logger
+	// AuthMail sends confirmation and password-reset messages. Nil leaves
+	// those flows off.
+	AuthMail AuthMailer
 }
 
 // Service implements every fleet operation.
@@ -83,9 +89,11 @@ type Service struct {
 	pollConcurrency int
 	connectTimeout  time.Duration
 	maxServers      int
+	maxOrgs         int
 	rawRetention    time.Duration
 	hourlyRetention time.Duration
 	log             *slog.Logger
+	authMail        AuthMailer
 	now             func() time.Time
 
 	// baseCtx outlives requests; background runs use it.
@@ -112,9 +120,11 @@ func New(baseCtx context.Context, d Deps) *Service {
 	return &Service{
 		store: d.Store, db: d.Store.DB(), box: d.Box, pool: d.Pool, helpers: d.Helpers,
 		notifier: d.Notifier, publicURL: d.PublicURL, allowed: allowed, signup: d.Signup, allowPrivate: d.AllowPrivateNetworks, log: log,
+		authMail:        d.AuthMail,
 		pollConcurrency: orDefault(d.PollConcurrency, defaultPollConcurrency),
 		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
 		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
+		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),
 		hourlyRetention: orDefault(d.MetricsHourlyRetention, defaultHourlyRetention),
 		now:             func() time.Time { return time.Now().UTC() }, baseCtx: baseCtx,

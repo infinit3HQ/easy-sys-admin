@@ -1270,11 +1270,12 @@ components:
 
     AuthConfig:
       type: object
-      required: [dev, password, signup, providers]
+      required: [dev, password, signup, mail, providers]
       properties:
         dev: { type: boolean, description: 'Local-only dev login without an identity provider.' }
         password: { type: boolean, description: Email and password sign-in is on. }
         signup: { type: boolean, description: New people can create an email and password account. }
+        mail: { type: boolean, description: The install sends confirmation and password-reset email. }
         providers:
           type: array
           description: 'OpenID Connect providers. Start sign-in at /auth/login/{id}.'
@@ -1312,9 +1313,21 @@ components:
         role: { $ref: '#/components/schemas/Role' }
         personal: { type: boolean, description: "The user's own private space. It has no other members." }
 
+    AccountLimits:
+      type: object
+      description: Caps for the signed-in user. The hosted beta sets these lower; a self-hosted install keeps the defaults.
+      required: [maxServers, maxOrganizations]
+      properties:
+        maxServers:
+          type: integer
+          description: Servers one account (a personal space or an organization) can add.
+        maxOrganizations:
+          type: integer
+          description: Organizations one person can own, not counting their personal space.
+
     Me:
       type: object
-      required: [user, account, accounts, viaToken]
+      required: [user, account, accounts, viaToken, limits]
       properties:
         user: { $ref: '#/components/schemas/User' }
         account: { $ref: '#/components/schemas/AccountMembership' }
@@ -1322,6 +1335,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/AccountMembership' }
         viaToken: { type: boolean, description: True when the request used an API token. }
+        limits: { $ref: '#/components/schemas/AccountLimits' }
         scopes:
           type: array
           description: The token's scopes; absent for browser sessions.
