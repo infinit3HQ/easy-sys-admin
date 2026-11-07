@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { LegalPage } from '#/components/site-frame'
+import { LegalPage, showSelfHost } from '#/components/site-frame'
 
 export const Route = createFileRoute('/privacy')({
   head: () => ({
@@ -81,11 +81,13 @@ function Privacy() {
           Discord, Slack, a webhook, or email. Those messages can include a
           server name and a link back to the board.
         </p>
-        <p>
-          A self-hosted install never sends that data here. Whoever runs the
-          install holds the database and the master key, and is the operator of
-          that copy.
-        </p>
+        {showSelfHost && (
+          <p>
+            A self-hosted install never sends that data here. Whoever runs the
+            install holds the database and the master key, and is the operator
+            of that copy.
+          </p>
+        )}
       </section>
       <section>
         <h2>How long it stays</h2>
@@ -104,16 +106,20 @@ function Privacy() {
       <section>
         <h2>What the product is</h2>
         <p>
-          easy-sys-admin is software. You run a control plane, open a board, and
-          reach each server over SSH. Nothing from easy-sys-admin listens on
-          those servers. An agent can read the same board through MCP, using an
-          API token, and only within that token's scopes.
+          easy-sys-admin is software. You open a board and reach each server
+          over SSH.
+          {showSelfHost && ' You can also run the control plane yourself.'}{' '}
+          Nothing from easy-sys-admin listens on those servers. An agent can
+          read the same board through MCP, using an API token, and only within
+          that token's scopes.
         </p>
         <p>
           The copy on this website is a public beta. You can create an account
-          here if sign-up allows your email, or you can deploy your own install.
-          Both are the same software. It is for people who administer their own
-          Linux servers. It is not a remote shell, and the helper has no shell.
+          here if sign-up allows your email.
+          {showSelfHost &&
+            ' You can also deploy your own install. Both are the same software.'}{' '}
+          It is for people who administer their own Linux servers. It is not a
+          remote shell, and the helper has no shell.
         </p>
       </section>
       <section>
@@ -144,13 +150,14 @@ function Privacy() {
         <p>
           Behavior, limits, and the pages on this site can change between
           releases. The public beta can be unavailable while it is upgraded.
-          Treat servers you attach here as machines you can restore. Keep the
-          master key of a self-hosted install outside that host.
+          Treat servers you attach here as machines you can restore.
+          {showSelfHost &&
+            ' Keep the master key of a self-hosted install outside that host.'}
         </p>
         <p>
           There is no separate support desk during the beta. A problem with this
-          public website is for the operator of this install. A problem with a
-          copy you deployed is for you.
+          public website is for the operator of this install.
+          {showSelfHost && ' A problem with a copy you deployed is for you.'}
         </p>
       </section>
     </LegalPage>

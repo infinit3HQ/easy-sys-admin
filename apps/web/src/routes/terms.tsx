@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { LegalPage } from '#/components/site-frame'
+import { LegalPage, showSelfHost } from '#/components/site-frame'
 
 export const Route = createFileRoute('/terms')({
   head: () => ({
@@ -7,8 +7,9 @@ export const Route = createFileRoute('/terms')({
       { title: 'Terms of use · easy-sys-admin' },
       {
         name: 'description',
-        content:
-          'Terms for the easy-sys-admin public beta and for running your own install.',
+        content: showSelfHost
+          ? 'Terms for the easy-sys-admin public beta and for running your own install.'
+          : 'Terms for the easy-sys-admin public beta.',
       },
     ],
   }),
@@ -20,7 +21,11 @@ function Terms() {
     <LegalPage
       kicker="7 November 2026"
       title="Terms of use"
-      lede="easy-sys-admin is software for operating Linux servers. These terms cover the public beta on this website. A copy you run yourself is yours to operate."
+      lede={
+        showSelfHost
+          ? 'easy-sys-admin is software for operating Linux servers. These terms cover the public beta on this website. A copy you run yourself is yours to operate.'
+          : 'easy-sys-admin is software for operating Linux servers. These terms cover the public beta on this website.'
+      }
     >
       <section>
         <h2>The public beta</h2>
@@ -50,15 +55,17 @@ function Terms() {
           promise that a command cannot disrupt a server.
         </p>
       </section>
-      <section>
-        <h2>Running your own install</h2>
-        <p>
-          If you deploy easy-sys-admin yourself, you operate that install. You
-          hold the database and the master key. These terms still ask you not to
-          use the software against machines you do not administer. They do not
-          make the operator of this website responsible for your install.
-        </p>
-      </section>
+      {showSelfHost && (
+        <section>
+          <h2>Running your own install</h2>
+          <p>
+            If you deploy easy-sys-admin yourself, you operate that install. You
+            hold the database and the master key. These terms still ask you not
+            to use the software against machines you do not administer. They do
+            not make the operator of this website responsible for your install.
+          </p>
+        </section>
+      )}
       <section>
         <h2>Accounts and access</h2>
         <p>
@@ -79,8 +86,8 @@ function Terms() {
         <p>
           The beta is provided as it runs today. It can lose data, fail a run,
           or be unavailable. Do not point it at a machine you cannot restore.
-          Keep a copy of your master key somewhere other than the host. Without
-          that key, stored server logins cannot be read.
+          {showSelfHost &&
+            ' Keep a copy of your master key somewhere other than the host. Without that key, stored server logins cannot be read.'}
         </p>
       </section>
     </LegalPage>

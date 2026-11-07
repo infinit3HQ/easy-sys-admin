@@ -2,7 +2,8 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowRightIcon } from 'lucide-react'
 import { CopyBlock, StatusDot, cn } from '#/components/kit'
-import { column, SiteFrame } from '#/components/site-frame'
+import { column, showSelfHost, SiteFrame } from '#/components/site-frame'
+import { siteOrigin } from '#/lib/origin'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
 
@@ -85,7 +86,7 @@ function Hero() {
         <div className="grid items-end gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:gap-12">
           <div className="animate-rise">
             <p className="label mb-6 !text-amber">
-              Public beta · fleet control room · self-hosted
+              Public beta · fleet control room
             </p>
             <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
               One board
@@ -102,13 +103,14 @@ function Hero() {
             See every server on one page, refreshed each minute. Put servers in
             groups, set when their disks get cleaned and their packages patched,
             and stop logging in to each machine. AI agents read the same data
-            over MCP. The board on this site is the public beta. You can also
-            run your own install.
+            over MCP. The board on this site is the public beta.
           </p>
           <div className="mt-8 flex flex-wrap justify-end gap-3">
-            <Button asChild size="lg" variant="outline">
-              <a href="#install">Self-host it</a>
-            </Button>
+            {showSelfHost && (
+              <Button asChild size="lg" variant="outline">
+                <a href="#install">Self-host it</a>
+              </Button>
+            )}
             <Button asChild size="lg">
               <Link to="/app">
                 Open the board <ArrowRightIcon />
@@ -325,7 +327,7 @@ function Agents() {
   "mcpServers": {
     "esa": {
       "type": "http",
-      "url": "https://esa.example.com/mcp",
+      "url": "${siteOrigin()}/mcp",
       "headers": { "Authorization": "Bearer esa_..." }
     }
   }
@@ -361,31 +363,45 @@ function Agents() {
 }
 
 function Install() {
+  const steps = showSelfHost
+    ? ([
+        [
+          'Start',
+          'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
+        ],
+        [
+          'Add a server',
+          '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
+        ],
+        [
+          'Use the CLI',
+          'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
+        ],
+      ] as const)
+    : ([
+        [
+          'Sign in',
+          'Open the board.\nCreate an account if sign-up allows your email.',
+        ],
+        [
+          'Add a server',
+          'In the board: Add server, check the host key,\nthen paste the one-time command it gives you.',
+        ],
+        [
+          'Set a group',
+          'Put the server in a group.\nChoose when it cleans disks and installs updates.',
+        ],
+      ] as const)
   return (
     <section id="install" className="scroll-mt-14 border-t py-16 sm:py-20">
       {/* One step per row. The commands run to about 60 characters, so three
           narrow columns would hide half of each line. */}
       <div className={column}>
         <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-          Run it
+          {showSelfHost ? 'Run it' : 'Start'}
         </h2>
         <ol className="mt-10 divide-y divide-line-2 border-y border-line-2">
-          {(
-            [
-              [
-                'Start',
-                'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
-              ],
-              [
-                'Add a server',
-                '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
-              ],
-              [
-                'Use the CLI',
-                'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
-              ],
-            ] as const
-          ).map(([t, code], i) => (
+          {steps.map(([t, code], i) => (
             <li
               key={t}
               className="grid min-w-0 items-center gap-3 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8"
@@ -396,7 +412,13 @@ function Install() {
                   {t}
                 </h3>
               </div>
-              <CopyBlock className="lg:w-full" value={code} />
+              {showSelfHost ? (
+                <CopyBlock className="lg:w-full" value={code} />
+              ) : (
+                <p className="max-w-xl text-sm leading-relaxed whitespace-pre-line text-ink-2">
+                  {code}
+                </p>
+              )}
             </li>
           ))}
         </ol>

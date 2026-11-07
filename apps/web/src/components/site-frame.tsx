@@ -6,6 +6,12 @@ import { cn } from '#/lib/utils'
 /** The plotting grid stays full width. The type sits in one centered column. */
 export const column = 'mx-auto w-full max-w-7xl px-4 sm:px-6'
 
+/**
+ * The source repo is private, so the public pages do not offer a self-hosted
+ * install. Turn this on when the repo and the deploy files are public.
+ */
+export const showSelfHost = false
+
 const legal = [
   { to: '/terms', label: 'Terms' },
   { to: '/privacy', label: 'Privacy policy' },
@@ -71,7 +77,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
               </span>
             </div>
             <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-              Self-hosted control for a fleet of Linux servers.
+              One board for a fleet of Linux servers.
             </p>
           </div>
           <nav className="flex gap-6 font-mono text-xs text-ink-2">

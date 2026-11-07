@@ -6,7 +6,7 @@ import {
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
-import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   ActivityIcon,
@@ -27,7 +27,8 @@ import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { cn } from '#/components/kit'
-import { CreateOrganizationDialog } from '#/components/org'
+import { CreateOrganizationDialog, useSessionReset } from '#/components/org'
+import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -204,6 +205,45 @@ function NavLinks({
   )
 }
 
+/** The shadcn sidebar account row: avatar, name, and one line under it. */
+function AccountMark({
+  who,
+  role,
+  detail,
+}: {
+  who: string
+  role?: string
+  detail?: string
+}) {
+  return (
+    <>
+      <Avatar className="size-8 rounded-md">
+        <AvatarFallback className="rounded-md border border-line-2 bg-panel font-display text-sm font-bold text-amber uppercase">
+          {who.slice(0, 1)}
+        </AvatarFallback>
+      </Avatar>
+      <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+        <span className="truncate text-ink">{who}</span>
+        {role && (
+          <span
+            className={cn(
+              'truncate font-mono text-[10px] tracking-wider uppercase',
+              role === 'viewer' ? 'text-muted-foreground' : 'text-amber',
+            )}
+          >
+            {role}
+          </span>
+        )}
+        {detail && (
+          <span className="truncate font-mono text-[11px] text-muted-foreground">
+            {detail}
+          </span>
+        )}
+      </span>
+    </>
+  )
+}
+
 /** Account switcher and the signed-in user, with sign-out in a menu. */
 function AccountBox({
   className,
@@ -213,7 +253,7 @@ function AccountBox({
   onNavigate?: () => void
 }) {
   const { data: me } = useSuspenseQuery(q.me())
-  const qc = useQueryClient()
+  const reset = useSessionReset()
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const who = me.user.name || me.user.email
@@ -225,21 +265,18 @@ function AccountBox({
   async function switchSpace(accountId: number) {
     if (accountId === me.account.id) return
     await call(api().PUT('/me/account', { body: { accountId } }))
-    // Refetch instead of clearing. Clearing drops the cache while this
-    // screen is still mounted, so the board and the switcher keep the old space.
-    await qc.invalidateQueries()
     // A server, group, or run page belongs to the old space; go to its list instead.
     const path = router.state.location.pathname
     const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
-    if (detail) {
+    await reset(async () => {
+      if (!detail) return
       await router.navigate({
         to:
           detail[1] === 'servers'
             ? '/app'
             : `/app/${detail[1] as 'groups' | 'runs'}`,
       })
-    }
-    await router.invalidate()
+    })
     onNavigate?.()
   }
 
@@ -294,45 +331,30 @@ function AccountBox({
       />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
+          <button
             type="button"
-            variant="ghost"
-            className="h-auto w-full justify-start gap-3 px-2 py-2 font-normal whitespace-normal"
+            className="flex h-12 w-full items-center gap-2 overflow-hidden rounded-md border border-transparent px-2.5 py-2 text-left text-sm outline-none hover:bg-panel-2 focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-panel-2"
           >
-            <span className="grid size-8 shrink-0 place-items-center rounded-md border border-line-2 bg-panel font-display text-sm font-bold text-amber uppercase">
-              {who.slice(0, 1)}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-ink">{who}</span>
-              <span
-                className={cn(
-                  'block truncate font-mono text-[10px] tracking-wider uppercase',
-                  me.account.role === 'viewer'
-                    ? 'text-muted-foreground'
-                    : 'text-amber',
-                )}
-              >
-                {me.account.role}
-              </span>
-            </span>
+            <AccountMark who={who} role={me.account.role} />
             <ChevronsUpDownIcon
-              className="size-4 shrink-0 text-muted-foreground"
+              className="ml-auto size-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
-          </Button>
+          </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          side="top"
-          align="start"
+          side="right"
+          align="end"
+          sideOffset={4}
           className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
         >
-          <DropdownMenuLabel className="font-normal">
-            <span className="block truncate text-sm text-ink">{who}</span>
-            {me.user.name && (
-              <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                {me.user.email}
-              </span>
-            )}
+          <DropdownMenuLabel className="p-0 font-normal">
+            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+              <AccountMark
+                who={who}
+                detail={me.user.name ? me.user.email : undefined}
+              />
+            </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>

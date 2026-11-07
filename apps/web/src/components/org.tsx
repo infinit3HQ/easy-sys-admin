@@ -28,14 +28,17 @@ export const roleText: Record<Role, string> = {
 }
 
 /**
- * Starts over after the session moved to another account: every cached
- * query belongs to the old one. `go` navigates first, so the page being left
- * is not reloaded against the new account.
+ * Starts over after the session moved to another account. Query keys do not
+ * include the account, so every cached row belongs to the old one. In-flight
+ * reads are cancelled first, or a late response can refill the cache after
+ * it is cleared. `go` runs before the router reloads, so the page being left
+ * is not fetched again under the new account.
  */
 export function useSessionReset() {
   const qc = useQueryClient()
   const router = useRouter()
   return async (go: () => Promise<void>) => {
+    await qc.cancelQueries()
     qc.clear()
     await go()
     await router.invalidate()
