@@ -683,6 +683,7 @@ export function ConfirmDialog({
   onClose: () => void
 }) {
   const [typed, setTyped] = useState('')
+  const confirmId = useId()
   useEffect(() => {
     if (open) setTyped('')
   }, [open])
@@ -698,13 +699,23 @@ export function ConfirmDialog({
           className="grid gap-4"
         >
           <DialogHeader>
-            <DialogTitle className="break-words">{title}</DialogTitle>
+            <DialogTitle className="font-sans text-lg leading-snug font-semibold tracking-normal break-words normal-case">
+              {title}
+            </DialogTitle>
             <DialogDescription className="text-ink-2">{body}</DialogDescription>
           </DialogHeader>
           {confirmWord && (
-            <Field label={`Type ${confirmWord} to confirm`}>
+            <div className="grid gap-1.5">
+              <label htmlFor={confirmId} className="text-sm text-ink-2">
+                Type{' '}
+                <span className="font-mono text-sm tracking-normal text-ink normal-case">
+                  {confirmWord}
+                </span>{' '}
+                to confirm
+              </label>
               <Input
-                className="font-mono"
+                id={confirmId}
+                className="border-input font-mono text-ink focus-visible:border-line-2 focus-visible:ring-line-2/60"
                 autoFocus
                 autoComplete="off"
                 autoCapitalize="off"
@@ -712,7 +723,7 @@ export function ConfirmDialog({
                 onChange={(e) => setTyped(e.target.value)}
                 spellCheck={false}
               />
-            </Field>
+            </div>
           )}
           <ErrorBanner error={error} />
           <DialogFooter className="pt-2">

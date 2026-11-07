@@ -2,7 +2,8 @@ import { Link } from '@tanstack/react-router'
 import type { Run } from '@esa/api'
 import { bytes } from '#/lib/format'
 import { Ago } from '#/components/time'
-import { Empty, RunStatus } from '#/components/kit'
+import { Empty, RunStatus, cn } from '#/components/kit'
+import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Card } from '#/components/ui/card'
 import {
   Table,
@@ -100,12 +101,17 @@ export function RunsTable({
           </TableHeader>
           <TableBody>
             {runs.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow
+                key={r.id}
+                className={cn('group', clickableRowClass)}
+                onClick={followRowLink}
+                onAuxClick={followRowLink}
+              >
                 <TableCell className="pl-4">
                   <Link
                     to="/app/runs/$runId"
                     params={{ runId: r.id }}
-                    className="font-mono text-xs text-amber hover:underline"
+                    className="font-mono text-xs text-amber group-hover:underline"
                   >
                     #{r.id}
                   </Link>

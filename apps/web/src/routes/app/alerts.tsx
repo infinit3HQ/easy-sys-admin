@@ -1,12 +1,30 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { useState } from 'react'
 import { PlusIcon, SendIcon, Trash2Icon, XIcon } from 'lucide-react'
 import type { AlertRule, ChannelConfig, ChannelKind } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago, When } from '#/components/time'
-import { Choice, Empty, ErrorBanner, Field, Notice, NumberInput, PageHeader, Panel, Severity, Toggle, cn } from '#/components/kit'
+import {
+  Choice,
+  Empty,
+  ErrorBanner,
+  Field,
+  Notice,
+  NumberInput,
+  PageHeader,
+  Panel,
+  Severity,
+  Toggle,
+  cn,
+} from '#/components/kit'
+import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
@@ -31,24 +49,41 @@ function Alerts() {
           <Toggle checked={all} onChange={setAll} label="Include resolved" />
         </PageHeader>
         {items.length === 0 ? (
-          <Empty title={all ? 'No alerts recorded' : 'Nothing is wrong'}>Rules and channels are below.</Empty>
+          <Empty title={all ? 'No alerts recorded' : 'Nothing is wrong'}>
+            Rules and channels are below.
+          </Empty>
         ) : (
           <Card>
             <ul className="divide-y divide-line">
               {items.map((a) => (
-                <li key={a.id} className={cn('flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4', a.resolvedAt && 'opacity-50')}>
+                <li
+                  key={a.id}
+                  className={cn(
+                    'flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4',
+                    a.resolvedAt && 'opacity-50',
+                    a.serverId && clickableRowClass,
+                  )}
+                  onClick={a.serverId ? followRowLink : undefined}
+                  onAuxClick={a.serverId ? followRowLink : undefined}
+                >
                   <div className="flex min-w-0 flex-1 items-start gap-3">
                     <span className="mt-0.5 shrink-0">
                       <Severity severity={a.severity} />
                     </span>
                     <div className="min-w-0">
-                      <div className="text-sm break-words text-ink">{a.message}</div>
+                      <div className="text-sm break-words text-ink">
+                        {a.message}
+                      </div>
                       <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
                         {a.kind}
                         {a.serverId && (
                           <>
                             {' · '}
-                            <Link to="/app/servers/$serverId" params={{ serverId: a.serverId }} className="hover:text-amber">
+                            <Link
+                              to="/app/servers/$serverId"
+                              params={{ serverId: a.serverId }}
+                              className="hover:text-amber"
+                            >
                               {a.serverName}
                             </Link>
                           </>
@@ -118,7 +153,10 @@ function RuleRow({ rule }: { rule: AlertRule }) {
   const qc = useQueryClient()
   const { canAct } = useRole()
   const [r, setR] = useState(rule)
-  const dirty = r.enabled !== rule.enabled || r.threshold !== rule.threshold || r.forMinutes !== rule.forMinutes
+  const dirty =
+    r.enabled !== rule.enabled ||
+    r.threshold !== rule.threshold ||
+    r.forMinutes !== rule.forMinutes
   const save = useMutation({
     mutationFn: () =>
       call(
@@ -136,7 +174,13 @@ function RuleRow({ rule }: { rule: AlertRule }) {
   const t = ruleText[r.kind]
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-      <Toggle className="min-w-0 flex-1 basis-56 py-0" checked={r.enabled} disabled={!canAct} onChange={(enabled) => setR({ ...r, enabled })} label={t.title} />
+      <Toggle
+        className="min-w-0 flex-1 basis-56 py-0"
+        checked={r.enabled}
+        disabled={!canAct}
+        onChange={(enabled) => setR({ ...r, enabled })}
+        label={t.title}
+      />
       <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
         {t.unit && (
           <>
@@ -273,16 +317,27 @@ function Channels() {
   return (
     <Panel title="Notification channels">
       <div className="space-y-2">
-        {list.length === 0 && <p className="text-sm text-muted-foreground">No channels. Alerts show here only.</p>}
+        {list.length === 0 && (
+          <p className="text-sm text-muted-foreground">
+            No channels. Alerts show here only.
+          </p>
+        )}
         {list.map((c) => (
           <div key={c.id} className="rounded-md border bg-bg-2/60 px-3 py-2.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <Badge variant="amber">{c.kind}</Badge>
               <span className="text-sm text-ink">{c.name}</span>
-              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">{c.target}</span>
+              <span className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
+                {c.target}
+              </span>
               <span className="ml-auto flex items-center gap-1">
                 {canAct && (
-                  <Button size="xs" variant="ghost" onClick={() => test.mutate(c.id)} busy={test.isPending && test.variables === c.id}>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => test.mutate(c.id)}
+                    busy={test.isPending && test.variables === c.id}
+                  >
                     <SendIcon /> test
                   </Button>
                 )}
@@ -310,7 +365,16 @@ function Channels() {
                 )}
               </div>
             )}
-            {tested[c.id] && <div className={cn('mt-1 font-mono text-[11px]', tested[c.id] === 'sent' ? 'text-ok' : 'text-fail')}>{tested[c.id]}</div>}
+            {tested[c.id] && (
+              <div
+                className={cn(
+                  'mt-1 font-mono text-[11px]',
+                  tested[c.id] === 'sent' ? 'text-ok' : 'text-fail',
+                )}
+              >
+                {tested[c.id]}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -331,11 +395,18 @@ function Channels() {
                   setKind(v as ChannelKind)
                   setCfg({})
                 }}
-                options={(Object.keys(kindFields) as Array<ChannelKind>).map((k) => ({ value: k, label: k }))}
+                options={(Object.keys(kindFields) as Array<ChannelKind>).map(
+                  (k) => ({ value: k, label: k }),
+                )}
               />
             </Field>
             <Field label="Name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="phone" required />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="phone"
+                required
+              />
             </Field>
             {kindFields[kind].map((f) => (
               <Field key={f.key} label={f.label}>
@@ -353,12 +424,18 @@ function Channels() {
             ))}
           </div>
           <ErrorBanner error={create.error} />
-          <Button type="submit" busy={create.isPending} className="w-full sm:w-auto">
+          <Button
+            type="submit"
+            busy={create.isPending}
+            className="w-full sm:w-auto"
+          >
             <PlusIcon /> Add channel
           </Button>
         </form>
       ) : (
-        <p className="text-xs text-muted-foreground">Only account owners can add channels, because they hold credentials.</p>
+        <p className="text-xs text-muted-foreground">
+          Only account owners can add channels, because they hold credentials.
+        </p>
       )}
     </Panel>
   )
@@ -370,41 +447,69 @@ function Certs() {
   const certs = useQuery(q.certs())
   const [host, setHost] = useState('')
   const add = useMutation({
-    mutationFn: () => call(api().POST('/certs', { body: { hostname: host, port: 443 } })),
+    mutationFn: () =>
+      call(api().POST('/certs', { body: { hostname: host, port: 443 } })),
     onSuccess: () => {
       setHost('')
       return qc.invalidateQueries({ queryKey: ['certs'] })
     },
   })
   const del = useMutation({
-    mutationFn: (id: number) => call(api().DELETE('/certs/{certId}', { params: { path: { certId: id } } })),
+    mutationFn: (id: number) =>
+      call(
+        api().DELETE('/certs/{certId}', { params: { path: { certId: id } } }),
+      ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['certs'] }),
   })
   const list = certs.data?.items ?? []
   return (
     <Panel title="TLS certificates">
       {list.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Add the hostnames your servers serve. esa checks them twice a day.</p>
+        <p className="text-sm text-muted-foreground">
+          Add the hostnames your servers serve. esa checks them twice a day.
+        </p>
       ) : (
         <ul className="divide-y divide-line/60">
           {list.map((c) => (
-            <li key={c.id} className="flex items-start gap-3 py-2 font-mono text-xs first:pt-0 last:pb-0">
+            <li
+              key={c.id}
+              className="flex items-start gap-3 py-2 font-mono text-xs first:pt-0 last:pb-0"
+            >
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="min-w-0 truncate text-ink">
                     {c.hostname}
                     {c.port !== 443 && `:${c.port}`}
                   </span>
-                  {!c.lastError && <span className={cn('shrink-0', (c.daysLeft ?? 99) <= 14 ? 'text-warn' : 'text-ok')}>{c.daysLeft} days</span>}
+                  {!c.lastError && (
+                    <span
+                      className={cn(
+                        'shrink-0',
+                        (c.daysLeft ?? 99) <= 14 ? 'text-warn' : 'text-ok',
+                      )}
+                    >
+                      {c.daysLeft} days
+                    </span>
+                  )}
                 </div>
                 {c.lastError ? (
-                  <div className="mt-0.5 text-[11px] break-words text-fail">{c.lastError}</div>
+                  <div className="mt-0.5 text-[11px] break-words text-fail">
+                    {c.lastError}
+                  </div>
                 ) : (
-                  <div className="truncate text-[10px] text-faint">{c.issuer}</div>
+                  <div className="truncate text-[10px] text-faint">
+                    {c.issuer}
+                  </div>
                 )}
               </div>
               {canAct && (
-                <Button size="icon-xs" variant="ghost" className="-mt-1 hover:text-fail" onClick={() => del.mutate(c.id)} aria-label={`Stop checking ${c.hostname}`}>
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="-mt-1 hover:text-fail"
+                  onClick={() => del.mutate(c.id)}
+                  aria-label={`Stop checking ${c.hostname}`}
+                >
                   <XIcon />
                 </Button>
               )}
@@ -430,7 +535,12 @@ function Certs() {
             onChange={(e) => setHost(e.target.value)}
             placeholder="app.example.com"
           />
-          <Button type="submit" variant="outline" busy={add.isPending} disabled={!host}>
+          <Button
+            type="submit"
+            variant="outline"
+            busy={add.isPending}
+            disabled={!host}
+          >
             Add
           </Button>
         </form>
