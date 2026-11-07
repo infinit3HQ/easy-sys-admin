@@ -1,18 +1,29 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { LegalPage, showSelfHost } from '#/components/site-frame'
+import { siteOrigin } from '#/lib/origin'
+import { loadSeo } from '#/lib/seo'
 
 export const Route = createFileRoute('/terms')({
-  head: () => ({
-    meta: [
-      { title: 'Terms of use · easy-sys-admin' },
-      {
-        name: 'description',
-        content: showSelfHost
-          ? 'Terms for the easy-sys-admin public beta and for running your own install.'
-          : 'Terms for the easy-sys-admin public beta.',
-      },
-    ],
-  }),
+  loader: () => loadSeo(),
+  head: ({ loaderData }) => {
+    const origin = siteOrigin()
+    const seo = loaderData === true
+    const description = showSelfHost
+      ? 'Terms for the easy-sys-admin public beta and for running your own install.'
+      : 'Terms for the easy-sys-admin public beta.'
+    return {
+      meta: [
+        { title: 'Terms of use · easy-sys-admin' },
+        { name: 'description', content: description },
+        {
+          name: 'robots',
+          content: seo ? 'index, follow' : 'noindex, nofollow',
+        },
+      ],
+      links:
+        seo && origin ? [{ rel: 'canonical', href: `${origin}/terms` }] : [],
+    }
+  },
   component: Terms,
 })
 

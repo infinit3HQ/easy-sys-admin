@@ -21,6 +21,12 @@ These must be set for the compose deployment. Compose stops with `set <NAME>` wh
 | `ESA_MASTER_KEY`    | none                                                             | Secret. 32 random bytes, base64 encoded (`openssl rand -base64 32`). Encrypts stored server logins and notification channel credentials. To rotate, list several keys separated by commas: the first one seals new secrets and all of them open existing ones. Nothing re-encrypts old secrets, so keep an old key in the list while secrets sealed with it remain. Back it up: without it, stored secrets cannot be read. |
 | `POSTGRES_PASSWORD` | none                                                             | Secret. Password of the bundled PostgreSQL user `esa`. Compose puts it into the control plane's database URL, so use a value with no URL special characters, such as `openssl rand -hex 24`. PostgreSQL applies it only when the data volume is first created. Changing it later needs `ALTER USER` inside the database as well.                                                                                           |
 
+## Search engines
+
+| Variable | Default | Meaning |
+| -------- | ------- | ------- |
+| `ESA_SEO` | `false` | Lets search engines index the landing page, the privacy policy, and the terms. `robots.txt` allows those paths and points at `/sitemap.xml`. The board, sign-in, invites, and API stay out of the index. Leave it false on a self-hosted install. Set it on the web container. The control plane ignores it. |
+
 ## Sign-in
 
 At least one sign-in method must be on. The control plane refuses to start when password sign-in is off and no OIDC or Google client is set.
@@ -61,7 +67,7 @@ Sends are limited to 3 an hour for one address and 10 an hour for one client. Op
 
 ## Polling, limits, and metrics
 
-Compose passes `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, and both retention settings, empty when unset, which keeps the default. `ESA_SSH_CONNECT_TIMEOUT` and `ESA_METRICS` are not in compose, so a compose deployment uses their defaults.
+Compose passes `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, and both retention settings, empty when unset, which keeps the default. `ESA_SSH_CONNECT_TIMEOUT` and `ESA_METRICS` are not in compose, so a compose deployment uses their defaults. The web service also receives `ESA_SEO`, default false.
 
 | Variable                       | Default           | Meaning                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -88,7 +94,7 @@ These are read by `deploy/compose.yaml` and the deploy workflow, not by the appl
 | `ESA_COMMIT`            | `none`       | Commit compiled into the control plane and helpers. The deploy workflow sets it to the full commit hash.                                                           |
 | `DEPLOY_ENABLED`        | unset        | GitHub repository variable, not an env file entry. Pushes to `main` deploy after CI passes only when it is `true`. Manual "Run workflow" deploys work without it.  |
 
-The deploy workflow also reads `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, and the Traefik settings above from repository variables. `ESA_SMTP_PASSWORD` is a production secret. It reads the secrets from the `production` environment. It always writes `ESA_PUBLIC_URL` as `https://$ESA_HOST`, so you cannot override that through a variable. Values cannot contain a single quote or a line break. See [deployment.md](deployment.md).
+The deploy workflow also reads `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_SEO`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, and the Traefik settings above from repository variables. `ESA_SMTP_PASSWORD` is a production secret. It reads the secrets from the `production` environment. It always writes `ESA_PUBLIC_URL` as `https://$ESA_HOST`, so you cannot override that through a variable. Values cannot contain a single quote or a line break. See [deployment.md](deployment.md).
 
 ## Control plane outside compose
 

@@ -58,6 +58,9 @@ export const Route = createFileRoute('/app')({
       throw e
     }
   },
+  head: () => ({
+    meta: [{ name: 'robots', content: 'noindex, nofollow' }],
+  }),
   component: AppShell,
 })
 

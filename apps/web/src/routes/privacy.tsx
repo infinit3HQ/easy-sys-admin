@@ -1,17 +1,32 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { LegalPage, showSelfHost } from '#/components/site-frame'
+import { siteOrigin } from '#/lib/origin'
+import { loadSeo } from '#/lib/seo'
 
 export const Route = createFileRoute('/privacy')({
-  head: () => ({
-    meta: [
-      { title: 'Privacy policy · easy-sys-admin' },
-      {
-        name: 'description',
-        content:
-          'Privacy and product policy for the easy-sys-admin public beta.',
-      },
-    ],
-  }),
+  loader: () => loadSeo(),
+  head: ({ loaderData }) => {
+    const origin = siteOrigin()
+    const seo = loaderData === true
+    return {
+      meta: [
+        { title: 'Privacy policy · easy-sys-admin' },
+        {
+          name: 'description',
+          content:
+            'Privacy and product policy for the easy-sys-admin public beta.',
+        },
+        {
+          name: 'robots',
+          content: seo ? 'index, follow' : 'noindex, nofollow',
+        },
+      ],
+      links:
+        seo && origin
+          ? [{ rel: 'canonical', href: `${origin}/privacy` }]
+          : [],
+    }
+  },
   component: Privacy,
 })
 

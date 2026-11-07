@@ -3,6 +3,7 @@ import {
   createMiddleware,
   createStart,
 } from '@tanstack/react-start'
+import { indexablePath, seoEnabled } from '#/lib/seo'
 
 // Paths answered by the control plane through the proxy. It sets its own
 // security headers on those responses.
@@ -41,6 +42,11 @@ const securityHeaders = createMiddleware().server(
     h.set('x-frame-options', 'DENY')
     h.set('x-content-type-options', 'nosniff')
     h.set('referrer-policy', 'same-origin')
+    // Self-hosted installs stay out of search engines unless ESA_SEO is on.
+    // When it is on, only the landing page, privacy policy, and terms are indexed.
+    if (!seoEnabled() || !indexablePath(pathname)) {
+      h.set('x-robots-tag', 'noindex, nofollow')
+    }
     const proto = (
       request.headers.get('x-forwarded-proto') ?? new URL(request.url).protocol
     )

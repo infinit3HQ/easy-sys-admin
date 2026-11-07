@@ -10,6 +10,7 @@ import {
   SiteFrame,
 } from '#/components/site-frame'
 import { siteOrigin } from '#/lib/origin'
+import { seoEnabled } from '#/lib/seo'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
 
@@ -34,7 +35,7 @@ const loadPublicPolicy = createServerFn({ method: 'GET' }).handler(
       // The control plane is the source of truth when it answers. An allow
       // list there turns ESA_SIGNUP off, which this env value cannot see.
     }
-    return { betaLimits, signup }
+    return { betaLimits, signup, seo: seoEnabled() }
   },
 )
 
@@ -44,19 +45,28 @@ const purpose =
 export const Route = createFileRoute('/')({
   ssr: true,
   loader: () => loadPublicPolicy(),
-  head: () => {
+  head: ({ loaderData }) => {
     const origin = siteOrigin()
+    const seo = loaderData?.seo === true
     return {
       meta: [
         { title: `${productName}: one board for your Linux servers` },
         { name: 'description', content: purpose },
-        { name: 'robots', content: 'index, follow' },
-        { property: 'og:title', content: productName },
-        { property: 'og:description', content: purpose },
-        { property: 'og:type', content: 'website' },
-        { property: 'og:url', content: origin ? `${origin}/` : '/' },
+        {
+          name: 'robots',
+          content: seo ? 'index, follow' : 'noindex, nofollow',
+        },
+        ...(seo
+          ? [
+              { property: 'og:title', content: productName },
+              { property: 'og:description', content: purpose },
+              { property: 'og:type', content: 'website' },
+              { property: 'og:url', content: origin ? `${origin}/` : '/' },
+            ]
+          : []),
       ],
-      links: [{ rel: 'canonical', href: origin ? `${origin}/` : '/' }],
+      links:
+        seo && origin ? [{ rel: 'canonical', href: `${origin}/` }] : [],
     }
   },
   component: Landing,

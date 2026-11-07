@@ -89,6 +89,7 @@ services:
       # Same switches as the control plane, so the public page states the caps and sign-up that are in force.
       ESA_BETA_LIMITS: ${ESA_BETA_LIMITS:-}
       ESA_SIGNUP: ${ESA_SIGNUP:-false}
+      ESA_SEO: ${ESA_SEO:-false}
     networks: [internal, proxy]
     labels:
       - traefik.enable=true

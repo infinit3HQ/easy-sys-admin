@@ -54,7 +54,12 @@ export const Route = createFileRoute('/login')({
     reset: z.coerce.string().optional(),
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(q.authConfig()),
-  head: () => ({ meta: [{ title: 'Sign in · easy-sys-admin' }] }),
+  head: () => ({
+    meta: [
+      { title: 'Sign in · easy-sys-admin' },
+      { name: 'robots', content: 'noindex, nofollow' },
+    ],
+  }),
   component: Login,
 })
 
