@@ -11,6 +11,8 @@ import { useState } from 'react'
 import {
   ActivityIcon,
   BellIcon,
+  CheckIcon,
+  ChevronDownIcon,
   ChevronsUpDownIcon,
   HistoryIcon,
   LayersIcon,
@@ -24,7 +26,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
-import { Choice, cn } from '#/components/kit'
+import { cn } from '#/components/kit'
 import { CreateOrganizationDialog } from '#/components/org'
 import { Button } from '#/components/ui/button'
 import {
@@ -202,9 +204,6 @@ function NavLinks({
   )
 }
 
-// The switcher's last item opens the create-organization dialog instead of switching.
-const NEW_ORG = 'new-org'
-
 /** Account switcher and the signed-in user, with sign-out in a menu. */
 function AccountBox({
   className,
@@ -223,51 +222,71 @@ function AccountBox({
     ...me.accounts.filter((a) => a.personal),
     ...me.accounts.filter((a) => !a.personal),
   ]
+  async function switchSpace(accountId: number) {
+    if (accountId === me.account.id) return
+    await call(api().PUT('/me/account', { body: { accountId } }))
+    // Refetch instead of clearing. Clearing drops the cache while this
+    // screen is still mounted, so the board and the switcher keep the old space.
+    await qc.invalidateQueries()
+    // A server, group, or run page belongs to the old space; go to its list instead.
+    const path = router.state.location.pathname
+    const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
+    if (detail) {
+      await router.navigate({
+        to:
+          detail[1] === 'servers'
+            ? '/app'
+            : `/app/${detail[1] as 'groups' | 'runs'}`,
+      })
+    }
+    await router.invalidate()
+    onNavigate?.()
+  }
 
   return (
     <div className={cn('space-y-2', className)}>
-      <Choice
-        aria-label="Space"
-        size="sm"
-        className="font-mono text-xs"
-        value={String(me.account.id)}
-        options={[
-          ...spaces.map((a) => ({
-            value: String(a.id),
-            label: a.personal ? 'Personal' : a.name,
-          })),
-          {
-            value: NEW_ORG,
-            label: (
-              <span className="flex items-center gap-2 text-amber">
-                <PlusIcon className="text-amber" /> Create organization
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Space"
+            className="w-full justify-between font-mono font-normal text-ink"
+          >
+            <span className="min-w-0 truncate">
+              {me.account.personal ? 'Personal' : me.account.name}
+            </span>
+            <ChevronDownIcon className="opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          className="w-(--radix-dropdown-menu-trigger-width)"
+        >
+          {spaces.map((a) => (
+            <DropdownMenuItem
+              key={a.id}
+              onSelect={() => {
+                void switchSpace(a.id)
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {a.personal ? 'Personal' : a.name}
               </span>
-            ),
-          },
-        ]}
-        onChange={async (v) => {
-          if (v === NEW_ORG) {
-            setCreating(true)
-            return
-          }
-          await call(
-            api().PUT('/me/account', { body: { accountId: Number(v) } }),
-          )
-          qc.clear()
-          // A server, group, or run page belongs to the old space; go to its list instead.
-          const path = router.state.location.pathname
-          const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
-          if (detail) {
-            await router.navigate({
-              to:
-                detail[1] === 'servers'
-                  ? '/app'
-                  : `/app/${detail[1] as 'groups' | 'runs'}`,
-            })
-          }
-          await router.invalidate()
-        }}
-      />
+              {a.id === me.account.id && <CheckIcon className="text-ink" />}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => setCreating(true)}
+            className="text-amber focus:text-amber"
+          >
+            <PlusIcon className="text-amber" /> Create organization
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <CreateOrganizationDialog
         open={creating}
         onClose={() => setCreating(false)}
@@ -275,9 +294,10 @@ function AccountBox({
       />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors outline-none hover:bg-panel-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            variant="ghost"
+            className="h-auto w-full justify-start gap-3 px-2 py-2 font-normal whitespace-normal"
           >
             <span className="grid size-8 shrink-0 place-items-center rounded-md border border-line-2 bg-panel font-display text-sm font-bold text-amber uppercase">
               {who.slice(0, 1)}
@@ -299,7 +319,7 @@ function AccountBox({
               className="size-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
-          </button>
+          </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           side="top"
@@ -320,10 +340,14 @@ function AccountBox({
               <SettingsIcon /> Settings
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild variant="destructive">
-            <button type="submit" form="logout-form" className="w-full">
-              <LogOutIcon /> Sign out
-            </button>
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => {
+              const form = document.getElementById('logout-form')
+              if (form instanceof HTMLFormElement) form.requestSubmit()
+            }}
+          >
+            <LogOutIcon /> Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

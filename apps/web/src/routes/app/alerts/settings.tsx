@@ -10,114 +10,51 @@ import { PlusIcon, SendIcon, Trash2Icon, XIcon } from 'lucide-react'
 import type { AlertRule, ChannelConfig, ChannelKind } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
-import { Ago, When } from '#/components/time'
+import { When } from '#/components/time'
 import {
   Choice,
-  Empty,
   ErrorBanner,
   Field,
   Notice,
   NumberInput,
   PageHeader,
   Panel,
-  Severity,
   Toggle,
   cn,
 } from '#/components/kit'
-import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
-import { Card } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { Separator } from '#/components/ui/separator'
-import { useRole } from './route'
+import { useRole } from '../route'
 
-export const Route = createFileRoute('/app/alerts')({
-  loader: ({ context }) => context.queryClient.ensureQueryData(q.alerts(false)),
-  head: () => ({ meta: [{ title: 'Alerts · easy-sys-admin' }] }),
-  component: Alerts,
+export const Route = createFileRoute('/app/alerts/settings')({
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(q.alertRules()),
+      context.queryClient.ensureQueryData(q.channels()),
+      context.queryClient.ensureQueryData(q.certs()),
+    ]),
+  head: () => ({ meta: [{ title: 'Alert settings · easy-sys-admin' }] }),
+  component: AlertSettings,
 })
 
-function Alerts() {
-  const [all, setAll] = useState(false)
-  const alerts = useQuery(q.alerts(all))
-  const items = alerts.data?.items ?? []
+function AlertSettings() {
   return (
-    <div className="space-y-8">
-      <div>
-        <PageHeader kicker="Signals" title="Alerts">
-          <Toggle checked={all} onChange={setAll} label="Include resolved" />
-        </PageHeader>
-        {items.length === 0 ? (
-          <Empty title={all ? 'No alerts recorded' : 'Nothing is wrong'}>
-            Rules and channels are below.
-          </Empty>
-        ) : (
-          <Card>
-            <ul className="divide-y divide-line">
-              {items.map((a) => (
-                <li
-                  key={a.id}
-                  className={cn(
-                    'flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4',
-                    a.resolvedAt && 'opacity-50',
-                    a.serverId && clickableRowClass,
-                  )}
-                  onClick={a.serverId ? followRowLink : undefined}
-                  onAuxClick={a.serverId ? followRowLink : undefined}
-                >
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <span className="mt-0.5 shrink-0">
-                      <Severity severity={a.severity} />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="text-sm break-words text-ink">
-                        {a.message}
-                      </div>
-                      <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
-                        {a.kind}
-                        {a.serverId && (
-                          <>
-                            {' · '}
-                            <Link
-                              to="/app/servers/$serverId"
-                              params={{ serverId: a.serverId }}
-                              className="hover:text-amber"
-                            >
-                              {a.serverName}
-                            </Link>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="font-mono text-[11px] text-muted-foreground sm:shrink-0 sm:text-right">
-                    {a.resolvedAt ? (
-                      <>
-                        resolved <Ago iso={a.resolvedAt} />
-                      </>
-                    ) : a.firedAt ? (
-                      <>
-                        firing since <Ago iso={a.firedAt} />
-                      </>
-                    ) : (
-                      <>
-                        pending since <Ago iso={a.pendingSince} />
-                      </>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        )}
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        kicker="Alerts"
+        title="Settings"
+        description="When something counts as an alert, where it is sent, and which certificates to watch."
+      >
+        <Button asChild variant="outline" size="sm">
+          <Link to="/app/alerts">Back to alerts</Link>
+        </Button>
+      </PageHeader>
+      <Rules />
       <div className="grid gap-6 xl:grid-cols-2">
-        <Rules />
-        <div className="min-w-0 space-y-6">
-          <Channels />
-          <Certs />
-        </div>
+        <Channels />
+        <Certs />
       </div>
     </div>
   )
@@ -319,7 +256,7 @@ function Channels() {
       <div className="space-y-2">
         {list.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No channels. Alerts show here only.
+            No channels. Alerts stay on the alerts page.
           </p>
         )}
         {list.map((c) => (

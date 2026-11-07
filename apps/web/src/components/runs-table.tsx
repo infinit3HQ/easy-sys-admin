@@ -31,8 +31,7 @@ function Result({ r }: { r: Run }) {
 
 /**
  * Runs as a table when there is room and as a list of cards when there is
- * not. It measures its container, not the screen, because it also sits in
- * the narrower left column of the group page.
+ * not. It measures its container, not the screen.
  */
 export function RunsTable({
   runs,

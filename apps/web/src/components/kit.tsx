@@ -706,13 +706,13 @@ export function ConfirmDialog({
           </DialogHeader>
           {confirmWord && (
             <div className="grid gap-1.5">
-              <label htmlFor={confirmId} className="text-sm text-ink-2">
+              <Label htmlFor={confirmId} className="font-normal text-ink-2">
                 Type{' '}
                 <span className="font-mono text-sm tracking-normal text-ink normal-case">
                   {confirmWord}
                 </span>{' '}
                 to confirm
-              </label>
+              </Label>
               <Input
                 id={confirmId}
                 className="border-input font-mono text-ink focus-visible:border-line-2 focus-visible:ring-line-2/60"
@@ -758,11 +758,11 @@ export function CopyBlock({
     // The button sits in its own column so it can never cover the code.
     <div
       className={cn(
-        'flex min-w-0 items-start rounded-md border border-line-2 bg-bg-2',
+        'flex w-full max-w-full min-w-0 items-start rounded-md border border-line-2 bg-bg-2 lg:w-fit',
         className,
       )}
     >
-      <pre className="min-w-0 flex-1 overflow-x-auto p-3 font-mono text-xs leading-relaxed text-amber-2">
+      <pre className="min-w-0 flex-1 p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-amber-2">
         {value}
       </pre>
       <Button

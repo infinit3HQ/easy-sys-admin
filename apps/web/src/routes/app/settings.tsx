@@ -55,6 +55,7 @@ function Settings() {
           <Sessions />
           <Panel title="CLI">
             <CopyBlock
+              className="lg:w-full"
               value={`esa login ${origin} --token esa_…\nesa status\nesa servers show <name>\nesa runs start measure --group <group>`}
             />
           </Panel>

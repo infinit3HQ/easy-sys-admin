@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowRightIcon } from 'lucide-react'
 import { CopyBlock, StatusDot, cn } from '#/components/kit'
+import { column, SiteFrame } from '#/components/site-frame'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
 
@@ -67,88 +68,55 @@ const demo: Array<{
 
 function Landing() {
   return (
-    <div className="min-h-dvh overflow-x-hidden">
-      <Nav />
+    <SiteFrame>
       <Hero />
       <Watches />
       <Touch />
       <Agents />
       <Install />
-      <footer className="border-t px-4 py-10 font-mono text-[11px] text-muted-foreground sm:px-6 md:px-12">
-        easy-sys-admin · self-hosted · Go control plane, TanStack Start board,
-        MCP for agents
-      </footer>
-    </div>
-  )
-}
-
-function Nav() {
-  return (
-    <header className="sticky top-0 z-40 flex h-14 items-center justify-between gap-4 border-b bg-bg/80 px-4 backdrop-blur-md sm:px-6 md:px-12">
-      <Link to="/" className="flex items-center gap-2.5">
-        <img src="/favicon.svg" alt="" className="size-6" />
-        <span className="font-display text-lg font-bold tracking-wide uppercase sm:text-xl">
-          easy-sys-admin
-        </span>
-      </Link>
-      <nav className="flex items-center gap-6 font-mono text-xs text-ink-2">
-        <a href="#watch" className="hidden hover:text-ink sm:inline">
-          Watches
-        </a>
-        <a href="#safety" className="hidden hover:text-ink sm:inline">
-          Safety
-        </a>
-        <a href="#agents" className="hidden hover:text-ink sm:inline">
-          MCP
-        </a>
-        <Button
-          asChild
-          size="sm"
-          variant="outline"
-          className="border-amber text-amber hover:bg-amber hover:text-bg"
-        >
-          <Link to="/app">
-            <span className="hidden sm:inline">Open the board</span>
-            <span className="sm:hidden">Board</span>
-          </Link>
-        </Button>
-      </nav>
-    </header>
+    </SiteFrame>
   )
 }
 
 function Hero() {
   return (
-    <section className="relative grid gap-10 px-4 pt-12 pb-16 sm:px-6 sm:pt-16 sm:pb-20 md:px-12 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-12">
-      <div className="animate-rise">
-        <p className="label mb-6 !text-amber">
-          Fleet control room · self-hosted
-        </p>
-        <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
-          One board
-          <br />
-          for the
-          <br />
-          <span className="text-amber">whole fleet.</span>
-        </h1>
-        <p className="mt-6 max-w-xl text-base leading-relaxed text-ink-2 sm:mt-8 sm:text-lg">
-          See every server on one page, refreshed each minute. Put servers in
-          groups, set when their disks get cleaned and their packages patched,
-          and stop logging in to each machine. AI agents read the same data over
-          MCP.
-        </p>
-        <div className="mt-8 flex flex-col gap-3 sm:mt-10 sm:flex-row sm:flex-wrap">
-          <Button asChild size="lg">
-            <Link to="/app">
-              Open the board <ArrowRightIcon />
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="outline">
-            <a href="#install">Self-host it</a>
-          </Button>
+    <section className="relative pt-12 pb-16 sm:pt-16 sm:pb-20">
+      <div className={column}>
+        <div className="grid items-end gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:gap-12">
+          <div className="animate-rise">
+            <p className="label mb-6 !text-amber">
+              Public beta · fleet control room · self-hosted
+            </p>
+            <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
+              One board
+              <br />
+              for the
+              <br />
+              <span className="text-amber">whole fleet.</span>
+            </h1>
+          </div>
+          <Board />
+        </div>
+        <div className="mt-10 sm:mt-12">
+          <p className="text-base leading-relaxed text-ink-2 sm:text-lg">
+            See every server on one page, refreshed each minute. Put servers in
+            groups, set when their disks get cleaned and their packages patched,
+            and stop logging in to each machine. AI agents read the same data
+            over MCP. The board on this site is the public beta. You can also
+            run your own install.
+          </p>
+          <div className="mt-8 flex flex-wrap justify-end gap-3">
+            <Button asChild size="lg" variant="outline">
+              <a href="#install">Self-host it</a>
+            </Button>
+            <Button asChild size="lg">
+              <Link to="/app">
+                Open the board <ArrowRightIcon />
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
-      <Board />
     </section>
   )
 }
@@ -277,25 +245,24 @@ function StepNumber({ n }: { n: number }) {
 
 function Watches() {
   return (
-    <section
-      id="watch"
-      className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12"
-    >
-      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-        What it watches
-      </h2>
-      <div className="mt-10 grid gap-px overflow-hidden rounded-md border bg-line sm:mt-12 sm:grid-cols-2 lg:grid-cols-3">
-        {watches.map(([title, body], i) => (
-          <div key={title} className="bg-bg p-5 sm:p-6">
-            <div className="flex items-baseline gap-3">
-              <StepNumber n={i + 1} />
-              <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
-                {title}
-              </h3>
+    <section id="watch" className="scroll-mt-14 border-t py-16 sm:py-20">
+      <div className={column}>
+        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+          What it watches
+        </h2>
+        <div className="mt-10 grid gap-px overflow-hidden rounded-md border bg-line sm:mt-12 sm:grid-cols-2 lg:grid-cols-3">
+          {watches.map(([title, body], i) => (
+            <div key={title} className="bg-bg p-5 sm:p-6">
+              <div className="flex items-baseline gap-3">
+                <StepNumber n={i + 1} />
+                <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
+                  {title}
+                </h3>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-ink-2">{body}</p>
             </div>
-            <p className="mt-3 text-sm leading-relaxed text-ink-2">{body}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -312,37 +279,42 @@ const rules = [
 
 function Touch() {
   return (
-    <section
-      id="safety"
-      className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-2 lg:gap-12"
-    >
-      <div>
-        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-          One binary.
-          <br />
-          One sudo line.
-        </h2>
-        <p className="mt-6 max-w-lg leading-relaxed text-ink-2">
-          Each server gets a small helper and a system user that may run only
-          that helper. The control plane logs in with its own key over SSH, pins
-          the host key it saw the first time, and refuses to talk to a machine
-          that presents a different one. No agent listens on your servers.
-        </p>
-        <CopyBlock
-          className="mt-8 max-w-lg"
-          value={'esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *'}
-        />
-      </div>
-      <div className="panel p-5 sm:p-6">
-        <div className="label mb-4">Rules with no switch</div>
-        <ul className="space-y-3">
-          {rules.map((r) => (
-            <li key={r} className="flex gap-3 text-sm text-ink">
-              <span className="mt-1.5 size-1.5 shrink-0 bg-amber" />
-              {r}
-            </li>
-          ))}
-        </ul>
+    <section id="safety" className="scroll-mt-14 border-t py-16 sm:py-20">
+      <div
+        className={cn(
+          column,
+          'grid items-start gap-10 xl:grid-cols-[minmax(0,1fr)_minmax(0,max-content)] xl:gap-x-16',
+        )}
+      >
+        <div>
+          <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+            One binary.
+            <br />
+            One sudo line.
+          </h2>
+          <p className="mt-6 max-w-lg leading-relaxed text-ink-2">
+            Each server gets a small helper and a system user that may run only
+            that helper. The control plane logs in with its own key over SSH,
+            pins the host key it saw the first time, and refuses to talk to a
+            machine that presents a different one. No agent listens on your
+            servers.
+          </p>
+          <CopyBlock
+            className="mt-8"
+            value={'esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *'}
+          />
+        </div>
+        <div className="panel h-fit w-full max-w-lg min-w-0 p-5 sm:p-6 xl:w-fit xl:justify-self-end">
+          <div className="label mb-4">Rules with no switch</div>
+          <ul className="space-y-2.5">
+            {rules.map((r) => (
+              <li key={r} className="flex gap-3 text-sm leading-snug text-ink">
+                <span className="mt-1.5 size-1.5 shrink-0 bg-amber" />
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
     </section>
   )
@@ -359,73 +331,76 @@ function Agents() {
   }
 }`
   return (
-    <section
-      id="agents"
-      className="grid scroll-mt-14 gap-10 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12 lg:grid-cols-[1fr_1.1fr] lg:gap-12"
-    >
-      <div>
-        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-          Agents read the fleet
-        </h2>
-        <p className="mt-6 max-w-lg leading-relaxed text-ink-2">
-          The MCP endpoint gives an agent the same view you have: fleet summary,
-          per-server status, updates, services, containers, security and access
-          reports, run history, alerts. It uses an API token you create, so it
-          can do what that token&apos;s scopes allow and nothing more. Every
-          call lands in the activity log, marked MCP.
-        </p>
-        <p className="mt-4 font-mono text-xs text-muted-foreground">
-          “Which servers are low on disk?” · “What failed last night?” · “Any
-          containers with newer images?”
-        </p>
+    <section id="agents" className="scroll-mt-14 border-t py-16 sm:py-20">
+      <div
+        className={cn(
+          column,
+          'flex flex-col gap-10 xl:flex-row xl:items-center xl:justify-between xl:gap-16',
+        )}
+      >
+        <div className="max-w-xl min-w-0">
+          <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+            Agents read the fleet
+          </h2>
+          <p className="mt-6 leading-relaxed text-ink-2">
+            The MCP endpoint gives an agent the same view you have: fleet
+            summary, per-server status, updates, services, containers, security
+            and access reports, run history, alerts. It uses an API token you
+            create, so it can do what that token&apos;s scopes allow and nothing
+            more. Every call lands in the activity log, marked MCP.
+          </p>
+          <p className="mt-4 font-mono text-xs leading-relaxed text-muted-foreground">
+            &quot;Which servers are low on disk?&quot; · &quot;What failed last
+            night?&quot; · &quot;Any containers with newer images?&quot;
+          </p>
+        </div>
+        <CopyBlock value={snippet} />
       </div>
-      <CopyBlock value={snippet} />
     </section>
   )
 }
 
 function Install() {
   return (
-    <section
-      id="install"
-      className="scroll-mt-14 border-t px-4 py-16 sm:px-6 sm:py-20 md:px-12"
-    >
-      <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-        Run it
-      </h2>
-      {/* One step per row: the commands run to about 60 characters, so three
-          narrow columns would hide half of each line behind a scroll. */}
-      <ol className="mt-10 max-w-5xl divide-y divide-line-2 border-y border-line-2">
-        {(
-          [
+    <section id="install" className="scroll-mt-14 border-t py-16 sm:py-20">
+      {/* One step per row. The commands run to about 60 characters, so three
+          narrow columns would hide half of each line. */}
+      <div className={column}>
+        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+          Run it
+        </h2>
+        <ol className="mt-10 divide-y divide-line-2 border-y border-line-2">
+          {(
             [
-              'Start',
-              'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
-            ],
-            [
-              'Add a server',
-              '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
-            ],
-            [
-              'Use the CLI',
-              'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
-            ],
-          ] as const
-        ).map(([t, code], i) => (
-          <li
-            key={t}
-            className="grid min-w-0 gap-3 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8"
-          >
-            <div className="flex items-baseline gap-3 md:pt-2">
-              <StepNumber n={i + 1} />
-              <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
-                {t}
-              </h3>
-            </div>
-            <CopyBlock value={code} />
-          </li>
-        ))}
-      </ol>
+              [
+                'Start',
+                'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
+              ],
+              [
+                'Add a server',
+                '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
+              ],
+              [
+                'Use the CLI',
+                'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
+              ],
+            ] as const
+          ).map(([t, code], i) => (
+            <li
+              key={t}
+              className="grid min-w-0 items-center gap-3 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-8"
+            >
+              <div className="flex items-baseline gap-3 md:pt-2">
+                <StepNumber n={i + 1} />
+                <h3 className="font-display text-2xl font-semibold tracking-wide uppercase">
+                  {t}
+                </h3>
+              </div>
+              <CopyBlock className="lg:w-full" value={code} />
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   )
 }

@@ -1,6 +1,8 @@
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useEffect, useRef, useState } from 'react'
 import { ScrollTextIcon } from 'lucide-react'
+import type { Schemas } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import {
@@ -172,37 +174,85 @@ export function LogsTab({ serverId }: { serverId: number }) {
       {logs.isLoading ? (
         <Loading label="Reading logs" />
       ) : (
-        <div className="max-h-[65dvh] overflow-auto rounded-md border bg-bg-2 p-3 font-mono text-[11px] leading-relaxed">
-          {items.length === 0 && (
-            <p className="text-muted-foreground">No lines.</p>
-          )}
-          {items.map((l, i) => (
-            <div
-              key={i}
-              className="flex flex-col gap-x-3 border-b border-line/40 py-1 last:border-0 sm:flex-row sm:border-0 sm:py-0"
-            >
-              <span className="shrink-0 text-faint" suppressHydrationWarning>
-                {new Date(l.time).toLocaleTimeString()}
-              </span>
-              <span
-                className={cn(
-                  'break-all whitespace-pre-wrap',
-                  l.priority <= 3 || l.stream === 'stderr'
-                    ? 'text-fail'
-                    : l.priority === 4
-                      ? 'text-warn'
-                      : 'text-ink-2',
-                )}
-              >
-                {l.message}
-              </span>
-            </div>
-          ))}
-        </div>
+        <LogLines items={items} />
       )}
       <p className="font-mono text-[10px] text-faint">
         Reading logs is recorded in the activity log.
       </p>
     </div>
   )
+}
+
+/** Only the lines in view are in the DOM. A read can be 1,000 wrapped lines. */
+function LogLines({ items }: { items: Array<Schemas['LogLine']> }) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 22,
+    overscan: 20,
+  })
+  const first = items[0]
+  const last = items[items.length - 1]
+  const tail = first && last ? `${items.length}:${first.time}:${last.time}` : ''
+
+  useEffect(() => {
+    if (!tail) return
+    virtualizer.scrollToIndex(items.length - 1, { align: 'end' })
+  }, [tail, items.length, virtualizer])
+
+  return (
+    <div>
+      {items.length > 0 && (
+        <p className="mb-1 font-mono text-[10px] text-faint">
+          {items.length} lines
+        </p>
+      )}
+      <div
+        ref={parentRef}
+        className="max-h-[65dvh] overflow-auto rounded-md border bg-bg-2 font-mono text-[11px] leading-relaxed"
+      >
+        {items.length === 0 ? (
+          <p className="p-3 text-muted-foreground">No lines.</p>
+        ) : (
+          <div
+            className="relative w-full"
+            style={{ height: virtualizer.getTotalSize() }}
+          >
+            {virtualizer.getVirtualItems().map((row) => {
+              const l = items[row.index]
+              if (!l) return null
+              return (
+                <div
+                  key={row.key}
+                  data-index={row.index}
+                  ref={virtualizer.measureElement}
+                  className="absolute top-0 left-0 flex w-full flex-col gap-x-3 px-3 py-0.5 sm:flex-row"
+                  style={{ transform: `translateY(${row.start}px)` }}
+                >
+                  <span
+                    className="shrink-0 text-faint"
+                    suppressHydrationWarning
+                  >
+                    {new Date(l.time).toLocaleTimeString()}
+                  </span>
+                  <span
+                    className={cn('break-all whitespace-pre-wrap', lineTone(l))}
+                  >
+                    {l.message}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function lineTone(l: Schemas['LogLine']) {
+  if (l.priority <= 3 || l.stream === 'stderr') return 'text-fail'
+  if (l.priority === 4) return 'text-warn'
+  return 'text-ink-2'
 }
