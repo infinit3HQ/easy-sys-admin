@@ -39,7 +39,7 @@ At least one sign-in method must be on. The control plane refuses to start when 
 
 ## System mail
 
-Optional. When `ESA_SMTP_HOST` is unset, password sign-up does not send mail and there is no password reset. Set the host to turn both on. A new password account cannot sign in until it opens the confirmation link. Google and other providers already check the address, so they sign in without that link, and a verified address joins the account that already uses it. Password reset uses the same mail account. Port 587 uses STARTTLS. Port 465 uses implicit TLS. A server that offers neither is refused. A mail host on a private address needs `ESA_ALLOW_PRIVATE_NETWORKS`.
+Optional. When `ESA_SMTP_HOST` is unset, password sign-up does not send mail and there is no password reset. Set the host to turn both on. A new password account cannot sign in until it opens the confirmation link. Google and other providers already check the address, so they sign in without that link, and a verified address joins the account that already uses it. Password reset uses the same mail account. Each message is HTML, with the same words in plain text. Port 587 uses STARTTLS. Port 465 uses implicit TLS. A server that offers neither is refused. A mail host on a private address needs `ESA_ALLOW_PRIVATE_NETWORKS`.
 
 Sends are limited to 3 an hour for one address and 10 an hour for one client. Opening a confirmation or reset link is limited to 20 tries an hour for one client. Password sign-up stays at 10 an hour for one client.
 

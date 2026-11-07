@@ -18,7 +18,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 - Groups with schedules. A slot runs once; a slot missed by over an hour is recorded as missed (tests).
 - Alerts fire after their duration and resolve (tests). ntfy delivery. TLS certificate checks.
 - API tokens with scopes, account isolation, and an audit log that marks web, API and MCP calls.
-- Optional system SMTP (`ESA_SMTP_*`) for password confirmation and reset. A password account cannot sign in until it opens the link. Google sign-in does not, and the same verified email joins the existing account. Off unless the host is set. Sends are limited to 3 an hour per address and 10 an hour per client.
+- Optional system SMTP (`ESA_SMTP_*`) for password confirmation and reset. Messages are HTML, with a plain-text copy. A password account cannot sign in until it opens the link. Google sign-in does not, and the same verified email joins the existing account. Off unless the host is set. Sends are limited to 3 an hour per address and 10 an hour per client.
 - Personal spaces, organizations with owner, admin, and viewer roles, extra teams that grant admin on chosen groups, invites, and groups shared between organizations with view or operate access (tests in `teams_test.go`, `roles_test.go`, `sharing_test.go`, and `isolation_test.go`). `ESA_BETA_LIMITS` (off by default) caps a user at one organization besides their personal space and each account at 10 servers.
 - The web app in a real browser at desktop and phone widths.
 - CLI: login, status, servers, groups, runs (with `--wait`), alerts.

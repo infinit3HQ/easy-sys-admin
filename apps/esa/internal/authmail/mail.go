@@ -4,7 +4,9 @@ package authmail
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -18,8 +20,9 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/netguard"
 )
 
-// Sender delivers one plain-text message. Connections go through the same
-// address policy as alert mail, and cleartext is refused.
+// Sender delivers one auth message as HTML plus a plain-text copy.
+// Connections go through the same address policy as alert mail, and
+// cleartext is refused.
 type Sender struct {
 	cfg    config.SMTPConfig
 	dialer *net.Dialer
@@ -34,8 +37,9 @@ func New(cfg config.SMTPConfig, allowPrivate bool) *Sender {
 	}
 }
 
-// Send delivers one message. The context bounds the SMTP conversation.
-func (s *Sender) Send(ctx context.Context, to, subject, body string) error {
+// Send delivers one message. text is the plain copy and html is the
+// rendered panel. The context bounds the SMTP conversation.
+func (s *Sender) Send(ctx context.Context, to, subject, text, html string) error {
 	from, err := mail.ParseAddress(s.cfg.From)
 	if err != nil {
 		return err
@@ -45,11 +49,9 @@ func (s *Sender) Send(ctx context.Context, to, subject, body string) error {
 		return err
 	}
 	subject = strings.NewReplacer("\r", " ", "\n", " ").Replace(subject)
-	var msg strings.Builder
-	fmt.Fprintf(&msg, "From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nDate: %s\r\n\r\n%s",
-		from.String(), toAddr.Address, subject, time.Now().UTC().Format(time.RFC1123Z), body)
-	if !strings.HasSuffix(body, "\n") {
-		msg.WriteString("\r\n")
+	msg, err := mimeMessage(from.String(), toAddr.Address, subject, text, html)
+	if err != nil {
+		return err
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -97,10 +99,25 @@ func (s *Sender) Send(ctx context.Context, to, subject, body string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write([]byte(msg.String())); err != nil {
+	if _, err := w.Write([]byte(msg)); err != nil {
 		return err
 	}
 	return w.Close()
+}
+
+func mimeMessage(from, to, subject, text, html string) (string, error) {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	boundary := "esa-" + hex.EncodeToString(raw[:])
+	var msg strings.Builder
+	fmt.Fprintf(&msg, "From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=%s\r\nDate: %s\r\n\r\n",
+		from, to, subject, boundary, time.Now().UTC().Format(time.RFC1123Z))
+	fmt.Fprintf(&msg, "--%s\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n%s\r\n", boundary, text)
+	fmt.Fprintf(&msg, "--%s\r\nContent-Type: text/html; charset=utf-8\r\n\r\n%s\r\n", boundary, html)
+	fmt.Fprintf(&msg, "--%s--\r\n", boundary)
+	return msg.String(), nil
 }
 
 func (s *Sender) dial(ctx context.Context) (net.Conn, error) {

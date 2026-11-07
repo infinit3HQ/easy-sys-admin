@@ -202,8 +202,8 @@ func TestTokenAllowListAndExpiry(t *testing.T) {
 
 type mailBox struct{ last string }
 
-func (b *mailBox) Send(_ context.Context, _, _, body string) error {
-	b.last = body
+func (b *mailBox) Send(_ context.Context, _, _, text, _ string) error {
+	b.last = text
 	return nil
 }
 

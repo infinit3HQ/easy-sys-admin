@@ -7,14 +7,14 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/authmail"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/password"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
-// AuthMailer sends one plain-text message. The control plane uses it for
-// address confirmation and password reset.
+// AuthMailer sends one auth message as HTML plus a plain-text copy.
 type AuthMailer interface {
-	Send(ctx context.Context, to, subject, body string) error
+	Send(ctx context.Context, to, subject, text, html string) error
 }
 
 const (
@@ -120,15 +120,27 @@ func (s *Service) localUser(ctx context.Context, email string) (store.User, bool
 
 func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose, passwordHash string) error {
 	ttl := confirmTTL
-	subject := "Confirm your email"
-	intro := "Confirm this address to finish creating your Easy Sys Admin account. The link works for 24 hours."
+	letter := authmail.Letter{
+		Heading:   "Confirm your email",
+		Paragraph: "Confirm this address to finish creating your account. You can sign in after you open the link.",
+		Button:    "Confirm email",
+		Fine:      "The link works for 24 hours. If you did not ask for this, you can ignore this message.",
+	}
 	if purpose == "reset" {
 		ttl = resetTTL
-		subject = "Reset your password"
-		intro = "Use this link to choose a new password. It works for 1 hour and only once."
+		letter = authmail.Letter{
+			Heading:   "Reset your password",
+			Paragraph: "Choose a new password for your account. This does not change a Google sign-in.",
+			Button:    "Choose a new password",
+			Fine:      "The link works for 1 hour and only once. If you did not ask for this, you can ignore this message.",
+		}
 	} else if passwordHash != "" {
-		subject = "Add a password to your account"
-		intro = "Open this link to add a password to the Easy Sys Admin account for this address. It works for 24 hours and only once."
+		letter = authmail.Letter{
+			Heading:   "Add a password",
+			Paragraph: "Add a password to the account for this address. Google sign-in keeps working.",
+			Button:    "Add password",
+			Fine:      "The link works for 24 hours and only once. If you did not ask for this, you can ignore this message.",
+		}
 	}
 	var token string
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
@@ -143,12 +155,19 @@ func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose
 	if purpose == "reset" {
 		mode = "reset"
 	}
-	link := s.publicURL.ResolveReference(&url.URL{
+	letter.Link = s.publicURL.ResolveReference(&url.URL{
 		Path:     "/login",
 		RawQuery: url.Values{"mode": {mode}, "token": {token}}.Encode(),
 	}).String()
-	body := intro + "\n\n" + link + "\n\nIf you did not ask for this, you can ignore this message.\n"
-	return s.authMail.Send(ctx, email, subject, body)
+	html, err := authmail.HTML(letter)
+	if err != nil {
+		return err
+	}
+	subject := letter.Heading
+	if purpose != "reset" && passwordHash != "" {
+		subject = "Add a password to your account"
+	}
+	return s.authMail.Send(ctx, email, subject, authmail.PlainText(letter), html)
 }
 
 func (s *Service) issueAuthToken(ctx context.Context, q *store.Queries, userID int64, purpose string, ttl time.Duration, passwordHash string) (string, error) {
