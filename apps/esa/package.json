@@ -7,10 +7,10 @@
     "generate": "go generate ./...",
     "build": "go build -trimpath -o bin/esa ./cmd/esa && pnpm run build:helpers",
     "build:helpers": "node ./scripts/build-helpers.mjs",
-    "dev": "pnpm run build:helpers && node --env-file-if-exists=../../.env --run serve",
+    "dev": "pnpm run build:helpers && node --env-file-if-exists=../../.env ./scripts/run.mjs go run ./cmd/esa serve",
     "serve": "go run ./cmd/esa serve",
     "lint": "go vet ./... && gofmt -l . | (! grep .)",
-    "test": "node --env-file-if-exists=../../.env --run test:go",
+    "test": "node --env-file-if-exists=../../.env ./scripts/run.mjs go test ./...",
     "test:go": "go test ./..."
   },
   "dependencies": {

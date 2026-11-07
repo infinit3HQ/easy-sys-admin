@@ -25,6 +25,8 @@ import {
 } from '#/components/kit'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
+import { Label } from '#/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '#/components/ui/radio-group'
 import { Textarea } from '#/components/ui/textarea'
 import { useRole } from '../route'
 
@@ -62,25 +64,23 @@ function AddServer() {
         }
         title="Add a server"
       />
-      <div
-        role="radiogroup"
+      <RadioGroup
+        value={method}
+        onValueChange={(v) => setMethod(v as Method)}
         aria-label="How to add it"
-        className="mb-6 grid gap-3 sm:grid-cols-2"
+        className="mb-6 sm:grid-cols-2"
       >
         {methods.map((m) => {
           const on = method === m.value
           return (
-            <button
+            <Label
               key={m.value}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => setMethod(m.value)}
               className={cn(
-                'panel flex cursor-pointer gap-3 p-4 text-left transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                'panel h-auto cursor-pointer items-start gap-3 p-4 font-normal',
                 on ? 'border-amber/70 bg-amber/5' : 'hover:border-line-2',
               )}
             >
+              <RadioGroupItem value={m.value} className="mt-1" />
               <m.icon
                 className={cn(
                   'mt-0.5 size-5 shrink-0',
@@ -97,14 +97,14 @@ function AddServer() {
                 >
                   {m.title}
                 </span>
-                <span className="mt-1 block text-xs text-muted-foreground">
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">
                   {m.body}
                 </span>
               </span>
-            </button>
+            </Label>
           )
         })}
-      </div>
+      </RadioGroup>
       {method === 'login' ? <LoginFlow /> : <CommandFlow />}
     </div>
   )

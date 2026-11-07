@@ -1,9 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { KeyRoundIcon, LogOutIcon } from 'lucide-react'
 import type { Scope } from '@esa/api'
 import { api, call } from '#/lib/api'
+import { siteOrigin } from '#/lib/origin'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
 import {
@@ -42,9 +43,7 @@ const scopeText: Record<Scope, string> = {
 }
 
 function Settings() {
-  // The server render cannot know the browser's origin; fill it in after hydration.
-  const [origin, setOrigin] = useState('https://esa.example.com')
-  useEffect(() => setOrigin(window.location.origin), [])
+  const origin = siteOrigin()
   return (
     <div>
       <PageHeader kicker="Account" title="Settings" />
@@ -55,6 +54,7 @@ function Settings() {
           <Sessions />
           <Panel title="CLI">
             <CopyBlock
+              className="lg:w-full"
               value={`esa login ${origin} --token esa_…\nesa status\nesa servers show <name>\nesa runs start measure --group <group>`}
             />
           </Panel>

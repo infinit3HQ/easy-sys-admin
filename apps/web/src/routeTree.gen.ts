@@ -14,23 +14,29 @@ import { Route as AppRouteRouteImport } from './routes/app/route'
 import { Route as HealthzRouteImport } from './routes/healthz'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppActivityRouteImport } from './routes/app/activity'
-import { Route as AppAlertsRouteImport } from './routes/app/alerts'
 import { Route as AppOrgRouteImport } from './routes/app/org'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as EnrollSplatRouteImport } from './routes/enroll/$'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as AppAlertsIndexRouteImport } from './routes/app/alerts/index'
+import { Route as AppAlertsSettingsRouteImport } from './routes/app/alerts/settings'
 import { Route as AppGroupsIndexRouteImport } from './routes/app/groups/index'
-import { Route as AppGroupsGroupIdRouteImport } from './routes/app/groups/$groupId'
+import { Route as AppGroupsGroupIdRouteRouteImport } from './routes/app/groups/$groupId/route'
 import { Route as AppGroupsNewRouteImport } from './routes/app/groups/new'
 import { Route as AppRunsIndexRouteImport } from './routes/app/runs/index'
 import { Route as AppRunsRunIdRouteImport } from './routes/app/runs/$runId'
 import { Route as AppServersServerIdRouteImport } from './routes/app/servers/$serverId'
 import { Route as AppServersNewRouteImport } from './routes/app/servers/new'
+import { Route as AppGroupsGroupIdIndexRouteImport } from './routes/app/groups/$groupId/index'
+import { Route as AppGroupsGroupIdSettingsRouteImport } from './routes/app/groups/$groupId/settings'
+import { Route as AppGroupsGroupIdSharingRouteImport } from './routes/app/groups/$groupId/sharing'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -57,6 +63,16 @@ const McpRoute = McpRouteImport.update({
   path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -70,11 +86,6 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const AppActivityRoute = AppActivityRouteImport.update({
   id: '/activity',
   path: '/activity',
-  getParentRoute: () => AppRouteRoute,
-} as any)
-const AppAlertsRoute = AppAlertsRouteImport.update({
-  id: '/alerts',
-  path: '/alerts',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppOrgRoute = AppOrgRouteImport.update({
@@ -107,12 +118,22 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAlertsIndexRoute = AppAlertsIndexRouteImport.update({
+  id: '/alerts/',
+  path: '/alerts/',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppAlertsSettingsRoute = AppAlertsSettingsRouteImport.update({
+  id: '/alerts/settings',
+  path: '/alerts/settings',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const AppGroupsIndexRoute = AppGroupsIndexRouteImport.update({
   id: '/groups/',
   path: '/groups/',
   getParentRoute: () => AppRouteRoute,
 } as any)
-const AppGroupsGroupIdRoute = AppGroupsGroupIdRouteImport.update({
+const AppGroupsGroupIdRouteRoute = AppGroupsGroupIdRouteRouteImport.update({
   id: '/groups/$groupId',
   path: '/groups/$groupId',
   getParentRoute: () => AppRouteRoute,
@@ -142,6 +163,22 @@ const AppServersNewRoute = AppServersNewRouteImport.update({
   path: '/servers/new',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppGroupsGroupIdIndexRoute = AppGroupsGroupIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppGroupsGroupIdRouteRoute,
+} as any)
+const AppGroupsGroupIdSettingsRoute =
+  AppGroupsGroupIdSettingsRouteImport.update({
+    id: '/settings',
+    path: '/settings',
+    getParentRoute: () => AppGroupsGroupIdRouteRoute,
+  } as any)
+const AppGroupsGroupIdSharingRoute = AppGroupsGroupIdSharingRouteImport.update({
+  id: '/sharing',
+  path: '/sharing',
+  getParentRoute: () => AppGroupsGroupIdRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -149,9 +186,10 @@ export interface FileRoutesByFullPath {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
-  '/app/alerts': typeof AppAlertsRoute
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
@@ -159,22 +197,28 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
-  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdRouteRouteWithChildren
+  '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
   '/app/runs/$runId': typeof AppRunsRunIdRoute
   '/app/servers/$serverId': typeof AppServersServerIdRoute
   '/app/servers/new': typeof AppServersNewRoute
+  '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
+  '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
+  '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
-  '/app/alerts': typeof AppAlertsRoute
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
@@ -182,13 +226,17 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app': typeof AppIndexRoute
-  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
   '/app/runs/$runId': typeof AppRunsRunIdRoute
   '/app/servers/$serverId': typeof AppServersServerIdRoute
   '/app/servers/new': typeof AppServersNewRoute
+  '/app/alerts': typeof AppAlertsIndexRoute
   '/app/groups': typeof AppGroupsIndexRoute
   '/app/runs': typeof AppRunsIndexRoute
+  '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
+  '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,9 +245,10 @@ export interface FileRoutesById {
   '/healthz': typeof HealthzRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
-  '/app/alerts': typeof AppAlertsRoute
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
@@ -207,13 +256,18 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
-  '/app/groups/$groupId': typeof AppGroupsGroupIdRoute
+  '/app/groups/$groupId': typeof AppGroupsGroupIdRouteRouteWithChildren
+  '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
   '/app/runs/$runId': typeof AppRunsRunIdRoute
   '/app/servers/$serverId': typeof AppServersServerIdRoute
   '/app/servers/new': typeof AppServersNewRoute
+  '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
+  '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
+  '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -223,9 +277,10 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/privacy'
+    | '/terms'
     | '/api/$'
     | '/app/activity'
-    | '/app/alerts'
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
@@ -234,21 +289,27 @@ export interface FileRouteTypes {
     | '/share/$token'
     | '/app/'
     | '/app/groups/$groupId'
+    | '/app/alerts/settings'
     | '/app/groups/new'
     | '/app/runs/$runId'
     | '/app/servers/$serverId'
     | '/app/servers/new'
+    | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/groups/$groupId/settings'
+    | '/app/groups/$groupId/sharing'
+    | '/app/groups/$groupId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/privacy'
+    | '/terms'
     | '/api/$'
     | '/app/activity'
-    | '/app/alerts'
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
@@ -256,13 +317,17 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/share/$token'
     | '/app'
-    | '/app/groups/$groupId'
+    | '/app/alerts/settings'
     | '/app/groups/new'
     | '/app/runs/$runId'
     | '/app/servers/$serverId'
     | '/app/servers/new'
+    | '/app/alerts'
     | '/app/groups'
     | '/app/runs'
+    | '/app/groups/$groupId/settings'
+    | '/app/groups/$groupId/sharing'
+    | '/app/groups/$groupId'
   id:
     | '__root__'
     | '/'
@@ -270,9 +335,10 @@ export interface FileRouteTypes {
     | '/healthz'
     | '/login'
     | '/mcp'
+    | '/privacy'
+    | '/terms'
     | '/api/$'
     | '/app/activity'
-    | '/app/alerts'
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
@@ -281,12 +347,17 @@ export interface FileRouteTypes {
     | '/share/$token'
     | '/app/'
     | '/app/groups/$groupId'
+    | '/app/alerts/settings'
     | '/app/groups/new'
     | '/app/runs/$runId'
     | '/app/servers/$serverId'
     | '/app/servers/new'
+    | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/groups/$groupId/settings'
+    | '/app/groups/$groupId/sharing'
+    | '/app/groups/$groupId/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -295,6 +366,8 @@ export interface RootRouteChildren {
   HealthzRoute: typeof HealthzRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
+  PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   ApiSplatRoute: typeof ApiSplatRoute
   AuthSplatRoute: typeof AuthSplatRoute
   EnrollSplatRoute: typeof EnrollSplatRoute
@@ -339,6 +412,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -358,13 +445,6 @@ declare module '@tanstack/react-router' {
       path: '/activity'
       fullPath: '/app/activity'
       preLoaderRoute: typeof AppActivityRouteImport
-      parentRoute: typeof AppRouteRoute
-    }
-    '/app/alerts': {
-      id: '/app/alerts'
-      path: '/alerts'
-      fullPath: '/app/alerts'
-      preLoaderRoute: typeof AppAlertsRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/org': {
@@ -409,6 +489,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app/alerts/': {
+      id: '/app/alerts/'
+      path: '/alerts'
+      fullPath: '/app/alerts/'
+      preLoaderRoute: typeof AppAlertsIndexRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/alerts/settings': {
+      id: '/app/alerts/settings'
+      path: '/alerts/settings'
+      fullPath: '/app/alerts/settings'
+      preLoaderRoute: typeof AppAlertsSettingsRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/groups/': {
       id: '/app/groups/'
       path: '/groups'
@@ -420,7 +514,7 @@ declare module '@tanstack/react-router' {
       id: '/app/groups/$groupId'
       path: '/groups/$groupId'
       fullPath: '/app/groups/$groupId'
-      preLoaderRoute: typeof AppGroupsGroupIdRouteImport
+      preLoaderRoute: typeof AppGroupsGroupIdRouteRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/groups/new': {
@@ -458,35 +552,75 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServersNewRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/groups/$groupId/': {
+      id: '/app/groups/$groupId/'
+      path: '/'
+      fullPath: '/app/groups/$groupId/'
+      preLoaderRoute: typeof AppGroupsGroupIdIndexRouteImport
+      parentRoute: typeof AppGroupsGroupIdRouteRoute
+    }
+    '/app/groups/$groupId/settings': {
+      id: '/app/groups/$groupId/settings'
+      path: '/settings'
+      fullPath: '/app/groups/$groupId/settings'
+      preLoaderRoute: typeof AppGroupsGroupIdSettingsRouteImport
+      parentRoute: typeof AppGroupsGroupIdRouteRoute
+    }
+    '/app/groups/$groupId/sharing': {
+      id: '/app/groups/$groupId/sharing'
+      path: '/sharing'
+      fullPath: '/app/groups/$groupId/sharing'
+      preLoaderRoute: typeof AppGroupsGroupIdSharingRouteImport
+      parentRoute: typeof AppGroupsGroupIdRouteRoute
+    }
   }
 }
 
+interface AppGroupsGroupIdRouteRouteChildren {
+  AppGroupsGroupIdSettingsRoute: typeof AppGroupsGroupIdSettingsRoute
+  AppGroupsGroupIdSharingRoute: typeof AppGroupsGroupIdSharingRoute
+  AppGroupsGroupIdIndexRoute: typeof AppGroupsGroupIdIndexRoute
+}
+
+const AppGroupsGroupIdRouteRouteChildren: AppGroupsGroupIdRouteRouteChildren = {
+  AppGroupsGroupIdSettingsRoute: AppGroupsGroupIdSettingsRoute,
+  AppGroupsGroupIdSharingRoute: AppGroupsGroupIdSharingRoute,
+  AppGroupsGroupIdIndexRoute: AppGroupsGroupIdIndexRoute,
+}
+
+const AppGroupsGroupIdRouteRouteWithChildren =
+  AppGroupsGroupIdRouteRoute._addFileChildren(
+    AppGroupsGroupIdRouteRouteChildren,
+  )
+
 interface AppRouteRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
-  AppAlertsRoute: typeof AppAlertsRoute
   AppOrgRoute: typeof AppOrgRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
-  AppGroupsGroupIdRoute: typeof AppGroupsGroupIdRoute
+  AppGroupsGroupIdRouteRoute: typeof AppGroupsGroupIdRouteRouteWithChildren
+  AppAlertsSettingsRoute: typeof AppAlertsSettingsRoute
   AppGroupsNewRoute: typeof AppGroupsNewRoute
   AppRunsRunIdRoute: typeof AppRunsRunIdRoute
   AppServersServerIdRoute: typeof AppServersServerIdRoute
   AppServersNewRoute: typeof AppServersNewRoute
+  AppAlertsIndexRoute: typeof AppAlertsIndexRoute
   AppGroupsIndexRoute: typeof AppGroupsIndexRoute
   AppRunsIndexRoute: typeof AppRunsIndexRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppActivityRoute: AppActivityRoute,
-  AppAlertsRoute: AppAlertsRoute,
   AppOrgRoute: AppOrgRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
-  AppGroupsGroupIdRoute: AppGroupsGroupIdRoute,
+  AppGroupsGroupIdRouteRoute: AppGroupsGroupIdRouteRouteWithChildren,
+  AppAlertsSettingsRoute: AppAlertsSettingsRoute,
   AppGroupsNewRoute: AppGroupsNewRoute,
   AppRunsRunIdRoute: AppRunsRunIdRoute,
   AppServersServerIdRoute: AppServersServerIdRoute,
   AppServersNewRoute: AppServersNewRoute,
+  AppAlertsIndexRoute: AppAlertsIndexRoute,
   AppGroupsIndexRoute: AppGroupsIndexRoute,
   AppRunsIndexRoute: AppRunsIndexRoute,
 }
@@ -501,6 +635,8 @@ const rootRouteChildren: RootRouteChildren = {
   HealthzRoute: HealthzRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
+  PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   ApiSplatRoute: ApiSplatRoute,
   AuthSplatRoute: AuthSplatRoute,
   EnrollSplatRoute: EnrollSplatRoute,

@@ -6,6 +6,7 @@ import { q } from '#/lib/queries'
 import { duration, pct, plural } from '#/lib/format'
 import { Ago } from '#/components/time'
 import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
+import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
 import {
@@ -172,7 +173,13 @@ function Row({ s }: { s: Server }) {
   const m = s.metrics
   return (
     <TableRow
-      className={cn('group', s.status === 'failing' && 'bg-fail/[0.04]')}
+      className={cn(
+        'group',
+        clickableRowClass,
+        s.status === 'failing' && 'bg-fail/[0.04]',
+      )}
+      onClick={followRowLink}
+      onAuxClick={followRowLink}
     >
       <TableCell className="w-6 py-3 pr-1 pl-4">
         <StatusDot status={s.status} />

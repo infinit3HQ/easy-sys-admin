@@ -6,11 +6,13 @@ import {
   useRouter,
   useRouterState,
 } from '@tanstack/react-router'
-import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   ActivityIcon,
   BellIcon,
+  CheckIcon,
+  ChevronDownIcon,
   ChevronsUpDownIcon,
   HistoryIcon,
   LayersIcon,
@@ -24,8 +26,9 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
-import { Choice, cn } from '#/components/kit'
-import { CreateOrganizationDialog } from '#/components/org'
+import { cn } from '#/components/kit'
+import { CreateOrganizationDialog, useSessionReset } from '#/components/org'
+import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
   DropdownMenu,
@@ -202,8 +205,44 @@ function NavLinks({
   )
 }
 
-// The switcher's last item opens the create-organization dialog instead of switching.
-const NEW_ORG = 'new-org'
+/** The shadcn sidebar account row: avatar, name, and one line under it. */
+function AccountMark({
+  who,
+  role,
+  detail,
+}: {
+  who: string
+  role?: string
+  detail?: string
+}) {
+  return (
+    <>
+      <Avatar className="size-8 rounded-md">
+        <AvatarFallback className="rounded-md border border-line-2 bg-panel font-display text-sm font-bold text-amber uppercase">
+          {who.slice(0, 1)}
+        </AvatarFallback>
+      </Avatar>
+      <span className="grid min-w-0 flex-1 text-left text-sm leading-tight">
+        <span className="truncate text-ink">{who}</span>
+        {role && (
+          <span
+            className={cn(
+              'truncate font-mono text-[10px] tracking-wider uppercase',
+              role === 'viewer' ? 'text-muted-foreground' : 'text-amber',
+            )}
+          >
+            {role}
+          </span>
+        )}
+        {detail && (
+          <span className="truncate font-mono text-[11px] text-muted-foreground">
+            {detail}
+          </span>
+        )}
+      </span>
+    </>
+  )
+}
 
 /** Account switcher and the signed-in user, with sign-out in a menu. */
 function AccountBox({
@@ -214,7 +253,7 @@ function AccountBox({
   onNavigate?: () => void
 }) {
   const { data: me } = useSuspenseQuery(q.me())
-  const qc = useQueryClient()
+  const reset = useSessionReset()
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const who = me.user.name || me.user.email
@@ -223,51 +262,68 @@ function AccountBox({
     ...me.accounts.filter((a) => a.personal),
     ...me.accounts.filter((a) => !a.personal),
   ]
+  async function switchSpace(accountId: number) {
+    if (accountId === me.account.id) return
+    await call(api().PUT('/me/account', { body: { accountId } }))
+    // A server, group, or run page belongs to the old space; go to its list instead.
+    const path = router.state.location.pathname
+    const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
+    await reset(async () => {
+      if (!detail) return
+      await router.navigate({
+        to:
+          detail[1] === 'servers'
+            ? '/app'
+            : `/app/${detail[1] as 'groups' | 'runs'}`,
+      })
+    })
+    onNavigate?.()
+  }
 
   return (
     <div className={cn('space-y-2', className)}>
-      <Choice
-        aria-label="Space"
-        size="sm"
-        className="font-mono text-xs"
-        value={String(me.account.id)}
-        options={[
-          ...spaces.map((a) => ({
-            value: String(a.id),
-            label: a.personal ? 'Personal' : a.name,
-          })),
-          {
-            value: NEW_ORG,
-            label: (
-              <span className="flex items-center gap-2 text-amber">
-                <PlusIcon className="text-amber" /> Create organization
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Space"
+            className="w-full justify-between font-mono font-normal text-ink"
+          >
+            <span className="min-w-0 truncate">
+              {me.account.personal ? 'Personal' : me.account.name}
+            </span>
+            <ChevronDownIcon className="opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="top"
+          align="start"
+          className="w-(--radix-dropdown-menu-trigger-width)"
+        >
+          {spaces.map((a) => (
+            <DropdownMenuItem
+              key={a.id}
+              onSelect={() => {
+                void switchSpace(a.id)
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate">
+                {a.personal ? 'Personal' : a.name}
               </span>
-            ),
-          },
-        ]}
-        onChange={async (v) => {
-          if (v === NEW_ORG) {
-            setCreating(true)
-            return
-          }
-          await call(
-            api().PUT('/me/account', { body: { accountId: Number(v) } }),
-          )
-          qc.clear()
-          // A server, group, or run page belongs to the old space; go to its list instead.
-          const path = router.state.location.pathname
-          const detail = /^\/app\/(servers|groups|runs)\/[^/]+/.exec(path)
-          if (detail) {
-            await router.navigate({
-              to:
-                detail[1] === 'servers'
-                  ? '/app'
-                  : `/app/${detail[1] as 'groups' | 'runs'}`,
-            })
-          }
-          await router.invalidate()
-        }}
-      />
+              {a.id === me.account.id && <CheckIcon className="text-ink" />}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => setCreating(true)}
+            className="text-amber focus:text-amber"
+          >
+            <PlusIcon className="text-amber" /> Create organization
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <CreateOrganizationDialog
         open={creating}
         onClose={() => setCreating(false)}
@@ -277,42 +333,28 @@ function AccountBox({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex w-full cursor-pointer items-center gap-3 rounded-md px-2 py-2 text-left transition-colors outline-none hover:bg-panel-2 focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex h-12 w-full items-center gap-2 overflow-hidden rounded-md border border-transparent px-2.5 py-2 text-left text-sm outline-none hover:bg-panel-2 focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-panel-2"
           >
-            <span className="grid size-8 shrink-0 place-items-center rounded-md border border-line-2 bg-panel font-display text-sm font-bold text-amber uppercase">
-              {who.slice(0, 1)}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm text-ink">{who}</span>
-              <span
-                className={cn(
-                  'block truncate font-mono text-[10px] tracking-wider uppercase',
-                  me.account.role === 'viewer'
-                    ? 'text-muted-foreground'
-                    : 'text-amber',
-                )}
-              >
-                {me.account.role}
-              </span>
-            </span>
+            <AccountMark who={who} role={me.account.role} />
             <ChevronsUpDownIcon
-              className="size-4 shrink-0 text-muted-foreground"
+              className="ml-auto size-4 shrink-0 text-muted-foreground"
               aria-hidden
             />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
-          side="top"
-          align="start"
+          side="right"
+          align="end"
+          sideOffset={4}
           className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
         >
-          <DropdownMenuLabel className="font-normal">
-            <span className="block truncate text-sm text-ink">{who}</span>
-            {me.user.name && (
-              <span className="block truncate font-mono text-[11px] text-muted-foreground">
-                {me.user.email}
-              </span>
-            )}
+          <DropdownMenuLabel className="p-0 font-normal">
+            <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+              <AccountMark
+                who={who}
+                detail={me.user.name ? me.user.email : undefined}
+              />
+            </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
@@ -320,10 +362,14 @@ function AccountBox({
               <SettingsIcon /> Settings
             </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild variant="destructive">
-            <button type="submit" form="logout-form" className="w-full">
-              <LogOutIcon /> Sign out
-            </button>
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={() => {
+              const form = document.getElementById('logout-form')
+              if (form instanceof HTMLFormElement) form.requestSubmit()
+            }}
+          >
+            <LogOutIcon /> Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -683,6 +683,7 @@ export function ConfirmDialog({
   onClose: () => void
 }) {
   const [typed, setTyped] = useState('')
+  const confirmId = useId()
   useEffect(() => {
     if (open) setTyped('')
   }, [open])
@@ -698,13 +699,23 @@ export function ConfirmDialog({
           className="grid gap-4"
         >
           <DialogHeader>
-            <DialogTitle className="break-words">{title}</DialogTitle>
+            <DialogTitle className="font-sans text-lg leading-snug font-semibold tracking-normal break-words normal-case">
+              {title}
+            </DialogTitle>
             <DialogDescription className="text-ink-2">{body}</DialogDescription>
           </DialogHeader>
           {confirmWord && (
-            <Field label={`Type ${confirmWord} to confirm`}>
+            <div className="grid gap-1.5">
+              <Label htmlFor={confirmId} className="font-normal text-ink-2">
+                Type{' '}
+                <span className="font-mono text-sm tracking-normal text-ink normal-case">
+                  {confirmWord}
+                </span>{' '}
+                to confirm
+              </Label>
               <Input
-                className="font-mono"
+                id={confirmId}
+                className="border-input font-mono text-ink focus-visible:border-line-2 focus-visible:ring-line-2/60"
                 autoFocus
                 autoComplete="off"
                 autoCapitalize="off"
@@ -712,7 +723,7 @@ export function ConfirmDialog({
                 onChange={(e) => setTyped(e.target.value)}
                 spellCheck={false}
               />
-            </Field>
+            </div>
           )}
           <ErrorBanner error={error} />
           <DialogFooter className="pt-2">
@@ -747,11 +758,11 @@ export function CopyBlock({
     // The button sits in its own column so it can never cover the code.
     <div
       className={cn(
-        'flex min-w-0 items-start rounded-md border border-line-2 bg-bg-2',
+        'flex w-full max-w-full min-w-0 items-start rounded-md border border-line-2 bg-bg-2 lg:w-fit',
         className,
       )}
     >
-      <pre className="min-w-0 flex-1 overflow-x-auto p-3 font-mono text-xs leading-relaxed text-amber-2">
+      <pre className="min-w-0 flex-1 p-3 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-amber-2">
         {value}
       </pre>
       <Button
