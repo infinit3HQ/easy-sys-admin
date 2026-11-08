@@ -8,7 +8,7 @@ This policy covers only the hosted Service. If you self-host the open source ver
 
 ## 1. What We Collect
 
-**Account data:** Your name, email address, and profile picture, plus your Google account ID if you sign in with Google. We also keep your sign-in history and the names of your spaces and team members.
+**Account data:** Your name and email address, plus your Google account ID if you sign in with Google. We do not store a profile picture. We also keep your sign-in history and the names of your spaces and team members.
 
 **Server and operational data ("Customer Data"):**
 
