@@ -102,9 +102,9 @@ You can self-host Easy Sys Admin for any use, including commercial use. There is
 
 The license is the GNU Affero General Public License, version 3 only (AGPL-3.0-only). It is not "or any later version".
 
-If you modify the software and let other people use that modified version over a network, the AGPL says you must offer them the source of the version they are talking to. The web footer has a Source code link for that. Point `ESA_SOURCE_URL` at the source of the build you are running when it is not the upstream repository. Managed Cloud, when it exists, is our hosted service. It is not a separate license.
+Easy Sys Admin will remain available under AGPL-3.0-only. We do not use a CLA and cannot relicense contributors' code.
 
-For a commercial license, write to [legal contact email].
+If you modify the software and let other people use that modified version over a network, the AGPL says you must offer them the source of the version they are talking to. The web footer has a Source code link for that. Point `ESA_SOURCE_URL` at the source of the build you are running when it is not the upstream repository. Managed Cloud, when it exists, is our hosted service. It is not a separate license.
 
 The Easy Sys Admin name and logo belong to Niraj Dilshan (infinit3HQ). They are not covered by the license. See [TRADEMARKS.md](TRADEMARKS.md).
 
@@ -112,4 +112,4 @@ The software is provided as is, without warranty of any kind, to the extent the 
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Outside contributions need a signed [CLA](CLA.md) before they can be merged. The CLA text is a draft pending legal review. Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Contributions use the [Developer Certificate of Origin](DCO) (`git commit -s`), not a contributor license agreement. Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).

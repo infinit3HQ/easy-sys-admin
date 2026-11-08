@@ -10,7 +10,7 @@ SPDX-PackageDownloadLocation = "https://github.com/infinit3HQ/easy-sys-admin"
 [[annotations]]
 path = "**"
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 Niraj Dilshan"
+SPDX-FileCopyrightText = "2026 Niraj Dilshan and contributors"
 SPDX-License-Identifier = "AGPL-3.0-only"
 
 [[annotations]]
