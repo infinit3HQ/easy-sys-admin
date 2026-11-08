@@ -1,0 +1,20 @@
+version = 1
+SPDX-PackageName = "easy-sys-admin"
+SPDX-PackageSupplier = "Niraj Dilshan"
+SPDX-PackageDownloadLocation = "https://github.com/infinit3HQ/easy-sys-admin"
+
+# One copyright and license for the whole tree, including generated Go and
+# TypeScript, so those files do not need a header that the next generate
+# would overwrite. The GNU license text itself stays attributed to the FSF.
+
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Niraj Dilshan"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = "LICENSE"
+precedence = "override"
+SPDX-FileCopyrightText = "2007 Free Software Foundation, Inc."
+SPDX-License-Identifier = "AGPL-3.0-only"

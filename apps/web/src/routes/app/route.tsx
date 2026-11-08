@@ -17,6 +17,7 @@ import {
   HistoryIcon,
   LayersIcon,
   LayoutGridIcon,
+  CircleDollarSignIcon,
   LogOutIcon,
   MenuIcon,
   PlusIcon,
@@ -28,6 +29,8 @@ import { ApiError, api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { cn } from '#/components/kit'
 import { CreateOrganizationDialog, useSessionReset } from '#/components/org'
+import { PricingDialog } from '#/components/pricing'
+import { SourceOffer } from '#/components/source-offer'
 import { Avatar, AvatarFallback } from '#/components/ui/avatar'
 import { Button } from '#/components/ui/button'
 import {
@@ -149,6 +152,7 @@ function AppShell() {
               onNavigate={() => setMenuOpen(false)}
               className="flex-1 overflow-y-auto p-3"
             />
+            <SourceOffer className="px-4 pb-3 font-mono text-[10px] leading-relaxed text-muted-foreground" />
             <AccountBox
               className="border-t p-3"
               onNavigate={() => setMenuOpen(false)}
@@ -166,6 +170,7 @@ function AppShell() {
           </span>
         </Link>
         <NavLinks className="flex-1 overflow-y-auto px-3" />
+        <SourceOffer className="px-5 pb-3 font-mono text-[10px] leading-relaxed text-muted-foreground" />
         <AccountBox className="border-t p-3" />
       </aside>
 
@@ -259,6 +264,7 @@ function AccountBox({
   const reset = useSessionReset()
   const router = useRouter()
   const [creating, setCreating] = useState(false)
+  const [plansOpen, setPlansOpen] = useState(false)
   const who = me.user.name || me.user.email
   // The personal space first, then organizations in the order the API lists them.
   const spaces = [
@@ -268,8 +274,7 @@ function AccountBox({
   const ownedOrgs = me.accounts.filter(
     (a) => !a.personal && a.role === 'owner',
   ).length
-  const canCreateOrg =
-    !me.viaToken && ownedOrgs < me.limits.maxOrganizations
+  const canCreateOrg = !me.viaToken && ownedOrgs < me.limits.maxOrganizations
   async function switchSpace(accountId: number) {
     if (accountId === me.account.id) return
     await call(api().PUT('/me/account', { body: { accountId } }))
@@ -341,6 +346,7 @@ function AccountBox({
         onClose={() => setCreating(false)}
         onCreated={onNavigate}
       />
+      <PricingDialog open={plansOpen} onOpenChange={setPlansOpen} />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -369,8 +375,15 @@ function AccountBox({
             </div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={() => {
+              setPlansOpen(true)
+            }}
+          >
+            <CircleDollarSignIcon /> Plans
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <Link to="/app/settings">
+            <Link to="/app/settings" onClick={onNavigate}>
               <SettingsIcon /> Settings
             </Link>
           </DropdownMenuItem>

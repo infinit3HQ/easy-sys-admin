@@ -1,0 +1,48 @@
+name: CLA Assistant
+
+# Asks people who are not on the allowlist to sign CLA.md before a pull
+# request can pass this check. Signatures are stored on `cla-signatures`,
+# not on the default branch. That branch must not be protected.
+#
+# The job fails until every contributor has signed, which sets a failing
+# check on the pull request. Branch protection on the default branch has to
+# require this check before GitHub will block the merge. The workflow file
+# cannot turn that requirement on by itself.
+#
+# GITHUB_TOKEN is provided by Actions. It needs contents: write so the action
+# can commit signatures to `cla-signatures`. The permissions block below
+# grants that even when the repository default is read-only.
+#
+# Set the repository secret PERSONAL_ACCESS_TOKEN (classic `repo` scope, or a
+# fine-grained token that can write contents on this repository) and uncomment
+# it below only if GITHUB_TOKEN cannot create or push `cla-signatures`.
+# The token is not required for the default setup.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_target:
+    types: [opened, closed, synchronize]
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  CLAAssistant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CLA Assistant
+        if: (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA') || github.event_name == 'pull_request_target'
+        uses: contributor-assistant/github-action@ca4a40a7d1004f18d9960b404b97e5f30a505a08 # v2.6.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+        with:
+          path-to-signatures: signatures/version1/cla.json
+          path-to-document: https://raw.githubusercontent.com/infinit3HQ/easy-sys-admin/main/CLA.md
+          branch: cla-signatures
+          allowlist: dependabot[bot],renovate[bot],github-actions[bot],dependabot,renovate,github-actions
+          custom-pr-sign-comment: I have read the CLA Document and I hereby sign the CLA
+          lock-pullrequest-aftermerge: true

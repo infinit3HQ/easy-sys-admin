@@ -1,0 +1,30 @@
+{
+  "name": "@esa/docs",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Public documentation site for docs.easysysadmin.app.",
+  "scripts": {
+    "dev": "astro dev --host 127.0.0.1 --port 4321",
+    "generate": "node scripts/generate-api-reference.mjs",
+    "build": "astro build",
+    "preview": "astro preview --host 127.0.0.1",
+    "lint": "eslint .",
+    "typecheck": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "catalog:",
+    "@esa/plans": "workspace:*",
+    "astro": "catalog:",
+    "sharp": "catalog:",
+    "starlight-links-validator": "catalog:"
+  },
+  "devDependencies": {
+    "@astrojs/check": "catalog:",
+    "@esa/eslint-config": "workspace:*",
+    "eslint": "catalog:",
+    "typescript": "catalog:",
+    "yaml": "catalog:"
+  }
+}

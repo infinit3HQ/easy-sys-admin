@@ -26,7 +26,9 @@ browser / CLI / AI agent ──HTTPS──> web (TanStack Start) ──> control
 | ------------------------ | ------------------------------------------------------------------------------------------- |
 | `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers    |
 | `apps/web`               | TanStack Start: landing page, the board, the MCP endpoint at `/mcp`, and a proxy to the API |
+| `apps/docs`              | Public documentation site, built as static files for docs.easysysadmin.app                  |
 | `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it               |
+| `packages/plans`         | Plan names, prices, and the hosted beta caps                                                |
 | `packages/eslint-config` | Shared ESLint config                                                                        |
 | `packages/tsconfig`      | Shared TypeScript configs                                                                   |
 | `deploy`                 | `compose.yaml` and `.env.example` for one Docker host behind Traefik                        |
@@ -77,6 +79,8 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 
 ## Documentation
 
+User documentation is published at [docs.easysysadmin.app](https://docs.easysysadmin.app). The pages below are the same material in the repository, written for people changing the code.
+
 | Page                                         | Covers                                                           |
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | [architecture.md](docs/architecture.md)      | Components, request flow, data model, background jobs, runs      |
@@ -90,6 +94,22 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 | [decisions.md](docs/decisions.md)            | Why the stack and design are what they are                       |
 | [status.md](docs/status.md)                  | What is built and what is left                                   |
 
+## License
+
+Copyright (C) 2026 Niraj Dilshan and contributors.
+
+You can self-host Easy Sys Admin for any use, including commercial use. There is no license fee and the license sets no usage cap. The public self-hosted release is still marked coming soon on the plans page. The license terms are already these.
+
+The license is the GNU Affero General Public License, version 3 only (AGPL-3.0-only). It is not "or any later version".
+
+If you modify the software and let other people use that modified version over a network, the AGPL says you must offer them the source of the version they are talking to. The web footer has a Source code link for that. Point `ESA_SOURCE_URL` at the source of the build you are running when it is not the upstream repository. Managed Cloud, when it exists, is our hosted service. It is not a separate license.
+
+For a commercial license, write to [legal contact email].
+
+The Easy Sys Admin name and logo belong to Niraj Dilshan (infinit3HQ). They are not covered by the license. See [TRADEMARKS.md](TRADEMARKS.md).
+
+The software is provided as is, without warranty of any kind, to the extent the license allows. The authors are not liable for damage from using it. The full text is [LICENSE](LICENSE).
+
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Outside contributions need a signed [CLA](CLA.md) before they can be merged. The CLA text is a draft pending legal review. Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).

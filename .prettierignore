@@ -3,5 +3,9 @@ pnpm-lock.yaml
 **/routeTree.gen.ts
 **/.output
 **/.tanstack
+**/.astro
+apps/docs/dist
+apps/docs/src/content/docs/api.md
+THIRD_PARTY_NOTICES.md
 apps/esa
 data

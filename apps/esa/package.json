@@ -2,6 +2,7 @@
   "name": "@esa/esa",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Go control plane, server helper, and CLI. This file only lets pnpm and Turborepo run the Go tasks.",
   "scripts": {
     "generate": "go generate ./...",

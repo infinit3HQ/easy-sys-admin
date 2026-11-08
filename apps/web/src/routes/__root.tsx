@@ -7,12 +7,16 @@ import type { QueryClient } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { Button } from '#/components/ui/button'
 import { loadSeo } from '#/lib/seo'
+import { loadSourceOffer } from '#/lib/source'
 
 import appCss from '../styles.css?url'
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   {
-    loader: () => loadSeo(),
+    loader: async () => ({
+      seo: await loadSeo(),
+      source: await loadSourceOffer(),
+    }),
     head: ({ loaderData }) => ({
       meta: [
         { charSet: 'utf-8' },
@@ -28,7 +32,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           content:
             'Easy Sys Admin is a web app for people who administer their own Linux servers. It shows the fleet on one board, installs updates, and cleans disks on a schedule.',
         },
-        ...(loaderData
+        ...(loaderData?.seo
           ? []
           : [{ name: 'robots', content: 'noindex, nofollow' }]),
       ],

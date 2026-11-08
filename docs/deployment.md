@@ -230,6 +230,10 @@ Two signs that polling needs attention:
 - `esa_poll_cycle_skipped` above 0, or the log line `poll cycle ran out of time; the rest wait for the next cycle` at warning level. It names how many servers were skipped and how many there are. Raise `ESA_POLL_CONCURRENCY` when it repeats.
 - `esa_poll_cycle_seconds` close to 55. The next cycle starts a minute after the last one, so a cycle near its limit has no room left.
 
+## Documentation site
+
+The public docs are a separate static site in `apps/docs`, intended for `https://docs.easysysadmin.app`. CI builds it with the rest of the TypeScript packages. It is not part of the Traefik stack above. Build and hosting steps are in [apps/docs/README.md](../apps/docs/README.md).
+
 ## Roll back
 
 The schema only grows, so older code usually runs on a newer database. Before you roll back, check the commits you are rolling back over for changes to `apps/esa/internal/store/models.go`. A new `NOT NULL` column without a default, or a `postMigrate` step that changed data, can break the older code. In that case, restore the backup taken before the upgrade.
