@@ -1,5 +1,8 @@
 #!/bin/sh
-# Fail unless every commit in BASE..HEAD has a Signed-off-by trailer for its author.
+# Fail unless every non-merge commit in BASE..HEAD has a Signed-off-by trailer
+# for its author. Merge commits are skipped: a merge of the base branch does
+# not certify new work, and GitHub adds its own merge commit while testing a
+# pull request. That commit has no Signed-off-by line.
 # BASE defaults to the GitHub pull request base. Locally, pass the base sha as $1.
 set -eu
 
@@ -11,7 +14,7 @@ fi
 
 missing=0
 # rev-list is newline-separated. A while-read from a pipe would drop the exit flag.
-commits=$(git rev-list --reverse "$base"..HEAD)
+commits=$(git rev-list --no-merges --reverse "$base"..HEAD)
 for sha in $commits; do
   author=$(git log -1 --format='%an <%ae>' "$sha")
   body=$(git log -1 --format='%B' "$sha")
