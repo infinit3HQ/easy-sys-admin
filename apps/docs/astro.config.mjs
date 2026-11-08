@@ -64,6 +64,7 @@ export default defineConfig({
           items: [
             { label: 'Pricing and plans', link: '/pricing' },
             { label: 'License', link: '/license' },
+            { label: 'Legal', link: '/legal' },
             { label: 'Troubleshooting', link: '/troubleshooting' },
             { label: 'Security', link: '/security' },
             { label: 'Changelog', link: '/changelog' },
