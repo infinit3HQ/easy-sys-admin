@@ -61,7 +61,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | @oozcitak/infra | 2.0.2 | MIT |
 | @oozcitak/url | 3.0.0 | MIT |
 | @oozcitak/util | 10.0.0 | MIT |
-| @oxc-parser/binding-darwin-arm64 | 0.120.0 | MIT |
 | @oxc-project/types | 0.120.0 | MIT |
 | @oxc-project/types | 0.156.0 | MIT |
 | @radix-ui/number | 1.1.3 | MIT |
@@ -128,7 +127,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | @redocly/cli | 2.72.1 | MIT |
 | @redocly/config | 0.22.0 | MIT |
 | @redocly/openapi-core | 1.34.22 | MIT |
-| @rolldown/binding-darwin-arm64 | 1.2.16 | MIT |
 | @rolldown/pluginutils | 1.0.1 | MIT |
 | @solid-primitives/event-listener | 2.4.6 | MIT |
 | @solid-primitives/keyboard | 1.3.7 | MIT |
@@ -139,7 +137,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | @stylistic/eslint-plugin | 5.10.0 | MIT |
 | @tailwindcss/node | 4.3.3 | MIT |
 | @tailwindcss/oxide | 4.3.3 | MIT |
-| @tailwindcss/oxide-darwin-arm64 | 4.3.3 | MIT |
 | @tailwindcss/vite | 4.3.3 | MIT |
 | @tanstack/devtools | 0.16.0 | MIT |
 | @tanstack/devtools-bundler-core | 0.1.4 | MIT |
@@ -177,7 +174,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | @tanstack/store | 0.11.2 | MIT |
 | @tanstack/virtual-core | 3.19.11 | MIT |
 | @tanstack/virtual-file-routes | 1.162.0 | MIT |
-| @turbo/darwin-arm64 | 2.11.10 | MIT |
 | @types/esrecurse | 4.3.1 | MIT |
 | @types/estree | 1.0.10 | MIT |
 | @types/json-schema | 7.0.15 | MIT |
@@ -194,7 +190,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | @typescript-eslint/typescript-estree | 8.72.1 | MIT |
 | @typescript-eslint/utils | 8.72.1 | MIT |
 | @typescript-eslint/visitor-keys | 8.72.1 | MIT |
-| @unrs/resolver-binding-darwin-arm64 | 1.12.2 | MIT |
 | @vitejs/plugin-react | 6.1.2 | MIT |
 | acorn | 8.19.0 | MIT |
 | acorn-jsx | 5.3.2 | MIT |
@@ -265,7 +260,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | find-up | 5.0.0 | MIT |
 | flat-cache | 6.1.23 | MIT |
 | flatted | 3.4.4 | ISC |
-| fsevents | 2.3.3 | MIT |
 | gensync | 1.0.0-beta.2 | MIT |
 | get-nonce | 1.0.1 | MIT |
 | get-tsconfig | 4.14.3 | MIT |
@@ -304,8 +298,6 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | levn | 0.4.1 | MIT |
 | lightningcss | 1.32.0 | MPL-2.0 |
 | lightningcss | 1.33.0 | MPL-2.0 |
-| lightningcss-darwin-arm64 | 1.32.0 | MPL-2.0 |
-| lightningcss-darwin-arm64 | 1.33.0 | MPL-2.0 |
 | locate-path | 6.0.0 | MIT |
 | lru-cache | 11.5.3 | BlueOak-1.0.0 |
 | lru-cache | 5.1.1 | ISC |
@@ -430,6 +422,7 @@ The project itself is AGPL-3.0-only, copyright 2026 Niraj Dilshan and contributo
 | golang.org/x/crypto | v0.58.0 | BSD-3-Clause |
 | golang.org/x/oauth2 | v0.37.0 | BSD-3-Clause |
 | golang.org/x/sync/semaphore | v0.24.0 | BSD-3-Clause |
+| golang.org/x/sys/cpu | v0.49.0 | BSD-3-Clause |
 | golang.org/x/text | v0.43.0 | BSD-3-Clause |
 | gorm.io/driver/postgres | v1.6.3 | MIT |
 | gorm.io/gorm | v1.31.2 | MIT |

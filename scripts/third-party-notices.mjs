@@ -126,6 +126,39 @@ assertLicense('((GPL-2.0-only))', false)
 assertLicense('MIT AND (GPL-2.0-only)', false)
 assertLicense('((MIT) AND (GPL-2.0-only))', false)
 
+// pnpm only installs the native build for this machine. Listing those
+// packages makes the file differ between macOS and Linux.
+function isPlatformPackage(name) {
+  if (name === 'fsevents') return true
+  const base = name.startsWith('@')
+    ? name.slice(name.lastIndexOf('/') + 1)
+    : name
+  return /(?:^|-)(?:darwin|linux|win32|windows|android|freebsd|openbsd|netbsd|sunos|aix)(?:-(?:arm64|arm|x64|ia32|ppc64|s390x|loong64|riscv64|64))?(?:-(?:gnu|musl|msvc|gnueabihf))?$/.test(
+    base,
+  )
+}
+
+function assertPlatform(name, expected) {
+  if (isPlatformPackage(name) !== expected) {
+    throw new Error(`platform package ${name}: expected ${expected}`)
+  }
+}
+assertPlatform('fsevents', true)
+assertPlatform('@oxc-parser/binding-darwin-arm64', true)
+assertPlatform('@oxc-parser/binding-linux-x64-gnu', true)
+assertPlatform('@rolldown/binding-darwin-arm64', true)
+assertPlatform('@tailwindcss/oxide-darwin-arm64', true)
+assertPlatform('@tailwindcss/oxide', false)
+assertPlatform('@turbo/darwin-arm64', true)
+assertPlatform('@turbo/linux-64', true)
+assertPlatform('@turbo/windows-64', true)
+assertPlatform('@unrs/resolver-binding-linux-x64-gnu', true)
+assertPlatform('lightningcss-darwin-arm64', true)
+assertPlatform('lightningcss-linux-x64-gnu', true)
+assertPlatform('lightningcss', false)
+assertPlatform('react', false)
+assertPlatform('@tanstack/react-router', false)
+
 /** @param {string} text */
 function jsonObjects(text) {
   /** @type {Array<Record<string, unknown>>} */
@@ -217,11 +250,19 @@ function goModules() {
   })
   let report = ''
   try {
+    // CI runs on linux/amd64. A scan of the host OS adds packages such as
+    // golang.org/x/sys/cpu only on Linux, so the file would never match.
     report = execFileSync(resolve(binDir, 'go-licenses'), ['report', './...'], {
       cwd: resolve(root, 'apps/esa'),
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        GOOS: 'linux',
+        GOARCH: 'amd64',
+        CGO_ENABLED: '0',
+      },
     })
   } catch (error) {
     const stdout = error.stdout?.toString() ?? ''
@@ -282,7 +323,10 @@ function section(title, rows) {
 }
 
 const npm = npmPackages().filter(
-  (row) => !ownNpm.has(row.name) && !row.name.startsWith('@esa/'),
+  (row) =>
+    !ownNpm.has(row.name) &&
+    !row.name.startsWith('@esa/') &&
+    !isPlatformPackage(row.name),
 )
 const go = goModules()
 const violations = []
