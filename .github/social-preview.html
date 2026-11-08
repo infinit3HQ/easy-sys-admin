@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>EASY-SYS-ADMIN</title>
+    <style>
+      @font-face {
+        font-family: 'Big Shoulders';
+        src: url('../apps/web/node_modules/@fontsource-variable/big-shoulders/files/big-shoulders-latin-wght-normal.woff2')
+          format('woff2');
+        font-weight: 100 900;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Instrument Sans';
+        src: url('../apps/web/node_modules/@fontsource-variable/instrument-sans/files/instrument-sans-latin-wght-normal.woff2')
+          format('woff2');
+        font-weight: 100 900;
+        font-display: block;
+      }
+      @font-face {
+        font-family: 'Martian Mono';
+        src: url('../apps/web/node_modules/@fontsource-variable/martian-mono/files/martian-mono-latin-wght-normal.woff2')
+          format('woff2');
+        font-weight: 100 800;
+        font-display: block;
+      }
+      html,
+      body {
+        margin: 0;
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        background: #0b0d0c;
+      }
+      .card {
+        box-sizing: border-box;
+        width: 1280px;
+        height: 640px;
+        padding: 56px 64px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 440px;
+        gap: 40px;
+        align-items: center;
+        color: #ece8dc;
+        background-color: #0b0d0c;
+        background-image:
+          linear-gradient(to right, rgb(35 41 37 / 0.85) 1px, transparent 1px),
+          linear-gradient(to bottom, rgb(35 41 37 / 0.85) 1px, transparent 1px);
+        background-size: 32px 32px;
+      }
+      .kicker {
+        margin: 0;
+        font-family: 'Martian Mono', monospace;
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: #ffb000;
+      }
+      h1 {
+        margin: 18px 0 0;
+        font-family: 'Big Shoulders', sans-serif;
+        font-size: 92px;
+        font-weight: 800;
+        line-height: 0.8;
+        letter-spacing: -0.015em;
+        text-transform: uppercase;
+      }
+      h1 span {
+        color: #ffb000;
+      }
+      .lede {
+        margin: 26px 0 0;
+        max-width: 30rem;
+        font-family: 'Instrument Sans', sans-serif;
+        font-size: 22px;
+        font-weight: 450;
+        line-height: 1.35;
+        color: #bdb9ad;
+      }
+      .mark {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 36px;
+      }
+      .mark strong {
+        font-family: 'Big Shoulders', sans-serif;
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+      .beta {
+        border: 1px solid rgb(255 176 0 / 0.7);
+        border-radius: 2px;
+        padding: 2px 6px;
+        font-family: 'Martian Mono', monospace;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #ffb000;
+      }
+      .panel {
+        border: 1px solid #313833;
+        border-radius: 6px;
+        background: linear-gradient(180deg, #191e1a, #131714 42%);
+        box-shadow: 0 40px 80px -36px rgb(255 176 0 / 0.28);
+        overflow: hidden;
+      }
+      .panel header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #232925;
+        padding: 12px 16px;
+      }
+      .label {
+        font-family: 'Martian Mono', monospace;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #7c8279;
+      }
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: 'Martian Mono', monospace;
+        font-size: 11px;
+        color: #7c8279;
+      }
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #6fdc8c;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 14px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        border-top: 1px solid #232925;
+        padding: 11px 16px;
+      }
+      .row:first-of-type {
+        border-top: 0;
+      }
+      .status {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+      }
+      .ok {
+        background: #6fdc8c;
+      }
+      .warn {
+        background: #ffb000;
+      }
+      .fail {
+        background: #ff5544;
+      }
+      .name {
+        font-family: 'Martian Mono', monospace;
+        font-size: 14px;
+        color: #ece8dc;
+      }
+      .group {
+        margin-left: 8px;
+        font-family: 'Martian Mono', monospace;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #4c534d;
+      }
+      .note {
+        margin-top: 3px;
+        font-family: 'Martian Mono', monospace;
+        font-size: 11px;
+        color: #7c8279;
+      }
+      .bars {
+        width: 88px;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .bar:first-child {
+        margin-top: 0;
+      }
+      .bar span {
+        width: 28px;
+        font-family: 'Martian Mono', monospace;
+        font-size: 9px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #4c534d;
+      }
+      .track {
+        flex: 1;
+        height: 4px;
+        background: #232925;
+      }
+      .fill {
+        height: 4px;
+        background: #bdb9ad;
+      }
+      .fill.warn {
+        background: #ffb000;
+      }
+      .fill.fail {
+        background: #ff5544;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div>
+        <p class="kicker">Easy Sys Admin · public beta</p>
+        <h1>
+          One board<br />
+          for the<br />
+          <span>whole fleet.</span>
+        </h1>
+        <p class="lede">
+          Status, updates, and cleanups for the Linux servers you administer
+          yourself.
+        </p>
+        <div class="mark">
+          <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
+            <rect width="32" height="32" rx="6" fill="#0b0d0c" />
+            <rect x="6" y="7" width="20" height="5" rx="1" fill="#ffb000" />
+            <rect x="6" y="14" width="20" height="5" rx="1" fill="#ece8dc" opacity="0.85" />
+            <rect x="6" y="21" width="20" height="5" rx="1" fill="#ece8dc" opacity="0.45" />
+            <circle cx="22.5" cy="9.5" r="1.3" fill="#0b0d0c" />
+          </svg>
+          <strong>EASY-SYS-ADMIN</strong>
+          <span class="beta">Beta</span>
+        </div>
+      </div>
+      <div class="panel">
+        <header>
+          <span class="label">Fleet · demo data</span>
+          <span class="live"><span class="dot"></span> live</span>
+        </header>
+        <div class="row">
+          <span class="status ok"></span>
+          <div>
+            <div><span class="name">media-01</span><span class="group">production</span></div>
+            <div class="note">freed 47.2 GiB build cache</div>
+          </div>
+          <div class="bars">
+            <div class="bar"><span>cpu</span><div class="track"><div class="fill" style="width: 12%"></div></div></div>
+            <div class="bar"><span>disk</span><div class="track"><div class="fill" style="width: 41%"></div></div></div>
+          </div>
+        </div>
+        <div class="row">
+          <span class="status warn"></span>
+          <div>
+            <div><span class="name">builder-02</span><span class="group">builders</span></div>
+            <div class="note">disk / at 88%</div>
+          </div>
+          <div class="bars">
+            <div class="bar"><span>cpu</span><div class="track"><div class="fill" style="width: 64%"></div></div></div>
+            <div class="bar"><span>disk</span><div class="track"><div class="fill warn" style="width: 88%"></div></div></div>
+          </div>
+        </div>
+        <div class="row">
+          <span class="status ok"></span>
+          <div>
+            <div><span class="name">edge-01</span><span class="group">production</span></div>
+            <div class="note">3 security updates installed</div>
+          </div>
+          <div class="bars">
+            <div class="bar"><span>cpu</span><div class="track"><div class="fill" style="width: 4%"></div></div></div>
+            <div class="bar"><span>disk</span><div class="track"><div class="fill" style="width: 22%"></div></div></div>
+          </div>
+        </div>
+        <div class="row">
+          <span class="status fail"></span>
+          <div>
+            <div><span class="name">client-a</span><span class="group">client A</span></div>
+            <div class="note">disk /var at 97%</div>
+          </div>
+          <div class="bars">
+            <div class="bar"><span>cpu</span><div class="track"><div class="fill" style="width: 9%"></div></div></div>
+            <div class="bar"><span>disk</span><div class="track"><div class="fill fail" style="width: 97%"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
