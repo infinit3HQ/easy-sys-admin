@@ -21,13 +21,17 @@ catalog:
   '@tanstack/react-start': 1.169.4
   '@tanstack/react-virtual': ^3.14.26
   '@tanstack/router-cli': ^1.132.0
+  '@astrojs/check': 0.9.12
+  '@astrojs/starlight': 0.42.9
   '@types/node': ^26.6.6
   '@types/react': ^19.2.0
   '@types/react-dom': ^19.2.0
   '@vitejs/plugin-react': ^6.0.1
+  astro: 7.4.7
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
   eslint: 10.13.0
+  sharp: 0.35.5
   lucide-react: 1.65.0
   nitro: 3.0.260610-beta
   radix-ui: ^1.8.1
@@ -38,16 +42,19 @@ catalog:
   prettier: ^3.8.1
   react-dom: ^19.2.0
   react: ^19.2.0
+  starlight-links-validator: 0.27.0
   tailwindcss: ^4.3.3
   turbo: ^2.11.10
   typescript: ^6.0.2
   vite: ^8.0.0
+  yaml: 2.8.1
   zod: ^4.6.7
 
 # Dependencies allowed to run install scripts. Everything else is blocked.
 allowBuilds:
   esbuild: true
   lightningcss: true
+  sharp: true
   # The prebuilt native binding ships as an optional dependency, so its postinstall is not needed.
   unrs-resolver: false
 

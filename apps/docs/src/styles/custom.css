@@ -1,0 +1,30 @@
+/* Amber on the same graphite as the product. Starlight still provides light and dark. */
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #fff4d6;
+  --sl-color-accent: #8a5a00;
+  --sl-color-accent-high: #3d2800;
+  --sl-color-text-accent: #8a5a00;
+}
+
+:root[data-theme='dark'] {
+  --sl-color-accent-low: #3a2a00;
+  --sl-color-accent: #ffb000;
+  --sl-color-accent-high: #ffe1a3;
+  --sl-color-text-accent: #ffb000;
+  --sl-color-white: #ece8dc;
+  --sl-color-gray-1: #ece8dc;
+  --sl-color-gray-2: #bdb9ad;
+  --sl-color-gray-3: #7c8279;
+  --sl-color-gray-4: #4c534d;
+  --sl-color-gray-5: #313833;
+  --sl-color-gray-6: #191e1a;
+  --sl-color-gray-7: #0f1210;
+  --sl-color-black: #0b0d0c;
+  --sl-color-bg: #0b0d0c;
+  --sl-color-bg-nav: #0f1210;
+  --sl-color-bg-sidebar: #0f1210;
+  --sl-color-hairline-light: #232925;
+  --sl-color-hairline: #313833;
+  --sl-color-text: #ece8dc;
+}

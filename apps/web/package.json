@@ -2,6 +2,7 @@
   "name": "@esa/web",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "imports": {
     "#/*": "./src/*"
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@esa/api": "workspace:*",
+    "@esa/plans": "workspace:*",
     "@fontsource-variable/big-shoulders": "catalog:",
     "@fontsource-variable/instrument-sans": "catalog:",
     "@fontsource-variable/martian-mono": "catalog:",

@@ -134,14 +134,14 @@ function Login() {
                     ? 'We sent a confirmation link. Open it, then sign in. It works for 24 hours.'
                     : 'This address is not confirmed yet. We can send the link again.'
                   : resetting
-                  ? 'Choose a password of at least 10 characters.'
-                  : forgot
-                    ? 'If this address has a password account, we will email a link.'
-                    : signup
-                      ? cfg.mail
-                        ? 'We email a confirmation link. Open it, then sign in. Google skips this.'
-                        : 'You get your own fleet. Add servers once you are in.'
-                      : 'The board, groups, and runs for your fleet.'}
+                    ? 'Choose a password of at least 10 characters.'
+                    : forgot
+                      ? 'If this address has a password account, we will email a link.'
+                      : signup
+                        ? cfg.mail
+                          ? 'We email a confirmation link. Open it, then sign in. Google skips this.'
+                          : 'You get your own fleet. Add servers once you are in.'
+                        : 'The board, groups, and runs for your fleet.'}
             </p>
             {error && (
               <ErrorBanner
@@ -154,8 +154,7 @@ function Login() {
             )}
             {sent === 'confirm' && !error && (
               <Notice className="mt-4">
-                Check your email for a confirmation link. It works for 24
-                hours.
+                Check your email for a confirmation link. It works for 24 hours.
               </Notice>
             )}
             {sent === 'reset' && !error && (
@@ -226,7 +225,11 @@ function Login() {
             )}
 
             {verify && (
-              <form method="post" action="/auth/email/resend" className="mt-6 space-y-4">
+              <form
+                method="post"
+                action="/auth/email/resend"
+                className="mt-6 space-y-4"
+              >
                 <Field label="Email">
                   <Input
                     type="email"
@@ -243,46 +246,52 @@ function Login() {
               </form>
             )}
 
-            {cfg.password && !forgot && !resetting && !confirming && !verify && (
-              <form
-                method="post"
-                action={
-                  signup ? '/auth/password/signup' : '/auth/password/login'
-                }
-                className="mt-6 space-y-4"
-              >
-                <input type="hidden" name="return_to" value={returnTo} />
-                {signup && (
-                  <Field label="Name">
-                    <Input name="name" autoComplete="name" />
-                  </Field>
-                )}
-                <Field label="Email">
-                  <Input
-                    type="email"
-                    name="email"
-                    autoComplete="email"
-                    autoCapitalize="off"
-                    required
-                  />
-                </Field>
-                <Field
-                  label="Password"
-                  hint={signup ? 'At least 10 characters.' : undefined}
+            {cfg.password &&
+              !forgot &&
+              !resetting &&
+              !confirming &&
+              !verify && (
+                <form
+                  method="post"
+                  action={
+                    signup ? '/auth/password/signup' : '/auth/password/login'
+                  }
+                  className="mt-6 space-y-4"
                 >
-                  <Input
-                    type="password"
-                    name="password"
-                    autoComplete={signup ? 'new-password' : 'current-password'}
-                    minLength={signup ? 10 : undefined}
-                    required
-                  />
-                </Field>
-                <Button type="submit" size="lg" className="w-full">
-                  {signup ? 'Create account' : 'Sign in'}
-                </Button>
-              </form>
-            )}
+                  <input type="hidden" name="return_to" value={returnTo} />
+                  {signup && (
+                    <Field label="Name">
+                      <Input name="name" autoComplete="name" />
+                    </Field>
+                  )}
+                  <Field label="Email">
+                    <Input
+                      type="email"
+                      name="email"
+                      autoComplete="email"
+                      autoCapitalize="off"
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Password"
+                    hint={signup ? 'At least 10 characters.' : undefined}
+                  >
+                    <Input
+                      type="password"
+                      name="password"
+                      autoComplete={
+                        signup ? 'new-password' : 'current-password'
+                      }
+                      minLength={signup ? 10 : undefined}
+                      required
+                    />
+                  </Field>
+                  <Button type="submit" size="lg" className="w-full">
+                    {signup ? 'Create account' : 'Sign in'}
+                  </Button>
+                </form>
+              )}
 
             {cfg.mail &&
               cfg.password &&
@@ -302,34 +311,38 @@ function Login() {
                 </p>
               )}
 
-            {cfg.providers.length > 0 && !forgot && !resetting && !confirming && !verify && (
-              <>
-                {cfg.password && (
-                  <div className="my-5 flex items-center gap-3 font-mono text-[10px] tracking-widest text-faint uppercase">
-                    <span className="h-px flex-1 bg-line" /> or{' '}
-                    <span className="h-px flex-1 bg-line" />
-                  </div>
-                )}
-                <div className={cn('space-y-2', !cfg.password && 'mt-6')}>
-                  {cfg.providers.map((p) => (
-                    <Button
-                      key={p.id}
-                      asChild
-                      variant="outline"
-                      size="lg"
-                      className="w-full"
-                    >
-                      <a
-                        href={`/auth/login/${p.id}?return_to=${encodeURIComponent(returnTo)}`}
+            {cfg.providers.length > 0 &&
+              !forgot &&
+              !resetting &&
+              !confirming &&
+              !verify && (
+                <>
+                  {cfg.password && (
+                    <div className="my-5 flex items-center gap-3 font-mono text-[10px] tracking-widest text-faint uppercase">
+                      <span className="h-px flex-1 bg-line" /> or{' '}
+                      <span className="h-px flex-1 bg-line" />
+                    </div>
+                  )}
+                  <div className={cn('space-y-2', !cfg.password && 'mt-6')}>
+                    {cfg.providers.map((p) => (
+                      <Button
+                        key={p.id}
+                        asChild
+                        variant="outline"
+                        size="lg"
+                        className="w-full"
                       >
-                        <ProviderIcon id={p.id} />
-                        {signup ? 'Sign up' : 'Continue'} with {p.name}
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              </>
-            )}
+                        <a
+                          href={`/auth/login/${p.id}?return_to=${encodeURIComponent(returnTo)}`}
+                        >
+                          <ProviderIcon id={p.id} />
+                          {signup ? 'Sign up' : 'Continue'} with {p.name}
+                        </a>
+                      </Button>
+                    ))}
+                  </div>
+                </>
+              )}
 
             {cfg.dev && (
               <form
@@ -357,6 +370,26 @@ function Login() {
                 >
                   Back to sign in
                 </Link>
+              </p>
+            )}
+
+            {!forgot && !resetting && !confirming && !verify && (
+              <p className="mt-5 text-center text-xs leading-relaxed text-muted-foreground">
+                By continuing you agree to the{' '}
+                <Link
+                  to="/terms"
+                  className="text-ink underline underline-offset-4"
+                >
+                  Terms
+                </Link>{' '}
+                and{' '}
+                <Link
+                  to="/privacy"
+                  className="text-ink underline underline-offset-4"
+                >
+                  Privacy Policy
+                </Link>
+                .
               </p>
             )}
 

@@ -1,5 +1,7 @@
+import { docsSiteUrl, supportEmail } from '@esa/plans'
 import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { SourceOffer } from '#/components/source-offer'
 import { Button } from '#/components/ui/button'
 import { cn } from '#/lib/utils'
 
@@ -9,7 +11,7 @@ export const column = 'mx-auto w-full max-w-7xl px-4 sm:px-6'
 /** The name on the public site. It matches the Google sign-in screen. */
 export const productName = 'EASY-SYS-ADMIN'
 
-export const supportEmail = 'support@easysysadmin.app'
+export { supportEmail }
 
 /**
  * The source repo is private, so the public pages do not offer a self-hosted
@@ -18,6 +20,7 @@ export const supportEmail = 'support@easysysadmin.app'
 export const showSelfHost = false as boolean
 
 const legal = [
+  { to: '/pricing', label: 'Pricing' },
   { to: '/terms', label: 'Terms' },
   { to: '/privacy', label: 'Privacy policy' },
 ] as const
@@ -43,12 +46,15 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             <a href="/#watch" className="hidden hover:text-ink sm:inline">
               Watches
             </a>
-            <a href="/#safety" className="hidden hover:text-ink sm:inline">
+            <a href="/#safety" className="hidden hover:text-ink lg:inline">
               Safety
             </a>
-            <a href="/#agents" className="hidden hover:text-ink md:inline">
+            <a href="/#agents" className="hidden hover:text-ink lg:inline">
               MCP
             </a>
+            <Link to="/pricing" className="hover:text-ink">
+              Pricing
+            </Link>
             <Button
               asChild
               size="sm"
@@ -91,13 +97,19 @@ export function SiteFrame({ children }: { children: ReactNode }) {
               {supportEmail}
             </a>
           </div>
-          <nav className="flex gap-6 font-mono text-xs text-ink-2">
-            {legal.map((item) => (
-              <Link key={item.to} to={item.to} className="hover:text-ink">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          <div className="flex flex-col gap-3 sm:items-end">
+            <nav className="flex flex-wrap gap-x-6 gap-y-2 font-mono text-xs text-ink-2">
+              <a href={docsSiteUrl} className="hover:text-ink">
+                Documentation
+              </a>
+              {legal.map((item) => (
+                <Link key={item.to} to={item.to} className="hover:text-ink">
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <SourceOffer className="font-mono text-[11px] text-muted-foreground" />
+          </div>
         </div>
       </footer>
     </div>

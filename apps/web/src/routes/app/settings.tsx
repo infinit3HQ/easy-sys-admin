@@ -1,11 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query'
 import { useState } from 'react'
 import { KeyRoundIcon, LogOutIcon } from 'lucide-react'
 import type { Scope } from '@esa/api'
 import { api, call } from '#/lib/api'
 import { siteOrigin } from '#/lib/origin'
 import { q } from '#/lib/queries'
+import { PricingDialog } from '#/components/pricing'
 import { Ago } from '#/components/time'
 import {
   Choice,
@@ -47,7 +53,8 @@ function Settings() {
   return (
     <div>
       <PageHeader kicker="Account" title="Settings" />
-      <div className="grid gap-6 xl:grid-cols-2">
+      <Plan />
+      <div className="mt-6 grid gap-6 xl:grid-cols-2">
         <Tokens origin={origin} />
         <div className="min-w-0 space-y-6">
           <SshKey />
@@ -61,6 +68,36 @@ function Settings() {
         </div>
       </div>
     </div>
+  )
+}
+
+function Plan() {
+  const { data: me } = useSuspenseQuery(q.me())
+  const [open, setOpen] = useState(false)
+  const orgCap = me.limits.maxOrganizations
+  return (
+    <Panel
+      title="Plan"
+      actions={
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => setOpen(true)}
+        >
+          Compare plans
+        </Button>
+      }
+    >
+      <p>
+        Nothing is charged. The current plan is Free Beta. This space can hold{' '}
+        <span className="num">{me.limits.maxServers}</span> servers. You can own{' '}
+        <span className="num">{orgCap}</span>{' '}
+        {orgCap === 1 ? 'organization' : 'organizations'} besides your personal
+        space.
+      </p>
+      <PricingDialog open={open} onOpenChange={setOpen} />
+    </Panel>
   )
 }
 

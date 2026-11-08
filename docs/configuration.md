@@ -25,7 +25,7 @@ These must be set for the compose deployment. Compose stops with `set <NAME>` wh
 
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
-| `ESA_SEO` | `false` | Lets search engines index the landing page, the privacy policy, and the terms. `robots.txt` allows those paths and points at `/sitemap.xml`. The board, sign-in, invites, and API stay out of the index. Leave it false on a self-hosted install. Set it on the web container. The control plane ignores it. |
+| `ESA_SEO` | `false` | Lets search engines index the landing page, the pricing page, the privacy policy, and the terms. `robots.txt` allows those paths and points at `/sitemap.xml`. The board, sign-in, invites, and API stay out of the index. Leave it false on a self-hosted install. Set it on the web container. The control plane ignores it. |
 
 ## Sign-in
 
@@ -94,7 +94,7 @@ These are read by `deploy/compose.yaml` and the deploy workflow, not by the appl
 | `ESA_COMMIT`            | `none`       | Commit compiled into the control plane and helpers. The deploy workflow sets it to the full commit hash.                                                           |
 | `DEPLOY_ENABLED`        | unset        | GitHub repository variable, not an env file entry. Pushes to `main` deploy after CI passes only when it is `true`. Manual "Run workflow" deploys work without it.  |
 
-The deploy workflow also reads `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_SEO`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, and the Traefik settings above from repository variables. `ESA_SMTP_PASSWORD` is a production secret. It reads the secrets from the `production` environment. It always writes `ESA_PUBLIC_URL` as `https://$ESA_HOST`, so you cannot override that through a variable. Values cannot contain a single quote or a line break. See [deployment.md](deployment.md).
+The deploy workflow also reads `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_SEO`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_SOURCE_URL`, and the Traefik settings above from repository variables. `ESA_SMTP_PASSWORD` is a production secret. It reads the secrets from the `production` environment. It always writes `ESA_PUBLIC_URL` as `https://$ESA_HOST`, so you cannot override that through a variable. Values cannot contain a single quote or a line break. See [deployment.md](deployment.md).
 
 ## Control plane outside compose
 
@@ -121,6 +121,9 @@ The web server (`apps/web`) serves the board and `/mcp`, and proxies `/api`, `/a
 | `PORT`           | `3000`                                                                     | Port of the built server (`.output/server/index.mjs`). `NITRO_PORT` takes precedence when set.                                                                                                                        |
 | `HOST`           | `127.0.0.1` with `pnpm --filter @esa/web start`. The image sets `0.0.0.0`. | Address of the built server. `NITRO_HOST` takes precedence when set.                                                                                                                                                  |
 | `WEB_PORT`       | `3000`                                                                     | Port of the Vite dev server (`pnpm --filter @esa/web dev`). The dev server does not read `PORT`. It fails instead of picking another port when this one is taken. If you change it, change `ESA_PUBLIC_URL` to match. |
+| `ESA_SOURCE_URL` | `https://github.com/infinit3HQ/easy-sys-admin`                             | Page linked from "Source code" in the web footer and the signed-in sidebar. This is the AGPL source offer. Set it to the place where people can get the exact source of the build you are running, such as your fork, when you have modified the software. When the value is a GitHub repository URL (nothing after the repository name) and `ESA_COMMIT` is a git sha, the link points at `.../tree/<commit>`. Any other URL is used as given. Set it on the web container. The control plane ignores it. |
+| `ESA_VERSION`    | `dev`                                                                      | Version string shown next to the source link. Compose and the deploy workflow also use it as the image tag and, for the control plane image, as the version compiled into the binary. Set it on the web container for the footer. |
+| `ESA_COMMIT`     | `none`                                                                     | Commit shown next to the source link. The deploy workflow sets it to the full git sha. A 7 to 40 character hex sha is appended to a GitHub `ESA_SOURCE_URL`. Set it on the web container for the footer. The control plane image bakes the same value in with `-ldflags`. |
 
 ## Tests
 

@@ -1,8 +1,10 @@
+import { betaLimits } from '@esa/plans'
 import { createServerFn } from '@tanstack/react-start'
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowRightIcon } from 'lucide-react'
 import { CopyBlock, StatusDot, cn } from '#/components/kit'
+import { PricingDialog, PricingSection } from '#/components/pricing'
 import {
   column,
   productName,
@@ -14,30 +16,28 @@ import { seoEnabled } from '#/lib/seo'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
 
-const loadPublicPolicy = createServerFn({ method: 'GET' }).handler(
-  async () => {
-    // Same variables as the control plane. Unset means a self-hosted install:
-    // full caps, and sign-up closed except for the first account.
-    const betaLimits = process.env.ESA_BETA_LIMITS === 'true'
-    let signup = ['1', 'true', 'yes', 'on'].includes(
-      (process.env.ESA_SIGNUP ?? '').toLowerCase(),
-    )
-    try {
-      const origin = process.env.ESA_API_URL ?? 'http://127.0.0.1:8080'
-      const res = await fetch(new URL('/api/v1/auth/config', origin), {
-        signal: AbortSignal.timeout(2000),
-      })
-      if (res.ok) {
-        const body = (await res.json()) as { signup?: boolean }
-        if (typeof body.signup === 'boolean') signup = body.signup
-      }
-    } catch {
-      // The control plane is the source of truth when it answers. An allow
-      // list there turns ESA_SIGNUP off, which this env value cannot see.
+const loadPublicPolicy = createServerFn({ method: 'GET' }).handler(async () => {
+  // Same variables as the control plane. Unset means a self-hosted install:
+  // full caps, and sign-up closed except for the first account.
+  const hostedBeta = process.env.ESA_BETA_LIMITS === 'true'
+  let signup = ['1', 'true', 'yes', 'on'].includes(
+    (process.env.ESA_SIGNUP ?? '').toLowerCase(),
+  )
+  try {
+    const origin = process.env.ESA_API_URL ?? 'http://127.0.0.1:8080'
+    const res = await fetch(new URL('/api/v1/auth/config', origin), {
+      signal: AbortSignal.timeout(2000),
+    })
+    if (res.ok) {
+      const body = (await res.json()) as { signup?: boolean }
+      if (typeof body.signup === 'boolean') signup = body.signup
     }
-    return { betaLimits, signup, seo: seoEnabled() }
-  },
-)
+  } catch {
+    // The control plane is the source of truth when it answers. An allow
+    // list there turns ESA_SIGNUP off, which this env value cannot see.
+  }
+  return { betaLimits: hostedBeta, signup, seo: seoEnabled() }
+})
 
 const purpose =
   'Easy Sys Admin is a web app for people who administer their own Linux servers. It shows every server on one board, installs package updates, and cleans disks on a schedule. You can read this page without signing in.'
@@ -65,8 +65,7 @@ export const Route = createFileRoute('/')({
             ]
           : []),
       ],
-      links:
-        seo && origin ? [{ rel: 'canonical', href: `${origin}/` }] : [],
+      links: seo && origin ? [{ rel: 'canonical', href: `${origin}/` }] : [],
     }
   },
   component: Landing,
@@ -135,6 +134,11 @@ function Landing() {
     <SiteFrame>
       <Hero />
       <Beta />
+      <section className="scroll-mt-14 border-t py-16 sm:py-20">
+        <div className={column}>
+          <PricingSection />
+        </div>
+      </section>
       <Watches />
       <Touch />
       <Agents />
@@ -149,7 +153,9 @@ function Hero() {
       <div className={column}>
         <div className="grid items-end gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(20rem,0.95fr)] lg:gap-12">
           <div className="animate-rise">
-            <p className="label mb-6 !text-amber">Easy Sys Admin · public beta</p>
+            <p className="label mb-6 !text-amber">
+              Easy Sys Admin · public beta
+            </p>
             <h1 className="font-display text-[clamp(3.25rem,14vw,8.5rem)] leading-[0.82] font-extrabold tracking-tight uppercase lg:text-[clamp(3.5rem,9vw,8.5rem)]">
               One board
               <br />
@@ -165,8 +171,8 @@ function Hero() {
             {purpose} See every server on one page, refreshed each minute. Put
             servers in groups, choose when their disks get cleaned and their
             packages patched, and stop logging in to each machine. The board
-            reaches each server over SSH. Nothing from Easy Sys Admin listens
-            on those servers.
+            reaches each server over SSH. Nothing from Easy Sys Admin listens on
+            those servers.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-end gap-3">
             <Link
@@ -180,6 +186,13 @@ function Hero() {
                 <a href="#install">Self-host it</a>
               </Button>
             )}
+            <PricingDialog
+              trigger={
+                <Button type="button" size="lg" variant="outline">
+                  Plans
+                </Button>
+              }
+            />
             <Button asChild size="lg">
               <Link to="/app">
                 Open the board <ArrowRightIcon />
@@ -326,7 +339,7 @@ function facts(policy: {
     [
       'Limit',
       policy.betaLimits
-        ? 'You get one personal space and one organization. Each can hold 10 servers, 20 in total.'
+        ? `You get one personal space and one organization. Each can hold ${betaLimits.serversPerSpace} servers, ${betaLimits.serversTotal} in total.`
         : 'One account can hold 500 servers. One person can own 20 organizations besides their personal space.',
     ],
     [

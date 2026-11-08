@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "generate": {
+      "outputs": ["src/content/docs/api.md"]
+    },
+    "build": {
+      "outputs": ["dist/**"]
+    }
+  }
+}
