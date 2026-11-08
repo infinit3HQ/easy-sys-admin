@@ -17,6 +17,7 @@ COPY packages/eslint-config/package.json packages/eslint-config/
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter @esa/web...
 
+COPY TERMS.md PRIVACY.md ./
 COPY packages/ packages/
 COPY apps/web/ apps/web/
 RUN pnpm --filter @esa/web build

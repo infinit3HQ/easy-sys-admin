@@ -65,6 +65,7 @@ jobs:
           ESA_MAX_SERVERS_PER_ACCOUNT: ${{ vars.ESA_MAX_SERVERS_PER_ACCOUNT }}
           ESA_BETA_LIMITS: ${{ vars.ESA_BETA_LIMITS }}
           ESA_SEO: ${{ vars.ESA_SEO || 'false' }}
+          ESA_SOURCE_URL: ${{ vars.ESA_SOURCE_URL }}
           ESA_METRICS_RAW_RETENTION: ${{ vars.ESA_METRICS_RAW_RETENTION }}
           ESA_METRICS_HOURLY_RETENTION: ${{ vars.ESA_METRICS_HOURLY_RETENTION }}
           ESA_STACK_NAME: ${{ vars.ESA_STACK_NAME || 'esa' }}

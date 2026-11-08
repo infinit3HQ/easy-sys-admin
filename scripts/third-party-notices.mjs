@@ -51,6 +51,26 @@ function splitTop(input, word) {
   return parts.filter(Boolean)
 }
 
+// One matching outer pair. Stripping every leading and trailing parenthesis
+// would turn "((MIT OR Apache-2.0) AND GPL-2.0-only)" into an OR and let a
+// forbidden license through.
+function unwrapOuter(text) {
+  if (!text.startsWith('(') || !text.endsWith(')')) return null
+  let depth = 0
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '(') depth++
+    else if (text[i] === ')') {
+      depth--
+      if (depth < 0) return null
+      if (depth === 0) {
+        if (i !== text.length - 1) return null
+        return text.slice(1, -1).trim()
+      }
+    }
+  }
+  return null
+}
+
 /** @returns {{ ok: boolean, reason: string }} */
 function checkLicense(expression) {
   const text = String(expression ?? '').trim()
@@ -80,14 +100,31 @@ function checkLicense(expression) {
     }
     return { ok: true, reason: '' }
   }
-  const atom = text.replace(/^\(+|\)+$/g, '').trim()
-  if (!atom) return { ok: false, reason: 'unlicensed' }
-  if (atom !== text) return checkLicense(atom)
+  const unwrapped = unwrapOuter(text)
+  if (unwrapped !== null) return checkLicense(unwrapped)
+  const atom = text
   for (const pattern of forbiddenAtom) {
     if (pattern.test(atom)) return { ok: false, reason: atom }
   }
   return { ok: true, reason: '' }
 }
+
+function assertLicense(expression, ok) {
+  const result = checkLicense(expression)
+  if (result.ok !== ok) {
+    throw new Error(
+      `license check for ${expression}: expected ok=${ok}, got ${result.ok} (${result.reason})`,
+    )
+  }
+}
+assertLicense('((MIT OR Apache-2.0) AND GPL-2.0-only)', false)
+assertLicense('(MIT OR Apache-2.0) AND GPL-2.0-only', false)
+assertLicense('((MIT OR Apache-2.0) AND SSPL-1.0)', false)
+assertLicense('(((MIT OR Apache-2.0) AND GPL-2.0-only))', false)
+assertLicense('(MIT OR GPL-2.0-only)', true)
+assertLicense('((GPL-2.0-only))', false)
+assertLicense('MIT AND (GPL-2.0-only)', false)
+assertLicense('((MIT) AND (GPL-2.0-only))', false)
 
 /** @param {string} text */
 function jsonObjects(text) {

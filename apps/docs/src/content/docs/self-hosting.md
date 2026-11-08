@@ -75,7 +75,7 @@ export ESA_DATABASE_URL=postgres://esa:secret@localhost:5432/esa
 export ESA_MASTER_KEY=$(openssl rand -base64 32)
 export ESA_PUBLIC_URL=https://esa.example.com
 export ESA_LISTEN=127.0.0.1:8080
-export ESA_HELPER_DIR=./bin
+export ESA_HELPER_DIR=./apps/esa/bin
 apps/esa/bin/esa serve
 ```
 
