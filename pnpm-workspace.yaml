@@ -42,6 +42,7 @@ catalog:
   turbo: ^2.11.10
   typescript: ^6.0.2
   vite: ^8.0.0
+  yaml: 2.8.1
   zod: ^4.6.7
 
 # Dependencies allowed to run install scripts. Everything else is blocked.

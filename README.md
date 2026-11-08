@@ -25,8 +25,9 @@ browser / CLI / AI agent ──HTTPS──> web (TanStack Start) ──> control
 | Path                     | What it is                                                                                  |
 | ------------------------ | ------------------------------------------------------------------------------------------- |
 | `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers    |
-| `apps/web`               | TanStack Start: landing page, the board, the MCP endpoint at `/mcp`, and a proxy to the API |
+| `apps/web`               | TanStack Start: landing page, the board, docs at `/docs`, the MCP endpoint, and a proxy to the API |
 | `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it               |
+| `packages/plans`         | Plan names, prices, and the hosted beta caps                                                |
 | `packages/eslint-config` | Shared ESLint config                                                                        |
 | `packages/tsconfig`      | Shared TypeScript configs                                                                   |
 | `deploy`                 | `compose.yaml` and `.env.example` for one Docker host behind Traefik                        |
@@ -77,6 +78,8 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 
 ## Documentation
 
+User documentation is served by the web app at `/docs`. The pages below are the contributor notes in this repository.
+
 | Page                                         | Covers                                                           |
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | [architecture.md](docs/architecture.md)      | Components, request flow, data model, background jobs, runs      |
@@ -90,6 +93,22 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 | [decisions.md](docs/decisions.md)            | Why the stack and design are what they are                       |
 | [status.md](docs/status.md)                  | What is built and what is left                                   |
 
+## License
+
+Copyright (C) 2026 Niraj Dilshan and contributors.
+
+You can self-host Easy Sys Admin for any use, including commercial use. There is no license fee and the license sets no usage cap. The install is in the repository, under `deploy/`, and on the web app at `/docs/self-hosting`. The default is 500 servers per account. That number is a setting, not part of the license.
+
+The license is the GNU Affero General Public License, version 3 only (AGPL-3.0-only). It is not "or any later version".
+
+Easy Sys Admin will remain available under AGPL-3.0-only. We do not use a CLA and cannot relicense contributors' code.
+
+If you modify the software and let other people use that modified version over a network, the AGPL says you must offer them the source of the version they are talking to. The web footer has a Source code link for that. Point `ESA_SOURCE_URL` at the source of the build you are running when it is not the upstream repository. Managed Cloud, when it exists, is our hosted service. It is not a separate license.
+
+The Easy Sys Admin name and logo belong to Niraj Dilshan (infinit3HQ). They are not covered by the license. See [TRADEMARKS.md](TRADEMARKS.md).
+
+The software is provided as is, without warranty of any kind, to the extent the license allows. The authors are not liable for damage from using it. The full text is [LICENSE](LICENSE).
+
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md). Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Contributions use the [Developer Certificate of Origin](DCO) (`git commit -s`), not a contributor license agreement. Coding agents start at [AGENTS.md](AGENTS.md). Report security problems privately, as described in [SECURITY.md](SECURITY.md).

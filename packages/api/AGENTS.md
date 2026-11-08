@@ -49,7 +49,7 @@ pnpm --filter @esa/api typecheck
 ### Lint
 
 - `redocly.yaml` extends `recommended`. It turns off `no-server-example.com` (the server URL is the relative `/api/v1`) and `operation-4xx-response` (public endpoints have no error response), and makes `no-empty-servers` an error.
-- Lint must pass with no errors. It shows 9 warnings today: 7 tags without a description, a license without a URL, and one `$ref` with sibling keys. Do not add more. Give new tags a `description`.
+- Lint must pass with no errors. It shows 8 warnings today: 7 tags without a description, and one `$ref` with sibling keys. Do not add more. Give new tags a `description`.
 
 ## Files
 

@@ -3,7 +3,7 @@
 Instructions for coding agents working in this repository. Read this file first, then the `AGENTS.md` of the package you change:
 
 - [apps/esa/AGENTS.md](apps/esa/AGENTS.md): Go control plane, CLI and server helper
-- [apps/web/AGENTS.md](apps/web/AGENTS.md): web app and MCP endpoint
+- [apps/web/AGENTS.md](apps/web/AGENTS.md): web app, docs pages, and MCP endpoint
 - [packages/api/AGENTS.md](packages/api/AGENTS.md): the OpenAPI contract
 
 Background is in [docs/](docs/README.md). Start with [docs/architecture.md](docs/architecture.md).
@@ -14,13 +14,14 @@ easy-sys-admin manages a fleet of Linux servers. A Go control plane (`esa serve`
 
 ## Layout
 
-| Path           | Contents                                                                                  |
-| -------------- | ----------------------------------------------------------------------------------------- |
-| `apps/esa`     | Go module: `cmd/esa`, `cmd/esa-helper`, `internal/*` (business logic in `internal/fleet`) |
-| `apps/web`     | Web app: `src/routes`, `src/components`, `src/lib`, `src/server` (proxy and MCP)          |
-| `packages/api` | `openapi.yaml` and the generated TypeScript types                                         |
-| `deploy`       | Compose stack for one Docker host behind Traefik                                          |
-| `docs`         | Documentation. `docs/archive` holds old plans; do not treat them as current               |
+| Path             | Contents                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| `apps/esa`       | Go module: `cmd/esa`, `cmd/esa-helper`, `internal/*` (business logic in `internal/fleet`) |
+| `apps/web`       | Web app: `src/routes`, `src/components`, `src/lib`, `src/server` (proxy and MCP). Public docs are the `/docs` routes. |
+| `packages/api`   | `openapi.yaml` and the generated TypeScript types                                         |
+| `packages/plans` | Plan names, prices, and hosted beta caps, shared by the web app and the docs              |
+| `deploy`         | Compose stack for one Docker host behind Traefik                                          |
+| `docs`           | Documentation. `docs/archive` holds old plans; do not treat them as current               |
 
 ## Setup and commands
 

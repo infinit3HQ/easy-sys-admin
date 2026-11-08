@@ -230,6 +230,10 @@ Two signs that polling needs attention:
 - `esa_poll_cycle_skipped` above 0, or the log line `poll cycle ran out of time; the rest wait for the next cycle` at warning level. It names how many servers were skipped and how many there are. Raise `ESA_POLL_CONCURRENCY` when it repeats.
 - `esa_poll_cycle_seconds` close to 55. The next cycle starts a minute after the last one, so a cycle near its limit has no room left.
 
+## Documentation
+
+The public docs are pages of the web app at `/docs`. They ship in the same image as the landing page and the board. There is no separate docs host.
+
 ## Roll back
 
 The schema only grows, so older code usually runs on a newer database. Before you roll back, check the commits you are rolling back over for changes to `apps/esa/internal/store/models.go`. A new `NOT NULL` column without a default, or a `postMigrate` step that changed data, can break the older code. In that case, restore the backup taken before the upgrade.

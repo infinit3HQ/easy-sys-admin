@@ -1,0 +1,28 @@
+name: DCO
+
+# Every non-merge commit on a pull request must carry a Signed-off-by trailer
+# for its author. That trailer is the Developer's Certificate of Origin (see /DCO).
+# git commit -s adds it. An alternative is the DCO GitHub App
+# (https://github.com/apps/dco), which does the same check and comments on
+# the pull request. This workflow is the check that runs in CI.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # pull_request otherwise checks out GitHub's merge commit, not the branch.
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a Signed-off-by trailer for each commit author
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: sh scripts/check-dco.sh

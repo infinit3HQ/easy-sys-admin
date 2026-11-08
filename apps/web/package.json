@@ -2,6 +2,7 @@
   "name": "@esa/web",
   "version": "0.0.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "type": "module",
   "imports": {
     "#/*": "./src/*"
@@ -11,11 +12,13 @@
     "build": "vite build",
     "start": "HOST=${HOST:-127.0.0.1} node --env-file-if-exists=../../.env .output/server/index.mjs",
     "generate": "tsr generate",
+    "generate:docs": "node scripts/generate-api-reference.mjs",
     "lint": "eslint .",
     "typecheck": "tsc"
   },
   "dependencies": {
     "@esa/api": "workspace:*",
+    "@esa/plans": "workspace:*",
     "@fontsource-variable/big-shoulders": "catalog:",
     "@fontsource-variable/instrument-sans": "catalog:",
     "@fontsource-variable/martian-mono": "catalog:",
@@ -50,6 +53,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "eslint": "catalog:",
+    "yaml": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
   }

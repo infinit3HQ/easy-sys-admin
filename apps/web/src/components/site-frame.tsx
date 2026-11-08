@@ -1,5 +1,7 @@
-import { Link } from '@tanstack/react-router'
+import { supportEmail } from '@esa/plans'
+import { Link, useLoaderData } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { SourceOffer } from '#/components/source-offer'
 import { Button } from '#/components/ui/button'
 import { cn } from '#/lib/utils'
 
@@ -9,18 +11,90 @@ export const column = 'mx-auto w-full max-w-7xl px-4 sm:px-6'
 /** The name on the public site. It matches the Google sign-in screen. */
 export const productName = 'EASY-SYS-ADMIN'
 
-export const supportEmail = 'support@easysysadmin.app'
+export { supportEmail }
 
-/**
- * The source repo is private, so the public pages do not offer a self-hosted
- * install. Turn this on when the repo and the deploy files are public.
- */
-export const showSelfHost = false as boolean
-
-const legal = [
-  { to: '/terms', label: 'Terms' },
-  { to: '/privacy', label: 'Privacy policy' },
+const footerColumns = [
+  {
+    label: 'Go',
+    links: [
+      { href: '/app', label: 'Board' },
+      { href: '/pricing', label: 'Pricing' },
+      { href: '/#install', label: 'Self-host' },
+      { href: '/#source', label: 'Source' },
+    ],
+  },
+  {
+    label: 'Read',
+    links: [
+      { href: '/docs/quickstart', label: 'Quickstart' },
+      { href: '/docs/how-it-works', label: 'How it works' },
+      { href: '/docs/cli', label: 'CLI' },
+      { href: '/docs/mcp', label: 'MCP' },
+    ],
+  },
+  {
+    label: 'Legal',
+    links: [
+      { href: '/terms', label: 'Terms' },
+      { href: '/privacy', label: 'Privacy' },
+      { href: '/docs/license', label: 'License' },
+    ],
+  },
 ] as const
+
+function SiteFooter() {
+  const { source } = useLoaderData({ from: '__root__' })
+  return (
+    <footer className="border-t">
+      <div className={cn(column, 'py-10 sm:py-14')}>
+        <div className="border border-line-2">
+          <div className="grid sm:grid-cols-3">
+            {footerColumns.map((group, i) => (
+              <div
+                key={group.label}
+                className={cn(
+                  'p-4 sm:p-5',
+                  i > 0 && 'border-t border-line-2 sm:border-t-0 sm:border-l',
+                )}
+              >
+                <p className="label">{group.label}</p>
+              <ul className="mt-4 space-y-3">
+                {group.links.map((item) => (
+                  <li key={item.href}>
+                    <a
+                      href={item.href}
+                      className="font-display text-lg leading-none font-semibold text-ink uppercase hover:text-amber"
+                    >
+                        {item.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col gap-3 border-t border-line-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <SourceOffer className="font-mono text-[11px] text-muted-foreground" />
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[11px]">
+              <a href={source.url} className="text-ink-2 hover:text-amber">
+                Repository
+              </a>
+              <a
+                href={`mailto:${supportEmail}`}
+                className="text-ink-2 hover:text-amber"
+              >
+                {supportEmail}
+              </a>
+              <span className="tracking-wide text-faint uppercase">
+                AGPL-3.0-only
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </footer>
+  )
+}
 
 /** Landing and legal pages share this chrome. The signed-in board does not. */
 export function SiteFrame({ children }: { children: ReactNode }) {
@@ -43,11 +117,20 @@ export function SiteFrame({ children }: { children: ReactNode }) {
             <a href="/#watch" className="hidden hover:text-ink sm:inline">
               Watches
             </a>
-            <a href="/#safety" className="hidden hover:text-ink sm:inline">
+            <a href="/#safety" className="hidden hover:text-ink lg:inline">
               Safety
             </a>
-            <a href="/#agents" className="hidden hover:text-ink md:inline">
+            <a href="/#agents" className="hidden hover:text-ink lg:inline">
               MCP
+            </a>
+            <Link to="/pricing" className="hover:text-ink">
+              Pricing
+            </Link>
+            <Link to="/docs" className="hidden hover:text-ink sm:inline">
+              Docs
+            </Link>
+            <a href="/#source" className="hidden hover:text-ink lg:inline">
+              Source
             </a>
             <Button
               asChild
@@ -64,42 +147,7 @@ export function SiteFrame({ children }: { children: ReactNode }) {
         </div>
       </header>
       {children}
-      <footer className="border-t">
-        <div
-          className={cn(
-            column,
-            'flex flex-col gap-4 py-6 sm:flex-row sm:items-center sm:justify-between',
-          )}
-        >
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
-              <span className="font-display text-lg font-bold tracking-wide uppercase">
-                {productName}
-              </span>
-              <span className="rounded-sm border border-amber/70 px-1.5 py-0.5 font-mono text-[10px] tracking-widest text-amber uppercase">
-                Beta
-              </span>
-            </div>
-            <p className="mt-1.5 font-mono text-[11px] text-muted-foreground">
-              A board for people who administer their own Linux servers.
-            </p>
-            <a
-              href={`mailto:${supportEmail}`}
-              className="mt-1 inline-block font-mono text-[11px] text-ink-2 hover:text-ink"
-            >
-              {supportEmail}
-            </a>
-          </div>
-          <nav className="flex gap-6 font-mono text-xs text-ink-2">
-            {legal.map((item) => (
-              <Link key={item.to} to={item.to} className="hover:text-ink">
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   )
 }

@@ -90,6 +90,10 @@ services:
       ESA_BETA_LIMITS: ${ESA_BETA_LIMITS:-}
       ESA_SIGNUP: ${ESA_SIGNUP:-false}
       ESA_SEO: ${ESA_SEO:-false}
+      # Shown next to the Source code link. Empty keeps the defaults in the web app.
+      ESA_VERSION: ${ESA_VERSION:-dev}
+      ESA_COMMIT: ${ESA_COMMIT:-none}
+      ESA_SOURCE_URL: ${ESA_SOURCE_URL:-https://github.com/infinit3HQ/easy-sys-admin}
     networks: [internal, proxy]
     labels:
       - traefik.enable=true
