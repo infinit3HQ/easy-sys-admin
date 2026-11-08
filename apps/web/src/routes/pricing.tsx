@@ -5,7 +5,7 @@ import { siteOrigin } from '#/lib/origin'
 import { loadSeo } from '#/lib/seo'
 
 const description =
-  'Plans for Easy Sys Admin. The public beta is free. Self-Hosted and Managed Cloud are coming soon. Nothing is charged.'
+  'Plans for Easy Sys Admin. The public beta is free. Self-Hosted is free to run yourself. Managed Cloud is coming soon. Nothing is charged.'
 
 export const Route = createFileRoute('/pricing')({
   loader: () => loadSeo(),

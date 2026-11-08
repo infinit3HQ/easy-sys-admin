@@ -30,7 +30,7 @@ To manage a server, you install a restricted `esa` user and the `esa-helper` com
 
 It can also read live status (CPU, memory, disks and inodes, load, network, time sync, failed units, and Docker), list pending packages, clean idle Docker build cache, old VS Code server copies, and the journal, start or stop a service, pull and recreate one Compose service, and read who can log in, which ports are listening, and which jobs are scheduled. Cleanups do not delete Docker volumes or images a container is using, and they do not run system prune. Units such as ssh and Docker cannot be stopped from the Service.
 
-**You authorize these actions** for every server you connect. You can revoke access at any time by removing the `esa` user, the `esa-helper` component, and the authorized SSH key from the server, or by removing the server from the Service. In the board, delete the server with "Also remove esa from the server" on (it is on by default). That runs `esa-helper uninstall`, which removes the sudo rule, the helper at `/usr/local/lib/esa`, and the `esa` user when that user still has the comment and home the installer created. If uninstall fails, the server stays in the Service until you fix the connection or delete it without uninstalling. You can do the same removal as root on the server. The steps are at https://docs.easysysadmin.app/remove-a-server.
+**You authorize these actions** for every server you connect. You can revoke access at any time by removing the `esa` user, the `esa-helper` component, and the authorized SSH key from the server, or by removing the server from the Service. In the board, delete the server with "Also remove esa from the server" on (it is on by default). That runs `esa-helper uninstall`, which removes the sudo rule, the helper at `/usr/local/lib/esa`, and the `esa` user when that user still has the comment and home the installer created. If uninstall fails, the server stays in the Service until you fix the connection or delete it without uninstalling. You can do the same removal as root on the server. The steps are on [Remove a server](/docs/remove-a-server).
 
 ## 4. Your Responsibilities
 
@@ -50,7 +50,7 @@ You may not use the Service to:
 - access or manage systems you're not authorized to manage;
 - break the law or infringe anyone's rights;
 - distribute malware, run botnets, mine cryptocurrency on systems you don't own, send spam, or attack or scan other systems without permission;
-- probe, overload, reverse-engineer, or bypass the Service's security, limits, or access controls, except as allowed by our security policy (https://docs.easysysadmin.app/security);
+- probe, overload, reverse-engineer, or bypass the Service's security, limits, or access controls, except as allowed by our [security policy](/docs/security);
 - resell or provide the hosted Service to third parties without our written permission; or
 - interfere with other users.
 
@@ -77,7 +77,7 @@ If we become aware of a security incident that affects your account or Customer 
 - take reasonable steps to contain it, which may include suspending connections or rotating credentials; and
 - share what we reasonably can to help you respond.
 
-If you suspect a compromise, you should immediately revoke the Service's access on affected servers (Section 3). Report vulnerabilities as described at https://docs.easysysadmin.app/security (a private report, not a public issue). You can also write to support@easysysadmin.app.
+If you suspect a compromise, you should immediately revoke the Service's access on affected servers (Section 3). Report vulnerabilities as described in the [security policy](/docs/security) (a private report, not a public issue). You can also write to support@easysysadmin.app.
 
 ## 9. Open Source Version Is Separate
 

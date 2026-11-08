@@ -230,9 +230,9 @@ Two signs that polling needs attention:
 - `esa_poll_cycle_skipped` above 0, or the log line `poll cycle ran out of time; the rest wait for the next cycle` at warning level. It names how many servers were skipped and how many there are. Raise `ESA_POLL_CONCURRENCY` when it repeats.
 - `esa_poll_cycle_seconds` close to 55. The next cycle starts a minute after the last one, so a cycle near its limit has no room left.
 
-## Documentation site
+## Documentation
 
-The public docs are a separate static site in `apps/docs`, intended for `https://docs.easysysadmin.app`. CI builds it with the rest of the TypeScript packages. It is not part of the Traefik stack above. Build and hosting steps are in [apps/docs/README.md](../apps/docs/README.md).
+The public docs are pages of the web app at `/docs`. They ship in the same image as the landing page and the board. There is no separate docs host.
 
 ## Roll back
 

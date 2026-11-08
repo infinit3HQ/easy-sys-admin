@@ -63,7 +63,7 @@ jobs:
       - name: Generated types are up to date
         run: pnpm --filter @esa/api generate && git diff --exit-code -- packages/api/src/schema.gen.ts
       - name: Docs API reference is up to date
-        run: pnpm --filter @esa/docs generate && git diff --exit-code -- apps/docs/src/content/docs/api.md
+        run: pnpm --filter @esa/web generate:docs && git diff --exit-code -- apps/web/src/content/docs/api.md
       - run: pnpm turbo run lint typecheck build --filter=!@esa/esa
 
   licenses:

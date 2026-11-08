@@ -1,6 +1,3 @@
-/** Public docs site. The web app links here. The docs site uses the paths. */
-export const docsSiteUrl = 'https://docs.easysysadmin.app'
-
 /** Upstream Git repository. Self-hosters override the link with ESA_SOURCE_URL. */
 export const sourceRepoUrl = 'https://github.com/infinit3HQ/easy-sys-admin'
 
@@ -28,8 +25,8 @@ export type Plan = {
   name: string
   price: string
   priceDetail: string
-  /** current is the plan in force today. coming-soon is not on sale. */
-  state: 'current' | 'coming-soon'
+  /** current is the hosted plan in force. available can be run today. coming-soon is not on sale. */
+  state: 'current' | 'available' | 'coming-soon'
   stateLabel: string
   summary: string
   features: readonly string[]
@@ -62,14 +59,14 @@ export const plans: readonly Plan[] = [
     name: 'Self-Hosted',
     price: 'Free',
     priceDetail: 'forever',
-    state: 'coming-soon',
-    stateLabel: 'Coming soon',
+    state: 'available',
+    stateLabel: 'Available',
     summary:
-      'The same software, with no license fee and no usage cap in the license, on infrastructure you run.',
+      'The same software, on infrastructure you run. No license fee and no cap in the license.',
     features: [
       'Open source under AGPL-3.0-only',
       'Free for any use, including commercial use',
-      'Unlimited servers',
+      '500 servers per account by default, and that cap is a setting',
       'Every feature',
       'You run it, and you keep the database and the master key',
       'Community support',
@@ -101,8 +98,8 @@ export const plans: readonly Plan[] = [
   },
 ]
 
-/** Absolute docs URL for a path such as `/self-hosting`. */
+/** Docs page on this site, for a path such as `/self-hosting`. */
 export function docsHref(path: string): string {
-  const base = docsSiteUrl.endsWith('/') ? docsSiteUrl : `${docsSiteUrl}/`
-  return new URL(path.replace(/^\//, ''), base).href
+  const slug = path.replace(/^\/+|\/+$/g, '')
+  return slug ? `/docs/${slug}` : '/docs'
 }

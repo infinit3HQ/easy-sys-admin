@@ -12,6 +12,7 @@
     "build": "vite build",
     "start": "HOST=${HOST:-127.0.0.1} node --env-file-if-exists=../../.env .output/server/index.mjs",
     "generate": "tsr generate",
+    "generate:docs": "node scripts/generate-api-reference.mjs",
     "lint": "eslint .",
     "typecheck": "tsc"
   },
@@ -52,6 +53,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "eslint": "catalog:",
+    "yaml": "catalog:",
     "typescript": "catalog:",
     "vite": "catalog:"
   }

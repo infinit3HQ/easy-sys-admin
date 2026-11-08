@@ -1,6 +1,6 @@
 # Documentation
 
-The public site is [docs.easysysadmin.app](https://docs.easysysadmin.app), built from `apps/docs`. How to run and deploy it is in [apps/docs/README.md](../apps/docs/README.md). The pages below are the contributor notes in this folder.
+User documentation is the `/docs` pages in the web app (`apps/web/src/content/docs`). The pages below are the contributor notes in this folder.
 
 | Page                                 | Read it when you want to                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------------ |

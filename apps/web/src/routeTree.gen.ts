@@ -25,6 +25,8 @@ import { Route as AppActivityRouteImport } from './routes/app/activity'
 import { Route as AppOrgRouteImport } from './routes/app/org'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
+import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as DocsPageRouteImport } from './routes/docs/$page'
 import { Route as EnrollSplatRouteImport } from './routes/enroll/$'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
@@ -121,6 +123,16 @@ const AuthSplatRoute = AuthSplatRouteImport.update({
   path: '/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/docs/',
+  path: '/docs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsPageRoute = DocsPageRouteImport.update({
+  id: '/docs/$page',
+  path: '/docs/$page',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EnrollSplatRoute = EnrollSplatRouteImport.update({
   id: '/enroll/$',
   path: '/enroll/$',
@@ -214,10 +226,12 @@ export interface FileRoutesByFullPath {
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
+  '/docs/$page': typeof DocsPageRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
+  '/docs/': typeof DocsIndexRoute
   '/app/groups/$groupId': typeof AppGroupsGroupIdRouteRouteWithChildren
   '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
@@ -246,10 +260,12 @@ export interface FileRoutesByTo {
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
+  '/docs/$page': typeof DocsPageRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app': typeof AppIndexRoute
+  '/docs': typeof DocsIndexRoute
   '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
   '/app/runs/$runId': typeof AppRunsRunIdRoute
@@ -279,10 +295,12 @@ export interface FileRoutesById {
   '/app/org': typeof AppOrgRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
+  '/docs/$page': typeof DocsPageRoute
   '/enroll/$': typeof EnrollSplatRoute
   '/invite/$token': typeof InviteTokenRoute
   '/share/$token': typeof ShareTokenRoute
   '/app/': typeof AppIndexRoute
+  '/docs/': typeof DocsIndexRoute
   '/app/groups/$groupId': typeof AppGroupsGroupIdRouteRouteWithChildren
   '/app/alerts/settings': typeof AppAlertsSettingsRoute
   '/app/groups/new': typeof AppGroupsNewRoute
@@ -314,10 +332,12 @@ export interface FileRouteTypes {
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
+    | '/docs/$page'
     | '/enroll/$'
     | '/invite/$token'
     | '/share/$token'
     | '/app/'
+    | '/docs/'
     | '/app/groups/$groupId'
     | '/app/alerts/settings'
     | '/app/groups/new'
@@ -346,10 +366,12 @@ export interface FileRouteTypes {
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
+    | '/docs/$page'
     | '/enroll/$'
     | '/invite/$token'
     | '/share/$token'
     | '/app'
+    | '/docs'
     | '/app/alerts/settings'
     | '/app/groups/new'
     | '/app/runs/$runId'
@@ -378,10 +400,12 @@ export interface FileRouteTypes {
     | '/app/org'
     | '/app/settings'
     | '/auth/$'
+    | '/docs/$page'
     | '/enroll/$'
     | '/invite/$token'
     | '/share/$token'
     | '/app/'
+    | '/docs/'
     | '/app/groups/$groupId'
     | '/app/alerts/settings'
     | '/app/groups/new'
@@ -409,9 +433,11 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   ApiSplatRoute: typeof ApiSplatRoute
   AuthSplatRoute: typeof AuthSplatRoute
+  DocsPageRoute: typeof DocsPageRoute
   EnrollSplatRoute: typeof EnrollSplatRoute
   InviteTokenRoute: typeof InviteTokenRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  DocsIndexRoute: typeof DocsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -526,6 +552,20 @@ declare module '@tanstack/react-router' {
       path: '/auth/$'
       fullPath: '/auth/$'
       preLoaderRoute: typeof AuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/': {
+      id: '/docs/'
+      path: '/docs'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/$page': {
+      id: '/docs/$page'
+      path: '/docs/$page'
+      fullPath: '/docs/$page'
+      preLoaderRoute: typeof DocsPageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/enroll/$': {
@@ -702,9 +742,11 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   ApiSplatRoute: ApiSplatRoute,
   AuthSplatRoute: AuthSplatRoute,
+  DocsPageRoute: DocsPageRoute,
   EnrollSplatRoute: EnrollSplatRoute,
   InviteTokenRoute: InviteTokenRoute,
   ShareTokenRoute: ShareTokenRoute,
+  DocsIndexRoute: DocsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

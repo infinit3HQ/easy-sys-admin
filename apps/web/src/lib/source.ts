@@ -27,6 +27,23 @@ export function sourceOfferFromEnv(
   return { url, href, version, commit }
 }
 
+/** Repository, this build, the license, and issues. A non-GitHub archive is one link. */
+export function sourceLinks(
+  source: SourceOffer,
+): Array<{ label: string; href: string }> {
+  const github = /^https:\/\/github\.com\/[^/]+\/[^/]+$/.test(source.url)
+  const sha = /^[0-9a-f]{7,40}$/i.test(source.commit)
+  const links = [{ label: 'Repository', href: source.url }]
+  if (github && sha) links.push({ label: 'This build', href: source.href })
+  if (github) {
+    links.push(
+      { label: 'License', href: `${source.url}/blob/HEAD/LICENSE` },
+      { label: 'Issues', href: `${source.url}/issues` },
+    )
+  }
+  return links
+}
+
 export const loadSourceOffer = createServerFn({ method: 'GET' }).handler(() =>
   sourceOfferFromEnv(process.env),
 )

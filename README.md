@@ -25,8 +25,7 @@ browser / CLI / AI agent ──HTTPS──> web (TanStack Start) ──> control
 | Path                     | What it is                                                                                  |
 | ------------------------ | ------------------------------------------------------------------------------------------- |
 | `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers    |
-| `apps/web`               | TanStack Start: landing page, the board, the MCP endpoint at `/mcp`, and a proxy to the API |
-| `apps/docs`              | Public documentation site, built as static files for docs.easysysadmin.app                  |
+| `apps/web`               | TanStack Start: landing page, the board, docs at `/docs`, the MCP endpoint, and a proxy to the API |
 | `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it               |
 | `packages/plans`         | Plan names, prices, and the hosted beta caps                                                |
 | `packages/eslint-config` | Shared ESLint config                                                                        |
@@ -79,7 +78,7 @@ Point an MCP client at `https://esa.example.com/mcp` with an API token as the be
 
 ## Documentation
 
-User documentation is published at [docs.easysysadmin.app](https://docs.easysysadmin.app). The pages below are the same material in the repository, written for people changing the code.
+User documentation is served by the web app at `/docs`. The pages below are the contributor notes in this repository.
 
 | Page                                         | Covers                                                           |
 | -------------------------------------------- | ---------------------------------------------------------------- |
@@ -98,7 +97,7 @@ User documentation is published at [docs.easysysadmin.app](https://docs.easysysa
 
 Copyright (C) 2026 Niraj Dilshan and contributors.
 
-You can self-host Easy Sys Admin for any use, including commercial use. There is no license fee and the license sets no usage cap. The public self-hosted release is still marked coming soon on the plans page. The license terms are already these.
+You can self-host Easy Sys Admin for any use, including commercial use. There is no license fee and the license sets no usage cap. The install is in the repository, under `deploy/`, and on the web app at `/docs/self-hosting`. The default is 500 servers per account. That number is a setting, not part of the license.
 
 The license is the GNU Affero General Public License, version 3 only (AGPL-3.0-only). It is not "or any later version".
 

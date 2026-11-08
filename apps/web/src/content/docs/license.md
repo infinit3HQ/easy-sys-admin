@@ -11,7 +11,7 @@ Easy Sys Admin will remain available under AGPL-3.0-only. We do not use a CLA an
 
 ## Can I self-host it?
 
-Yes. You can run it for any use, including commercial use. There is no license fee, and the license sets no usage cap. The public self-hosted release is still marked coming soon. The license terms are already these.
+Yes. You can run it for any use, including commercial use. There is no license fee, and the license sets no usage cap. The steps are in [Self-hosting](/self-hosting). The default account cap is 500 servers, and that number is a setting, not part of the license.
 
 ## What does the AGPL ask for?
 

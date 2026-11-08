@@ -7,7 +7,7 @@ These pages govern the hosted service at [easysysadmin.app](https://easysysadmin
 
 Both documents are drafts, pending lawyer review.
 
-- [Terms of Service](https://easysysadmin.app/terms)
-- [Privacy Policy](https://easysysadmin.app/privacy)
+- [Terms of Service](/terms)
+- [Privacy Policy](/privacy)
 
 The same text is in `TERMS.md` and `PRIVACY.md` in the source repository. The website renders those files.

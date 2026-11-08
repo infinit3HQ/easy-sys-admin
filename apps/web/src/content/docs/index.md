@@ -30,4 +30,4 @@ The web app, the `esa` CLI, and the MCP endpoint all use one HTTP API. A browser
 | Call the HTTP API                                           | [API reference](/api)         |
 | Run the control plane yourself                              | [Self-hosting](/self-hosting) |
 
-The open-source self-hosted release, with no usage cap, is coming soon. Managed Cloud, where we host it for you, is coming soon. See [Plans](/pricing).
+Self-Hosted is the same software, run by you. The license sets no usage cap. The default is 500 servers per account, and that number is a setting. The source is [github.com/infinit3HQ/easy-sys-admin](https://github.com/infinit3HQ/easy-sys-admin). Managed Cloud, where we host it for you, is coming soon. See [Plans](/pricing).

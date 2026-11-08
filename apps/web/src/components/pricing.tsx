@@ -44,6 +44,7 @@ export function PricingCards({ idPrefix = 'plan' }: { idPrefix?: string }) {
     <div className="grid items-stretch gap-4 lg:grid-cols-3">
       {plans.map((plan) => {
         const current = plan.state === 'current'
+        const available = plan.state === 'available'
         const titleId = `${idPrefix}-${plan.id}-title`
         return (
           <article
@@ -68,7 +69,9 @@ export function PricingCards({ idPrefix = 'plan' }: { idPrefix?: string }) {
                   'shrink-0 rounded-sm border px-1.5 py-1 font-mono text-[10px] tracking-widest uppercase',
                   current
                     ? 'border-amber/70 text-amber'
-                    : 'border-line-2 text-faint',
+                    : available
+                      ? 'border-line-2 text-ink'
+                      : 'border-line-2 text-faint',
                 )}
               >
                 {plan.stateLabel}
@@ -108,7 +111,7 @@ export function PricingCards({ idPrefix = 'plan' }: { idPrefix?: string }) {
 }
 
 const intro =
-  'Three ways to run Easy Sys Admin. The public beta is free and is the plan in force today. Self-Hosted and Managed Cloud are not available yet, and nothing on this page takes a payment.'
+  'Three ways to run Easy Sys Admin. The public beta is what we host. Self-Hosted is the same software, run by you. Managed Cloud is not available yet. Nothing on this page takes a payment.'
 
 export function PricingSection({ id = 'pricing' }: { id?: string }) {
   return (

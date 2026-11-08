@@ -3,9 +3,9 @@ title: Self-hosting
 description: Requirements, Docker Compose, a binary install, Postgres, TLS, auth, upgrades, backups, and current limits.
 ---
 
-**Coming soon.** The public open-source release, with no feature cap and no usage cap, is not out yet. The license already allows you to run this source for any use, including commercial use. The steps below match the repository as it is today. They are not a promise that a packaged release exists.
+You can run this source for any use, including commercial use. There is no license fee and the license sets no usage cap. There is no separate packaged download. Build it from the repository, or use the Docker Compose file in `deploy/`.
 
-Today, with the beta caps left off, one space can hold 500 servers and one person can own 20 organizations besides their personal space. Raise or lower the server cap with `ESA_MAX_SERVERS_PER_ACCOUNT` (1 to 100000). That is a setting, not a license limit. "Unlimited" on the [plans](/pricing) page is the coming public release, not this default.
+With the beta caps left off, one account can hold 500 servers and one person can own 20 organizations besides their personal space. Raise or lower the server cap with `ESA_MAX_SERVERS_PER_ACCOUNT` (1 to 100000). That is a setting, not a license limit.
 
 ## Requirements
 

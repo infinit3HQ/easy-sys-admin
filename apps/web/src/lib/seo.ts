@@ -1,7 +1,14 @@
 import { createServerFn } from '@tanstack/react-start'
+import { docPathnames } from '#/lib/docs'
 
 // Public pages a crawler may index when ESA_SEO is on. Everything else stays out.
-const PUBLIC_PATHS = new Set(['/', '/privacy', '/terms', '/pricing'])
+const PUBLIC_PATHS = new Set([
+  '/',
+  '/privacy',
+  '/terms',
+  '/pricing',
+  ...docPathnames,
+])
 
 export function seoEnabled(): boolean {
   return ['1', 'true', 'yes', 'on'].includes(
@@ -67,7 +74,7 @@ export function robotsTxt(seo: boolean, origin: string): string {
 }
 
 export function sitemapXml(origin: string): string {
-  const body = ['/', '/pricing', '/privacy', '/terms']
+  const body = ['/', '/pricing', '/privacy', '/terms', ...docPathnames]
     .map((path) => `  <url><loc>${origin}${path}</loc></url>`)
     .join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${body}\n</urlset>\n`

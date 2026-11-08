@@ -1,17 +1,13 @@
 import { betaLimits } from '@esa/plans'
 import { createServerFn } from '@tanstack/react-start'
-import { Link, createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute, useLoaderData } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowRightIcon } from 'lucide-react'
 import { CopyBlock, StatusDot, cn } from '#/components/kit'
 import { PricingDialog, PricingSection } from '#/components/pricing'
-import {
-  column,
-  productName,
-  showSelfHost,
-  SiteFrame,
-} from '#/components/site-frame'
+import { column, productName, SiteFrame } from '#/components/site-frame'
 import { siteOrigin } from '#/lib/origin'
+import { sourceLinks } from '#/lib/source'
 import { seoEnabled } from '#/lib/seo'
 import { Button } from '#/components/ui/button'
 import type { ServerStatus } from '@esa/api'
@@ -143,6 +139,7 @@ function Landing() {
       <Touch />
       <Agents />
       <Install />
+      <CheckSource />
     </SiteFrame>
   )
 }
@@ -181,11 +178,9 @@ function Hero() {
             >
               Privacy policy
             </Link>
-            {showSelfHost && (
-              <Button asChild size="lg" variant="outline">
-                <a href="#install">Self-host it</a>
-              </Button>
-            )}
+            <Button asChild size="lg" variant="outline">
+              <a href="#install">Self-host it</a>
+            </Button>
             <PricingDialog
               trigger={
                 <Button type="button" size="lg" variant="outline">
@@ -498,45 +493,27 @@ function Agents() {
 }
 
 function Install() {
-  const policy = Route.useLoaderData()
-  const steps: Array<[string, string]> = showSelfHost
-    ? [
-        [
-          'Start',
-          'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY, the database password, OIDC\ndocker compose -f deploy/compose.yaml up -d',
-        ],
-        [
-          'Add a server',
-          '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
-        ],
-        [
-          'Use the CLI',
-          'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
-        ],
-      ]
-    : [
-        [
-          'Sign in',
-          policy.signup
-            ? 'Create an account or sign in, then open the board.'
-            : 'Sign in, then open the board.',
-        ],
-        [
-          'Add a server',
-          'In the board: Add server, check the host key,\nthen paste the one-time command it gives you.',
-        ],
-        [
-          'Set a group',
-          'Put the server in a group.\nChoose when it cleans disks and installs updates.',
-        ],
-      ]
+  const steps: Array<[string, string]> = [
+    [
+      'Start',
+      'cp deploy/.env.example deploy/.env\n# set ESA_MASTER_KEY and the database password\ndocker compose -f deploy/compose.yaml up -d',
+    ],
+    [
+      'Add a server',
+      '# in the board: Add server, check the host key,\n# then paste the one-time command on the server:\ncurl -fsSL https://esa.example.com/enroll/enr_… | sudo sh',
+    ],
+    [
+      'Use the CLI',
+      'esa login https://esa.example.com --token esa_…\nesa status\nesa runs start clean --group production',
+    ],
+  ]
   return (
     <section id="install" className="scroll-mt-14 border-t py-16 sm:py-20">
       {/* One step per row. The commands run to about 60 characters, so three
           narrow columns would hide half of each line. */}
       <div className={column}>
         <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
-          {showSelfHost ? 'Run it' : 'Start'}
+          Run it
         </h2>
         <ol className="mt-10 divide-y divide-line-2 border-y border-line-2">
           {steps.map(([t, code], i) => (
@@ -550,16 +527,48 @@ function Install() {
                   {t}
                 </h3>
               </div>
-              {showSelfHost ? (
-                <CopyBlock className="lg:w-full" value={code} />
-              ) : (
-                <p className="max-w-xl text-sm leading-relaxed whitespace-pre-line text-ink-2">
-                  {code}
-                </p>
-              )}
+              <CopyBlock className="lg:w-full" value={code} />
             </li>
           ))}
         </ol>
+      </div>
+    </section>
+  )
+}
+
+function CheckSource() {
+  const { source } = useLoaderData({ from: '__root__' })
+  const commit =
+    source.commit === 'none'
+      ? 'This build has no commit set.'
+      : `This build is version ${source.version}, commit ${source.commit.slice(0, 12)}.`
+  return (
+    <section id="source" className="scroll-mt-14 border-t py-16 sm:py-20">
+      <div className={column}>
+        <h2 className="font-display text-5xl leading-[0.9] font-bold uppercase sm:text-6xl">
+          Check the source
+        </h2>
+        <p className="mt-6 max-w-2xl text-base leading-relaxed text-ink-2">
+          The program is AGPL-3.0-only. Read the repository, the license, or
+          the issues. {commit}
+        </p>
+        <ul className="mt-10 divide-y divide-line-2 border-y border-line-2">
+          {sourceLinks(source).map((item) => (
+            <li key={item.label}>
+              <a
+                href={item.href}
+                className="group grid gap-1 py-5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-baseline sm:gap-8"
+              >
+                <span className="font-display text-2xl font-semibold tracking-wide uppercase group-hover:text-amber">
+                  {item.label}
+                </span>
+                <span className="font-mono text-xs break-all text-ink-2 group-hover:text-ink">
+                  {item.href}
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )

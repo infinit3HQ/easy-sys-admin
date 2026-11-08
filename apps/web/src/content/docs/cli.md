@@ -5,7 +5,7 @@ description: esa login, status, servers, groups, runs, and alerts.
 
 `esa` is one program with two jobs. `esa serve` runs the control plane. Every other command talks to a control plane you already have, including the hosted beta, using an API token.
 
-Published downloads are coming soon. Until then, build it from the source tree:
+There is no published binary download. Build it from the source tree:
 
 ```sh
 pnpm --filter @esa/esa build

@@ -49,7 +49,7 @@ const lines = [
   'description: HTTP API of the control plane, generated from packages/api/openapi.yaml.',
   '---',
   '',
-  'The web app, the `esa` CLI, and the MCP endpoint all call this API. The base path is `/api/v1`. The contract file in the source tree is `packages/api/openapi.yaml`. This page is generated from that file. Do not edit it by hand. Run `pnpm --filter @esa/docs generate` after the contract changes.',
+  'The web app, the `esa` CLI, and the MCP endpoint all call this API. The base path is `/api/v1`. The contract file in the source tree is `packages/api/openapi.yaml`. This page is generated from that file. Do not edit it by hand. Run `pnpm --filter @esa/web generate:docs` after the contract changes.',
   '',
   'A browser sends the session cookie set by `/auth/callback`. The CLI and other clients send `Authorization: Bearer esa_...` with a token from Settings, API tokens. A token can do at most what its user can do, and only what its scopes allow (`read`, `logs:read`, `actions`, `admin`).',
   '',
@@ -71,4 +71,4 @@ for (const tag of ordered) {
   lines.push('')
 }
 
-writeFileSync(resolve(root, 'apps/docs/src/content/docs/api.md'), `${lines.join('\n')}\n`)
+writeFileSync(resolve(root, 'apps/web/src/content/docs/api.md'), `${lines.join('\n')}\n`)
