@@ -37,6 +37,14 @@ func TestSummarizeExposure(t *testing.T) {
 	if len(ex.PublicPorts) != 2 || ex.PublicPorts[0] != "22/tcp" || ex.PublicPorts[1] != "443/tcp" {
 		t.Fatalf("ports: %+v", ex.PublicPorts)
 	}
+	oldRev := summarizeExposure(proto.AccessReport{Revision: 1}, proto.SecurityReport{Revision: 1}, at)
+	if oldRev.Ready {
+		t.Fatal("a helper that does not speak the current report must not look ready")
+	}
+	kept := mergeExposure(ex, oldRev)
+	if !kept.CheckedAt.Equal(ex.CheckedAt) || len(kept.PublicPorts) != 2 || kept.Ready || !hasGap(kept.Gaps, "helper") {
+		t.Fatalf("an old helper must not wipe the last good summary: %+v", kept)
+	}
 	old := summarizeExposure(proto.AccessReport{}, proto.SecurityReport{Listening: []proto.Listener{{Exposure: "all", Port: 22, Proto: "tcp"}}}, at)
 	if old.Ready || len(old.PublicPorts) != 0 || old.PasswordAuth {
 		t.Fatalf("an old helper must not look clean: %+v", old)

@@ -823,6 +823,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** SSH key fingerprints seen in standard authorized_keys files */
+        get: operations["listKeys"];
+        /** Name a fingerprint in this space, or clear the name */
+        put: operations["labelKey"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incidents": {
         parameters: {
             query?: never;
@@ -1403,6 +1421,33 @@ export interface components {
             uncovered: number;
             /** @description Checks that did not run for this summary. Do not treat a missing list as a clean result. */
             gaps: string[];
+        };
+        KeyOccurrence: {
+            /** Format: int64 */
+            serverId: number;
+            serverName: string;
+            user: string;
+            comment: string;
+            from: string;
+            /** Format: date-time */
+            observedAt: string;
+        };
+        Key: {
+            fingerprint: string;
+            keyType: string;
+            /** @description True when any occurrence forces a command. The command text is not stored. */
+            hasCommand: boolean;
+            /** @description Name given in this space. Empty until someone sets one. */
+            label: string;
+            uses: components["schemas"]["KeyOccurrence"][];
+        };
+        KeyList: {
+            items: components["schemas"]["Key"][];
+        };
+        KeyLabelRequest: {
+            fingerprint: string;
+            /** @description Empty clears the name. */
+            label: string;
         };
         Server: {
             /** Format: int64 */
@@ -3570,6 +3615,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Run"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Keys the actor can see. This is not every key on the server. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    labelKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

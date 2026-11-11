@@ -91,6 +91,34 @@ type Server struct {
 	Group   *Group  `gorm:"constraint:OnDelete:SET NULL"`
 }
 
+// KeyOccurrence is one authorized key seen on one login of one server.
+// It is only what the helper read from the standard authorized_keys files.
+type KeyOccurrence struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;index"`
+	ServerID    int64     `gorm:"not null;uniqueIndex:key_occurrences_place,priority:1"`
+	User        string    `gorm:"not null;size:64;uniqueIndex:key_occurrences_place,priority:2"`
+	Fingerprint string    `gorm:"not null;size:100;uniqueIndex:key_occurrences_place,priority:3"`
+	KeyType     string    `gorm:"not null;default:''"`
+	Comment     string    `gorm:"not null;default:''"`
+	From        string    `gorm:"not null;default:''"`
+	HasCommand  bool      `gorm:"not null;default:false"`
+	ObservedAt  time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyLabel is the name an operator gives a fingerprint in one space.
+type KeyLabel struct {
+	AccountID   int64     `gorm:"primaryKey"`
+	Fingerprint string    `gorm:"primaryKey;size:100"`
+	Label       string    `gorm:"not null;size:80"`
+	UpdatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // ServerCredential is a login kept for a server, only when the user chose
 // "keep this login". Normal operation uses the account key.
 type ServerCredential struct {

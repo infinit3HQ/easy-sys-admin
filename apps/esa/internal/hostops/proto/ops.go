@@ -148,7 +148,7 @@ type LogLine struct {
 // collects the fields below. An older helper omits it. The control plane
 // treats 0 as "reinstall the helper" and does not read the zero values as
 // a clean bill of health.
-const ReportRevision = 1
+const ReportRevision = 2
 
 // AccessReport answers `esa-helper access`.
 type AccessReport struct {

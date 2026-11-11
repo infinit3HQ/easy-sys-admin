@@ -1,7 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { q } from '#/lib/queries'
 import { Ago, Until, When } from '#/components/time'
-import { ErrorBanner, KeyValue, Loading, Panel, cn } from '#/components/kit'
+import {
+  ErrorBanner,
+  KeyValue,
+  Loading,
+  Notice,
+  Panel,
+  cn,
+} from '#/components/kit'
 import { Badge } from '#/components/ui/badge'
 import {
   Table,
@@ -26,6 +33,12 @@ export function AccessTab({ serverId }: { serverId: number }) {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+      {d.gaps.includes('helper') && (
+        <Notice className="xl:col-span-2">
+          This helper is too old for a complete access report. Reinstall it.
+          What you see below is only what that helper could read.
+        </Notice>
+      )}
       <Panel title="Users with a login shell" flush>
         <ul className="divide-y divide-line/60">
           {d.users.map((u) => (
@@ -238,6 +251,12 @@ export function SecurityTab({ serverId }: { serverId: number }) {
   const exposed = (a: string) => a === '0.0.0.0' || a === '::' || a === '*'
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+      {d.gaps.includes('helper') && (
+        <Notice className="xl:col-span-2">
+          This helper is too old for a complete security report. Reinstall it.
+          An empty list here is not a clean result.
+        </Notice>
+      )}
       <Panel title="Listening sockets" flush>
         <p className="px-4 pt-3 text-xs text-muted-foreground">
           A socket on 0.0.0.0 or :: listens on all interfaces. That does not

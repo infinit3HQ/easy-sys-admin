@@ -35,7 +35,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 
 - CLI commands for organizations, teams, and sharing. They are in the web app and the API only.
 - On a run shared with another organization, the overall status can reflect servers that organization cannot see.
-- The helper protocol version is reported but not checked. A new helper action needs a reinstall on older servers. The exposure summary needs that reinstall too. An older helper is shown as not ready.
+- The helper protocol version is reported but not checked. Report revision 2 is required for a complete access or security report. An older helper is shown as not ready, and its last complete exposure summary is kept. SSH key fingerprints from a current helper are listed on the Keys page.
 - Rotating `ESA_MASTER_KEY` has no re-seal step, so old keys must stay in the list.
 - The audit log is never pruned.
 - A required reviewer on the GitHub `production` environment needs a paid plan while the repository is private.

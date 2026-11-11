@@ -165,7 +165,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 	}
 	var prev Exposure
 	_ = state.Exposure.Decode(&prev)
-	ex, keys, ok := s.collectExposure(ctx, srv)
+	ex, keys, accessRev, ok := s.collectExposure(ctx, srv)
 	now := s.now()
 	if !ok {
 		// A cancelled poll cycle should try again next minute. Any other
@@ -176,6 +176,16 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 			state.ExposureAt = &now
 		}
 		return
+	}
+	ex = mergeExposure(prev, ex)
+	if !ex.Ready {
+		s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).
+			Updates(map[string]any{"exposure": store.MustJSON(ex), "exposure_at": now})
+		state.Exposure, state.ExposureAt = store.MustJSON(ex), &now
+		return
+	}
+	if accessRev >= proto.ReportRevision {
+		s.syncKeyOccurrences(ctx, srv, keys, now)
 	}
 	if exposureChanged(prev, ex) {
 		s.audit(ctx, nil, System(srv.AccountID), "server.exposure", srv.Name, map[string]any{
@@ -221,11 +231,23 @@ func (s *Service) takeExposureSlot() bool {
 	}
 }
 
-func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, []keyUse, bool) {
+func mergeExposure(prev, next Exposure) Exposure {
+	if next.Ready || prev.CheckedAt.IsZero() {
+		return next
+	}
+	kept := prev
+	kept.Ready = false
+	if !hasGap(kept.Gaps, "helper") {
+		kept.Gaps = append(append([]string{}, kept.Gaps...), "helper")
+	}
+	return kept
+}
+
+func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, []keyUse, int, bool) {
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
 		s.log.Warn("exposure report", "server_id", srv.ID, "err", err)
-		return Exposure{}, nil, false
+		return Exposure{}, nil, 0, false
 	}
 	var access proto.AccessReport
 	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 45*time.Second)
@@ -233,7 +255,7 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, nil, false
+		return Exposure{}, nil, 0, false
 	}
 	var sec proto.SecurityReport
 	cctx, cancel = context.WithTimeout(s.netCtx(ctx), 30*time.Second)
@@ -241,15 +263,19 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, nil, false
+		return Exposure{}, nil, 0, false
 	}
-	return summarizeExposure(access, sec, s.now()), keyUses(access), true
+	return summarizeExposure(access, sec, s.now()), keyUses(access), access.Revision, true
 }
 
 // keyUse is one authorized-key fingerprint and the login that holds it.
 type keyUse struct {
 	Fingerprint string
 	User        string
+	Type        string
+	Comment     string
+	From        string
+	HasCommand  bool
 }
 
 func hasGap(gaps []string, name string) bool {
@@ -281,11 +307,22 @@ func keyUses(access proto.AccessReport) []keyUse {
 				continue
 			}
 			seen[k.Fingerprint] = true
-			out = append(out, keyUse{Fingerprint: k.Fingerprint, User: u.Name})
+			out = append(out, keyUse{
+				Fingerprint: k.Fingerprint, User: u.Name, Type: k.Type,
+				Comment: trimRunes(k.Comment, 200), From: trimRunes(k.From, 200), HasCommand: k.HasCommand,
+			})
 		}
 	}
 	slices.SortFunc(out, func(a, b keyUse) int { return strings.Compare(a.Fingerprint, b.Fingerprint) })
 	return out
+}
+
+func trimRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 func keyIDs(keys []keyUse) []string {

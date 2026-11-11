@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -162,6 +163,9 @@ func (s *Service) Access(ctx context.Context, a Actor, serverID int64) (proto.Ac
 	if out.Gaps == nil {
 		out.Gaps = []string{}
 	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+		out.Gaps = append(out.Gaps, "helper")
+	}
 	for i := range out.Users {
 		if out.Users[i].AuthorizedKeys == nil {
 			out.Users[i].AuthorizedKeys = []proto.AuthorizedKey{}
@@ -193,6 +197,9 @@ func (s *Service) Security(ctx context.Context, a Actor, serverID int64) (proto.
 	}
 	if out.Gaps == nil {
 		out.Gaps = []string{}
+	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+		out.Gaps = append(out.Gaps, "helper")
 	}
 	return out, err
 }

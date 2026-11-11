@@ -966,6 +966,32 @@ paths:
               schema: { $ref: '#/components/schemas/Run' }
         default: { $ref: '#/components/responses/Error' }
 
+  /keys:
+    get:
+      operationId: listKeys
+      summary: SSH key fingerprints seen in standard authorized_keys files
+      tags: [fleet]
+      responses:
+        '200':
+          description: Keys the actor can see. This is not every key on the server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyList' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: labelKey
+      summary: Name a fingerprint in this space, or clear the name
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeyLabelRequest' }
+      responses:
+        '204':
+          description: Saved
+        default: { $ref: '#/components/responses/Error' }
+
   /incidents:
     get:
       operationId: listIncidents
@@ -1680,6 +1706,40 @@ components:
           type: array
           items: { type: string }
           description: Checks that did not run for this summary. Do not treat a missing list as a clean result.
+
+    KeyOccurrence:
+      type: object
+      required: [serverId, serverName, user, comment, from, observedAt]
+      properties:
+        serverId: { type: integer, format: int64 }
+        serverName: { type: string }
+        user: { type: string }
+        comment: { type: string }
+        from: { type: string }
+        observedAt: { type: string, format: date-time }
+
+    Key:
+      type: object
+      required: [fingerprint, keyType, hasCommand, label, uses]
+      properties:
+        fingerprint: { type: string }
+        keyType: { type: string }
+        hasCommand: { type: boolean, description: True when any occurrence forces a command. The command text is not stored. }
+        label: { type: string, description: Name given in this space. Empty until someone sets one. }
+        uses: { type: array, items: { $ref: '#/components/schemas/KeyOccurrence' } }
+
+    KeyList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Key' } }
+
+    KeyLabelRequest:
+      type: object
+      required: [fingerprint, label]
+      properties:
+        fingerprint: { type: string }
+        label: { type: string, maxLength: 80, description: Empty clears the name. }
 
     Server:
       type: object

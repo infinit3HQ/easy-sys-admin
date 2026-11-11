@@ -61,6 +61,8 @@ Journal lines for one unit, or the log of one container. The API allows 1 to 100
 
 ## Access and security reports
 
+The Keys page lists each fingerprint across the servers you can see, and lets an admin give it a name. The list is only the standard `authorized_keys` files of accounts with a login shell. A key in another file, or one installed by a certificate, is not included. Naming a key does not change the server. A helper older than the current report is marked, and its last complete summary is kept instead of being replaced with an empty one.
+
 The access report lists users with a login shell, whether each password is locked, empty, or set, and the fingerprints of their SSH keys. It does not return the password hash or the key. It lists sudo rules from `/etc/sudoers` and `/etc/sudoers.d`, including `NOPASSWD` and `ALL`. Aliases are not expanded, and includes that point outside that directory are skipped. It also shows who is in the sudo and docker groups, recent logins, failed SSH attempts, and the SSH server's password, root, empty-password, public-key, and forwarding settings.
 
 The security report lists listening ports, the user that owns each socket, and whether the socket is on every interface, on loopback, or on one address. A `docker-proxy` socket is joined to the container that publishes it. The report shows ufw rules when ufw is active, up to 40 lines. nftables is named only. It also shows unattended-upgrades. CrowdSec and fail2ban are shown only when that server has them installed.

@@ -137,7 +137,7 @@ An admin of the owning account accepts the new key on the server page. The reque
 | `containers [--protect a,b]`       | Containers with state, health, restart count, compose labels.                                            | Server page, reboots                |
 | `image-check`                      | Local image digest compared with the registry.                                                           | Server page                         |
 | `logs (--unit U \| --container C)` | Journal or container log lines. At most 1000 lines, default 200. `--grep` is cut to 200 characters.      | Server page (needs `logs:read`)     |
-| `access`                           | Users with a login shell, password state (never the hash), sudo rules, SSH settings, key fingerprints and restrictions, logins. | Server page                         |
+| `access`                           | Users with a login shell, password state (never the hash), sudo rules, SSH settings, key fingerprints and restrictions, logins. Report revision 2. An older helper is incomplete, not empty-clean. | Server page, Keys page              |
 | `security`                         | Listening ports, ufw match, unattended-upgrades. CrowdSec decision count and fail2ban jail bans when those tools are installed. Banned addresses are not collected. | Server page                         |
 | `jobs`                             | Cron entries and systemd timers.                                                                         | Server page                         |
 | `clean --measure`                  | Reclaimable space per cleanup.                                                                           | `measure` runs                      |

@@ -25,6 +25,8 @@ func Models() []any {
 		&AlertRule{},
 		&Alert{},
 		&SecurityIncident{},
+		&KeyOccurrence{},
+		&KeyLabel{},
 		&NotifyChannel{},
 		&CertTarget{},
 		&APIToken{},

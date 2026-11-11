@@ -1036,6 +1036,42 @@ type InvitePreview struct {
 // JobsReport defines model for JobsReport.
 type JobsReport = proto.JobsReport
 
+// Key defines model for Key.
+type Key struct {
+	Fingerprint string `json:"fingerprint"`
+
+	// HasCommand True when any occurrence forces a command. The command text is not stored.
+	HasCommand bool   `json:"hasCommand"`
+	KeyType    string `json:"keyType"`
+
+	// Label Name given in this space. Empty until someone sets one.
+	Label string          `json:"label"`
+	Uses  []KeyOccurrence `json:"uses"`
+}
+
+// KeyLabelRequest defines model for KeyLabelRequest.
+type KeyLabelRequest struct {
+	Fingerprint string `json:"fingerprint"`
+
+	// Label Empty clears the name.
+	Label string `json:"label"`
+}
+
+// KeyList defines model for KeyList.
+type KeyList struct {
+	Items []Key `json:"items"`
+}
+
+// KeyOccurrence defines model for KeyOccurrence.
+type KeyOccurrence struct {
+	Comment    string    `json:"comment"`
+	From       string    `json:"from"`
+	ObservedAt time.Time `json:"observedAt"`
+	ServerId   int64     `json:"serverId"`
+	ServerName string    `json:"serverName"`
+	User       string    `json:"user"`
+}
+
 // Listener defines model for Listener.
 type Listener = proto.Listener
 
@@ -1609,6 +1645,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
+// LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
+type LabelKeyJSONRequestBody = KeyLabelRequest
+
 // SwitchAccountJSONRequestBody defines body for SwitchAccount for application/json ContentType.
 type SwitchAccountJSONRequestBody = SwitchAccountRequest
 
@@ -1945,6 +1984,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
 	AcceptInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListKeys SSH key fingerprints seen in standard authorized_keys files
+	//
+	// Corresponds with GET /keys (the `ListKeys` operationId).
+	ListKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LabelKeyWithBody Name a fingerprint in this space, or clear the name
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /keys (the `LabelKey` operationId).
+	LabelKeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LabelKey Name a fingerprint in this space, or clear the name
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /keys (the `LabelKey` operationId).
+	LabelKey(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe The signed-in user and their current account
 	//
@@ -2910,6 +2968,55 @@ func (c *Client) GetInvite(ctx context.Context, token LinkToken, reqEditors ...R
 // Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
 func (c *Client) AcceptInvite(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAcceptInviteRequest(c.Server, token)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListKeys SSH key fingerprints seen in standard authorized_keys files
+//
+// Corresponds with GET /keys (the `ListKeys` operationId).
+func (c *Client) ListKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListKeysRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LabelKeyWithBody Name a fingerprint in this space, or clear the name
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /keys (the `LabelKey` operationId).
+func (c *Client) LabelKeyWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLabelKeyRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// LabelKey Name a fingerprint in this space, or clear the name
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /keys (the `LabelKey` operationId).
+func (c *Client) LabelKey(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLabelKeyRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5032,6 +5139,73 @@ func NewAcceptInviteRequest(server string, token LinkToken) (*http.Request, erro
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListKeysRequest constructs an http.Request for the ListKeys method
+func NewListKeysRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewLabelKeyRequest calls the generic LabelKey builder with application/json body
+func NewLabelKeyRequest(server string, body LabelKeyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewLabelKeyRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewLabelKeyRequestWithBody constructs an http.Request for the LabelKey method, with any body, and a specified content type
+func NewLabelKeyRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -7321,6 +7495,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /invites/{token}/accept (the `AcceptInvite` operationId).
 	AcceptInviteWithResponse(ctx context.Context, token LinkToken, reqEditors ...RequestEditorFn) (*AcceptInviteResponse, error)
 
+	// ListKeysWithResponse SSH key fingerprints seen in standard authorized_keys files
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /keys (the `ListKeys` operationId).
+	ListKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKeysResponse, error)
+
+	// LabelKeyWithBodyWithResponse Name a fingerprint in this space, or clear the name
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /keys (the `LabelKey` operationId).
+	LabelKeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LabelKeyResponse, error)
+
+	// LabelKeyWithResponse Name a fingerprint in this space, or clear the name
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /keys (the `LabelKey` operationId).
+	LabelKeyWithResponse(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*LabelKeyResponse, error)
+
 	// GetMeWithResponse The signed-in user and their current account
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -9088,6 +9283,95 @@ func (r AcceptInviteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AcceptInviteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListKeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *KeyList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListKeysResponse) GetJSON200() *KeyList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListKeysResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListKeysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListKeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListKeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListKeysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type LabelKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r LabelKeyResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r LabelKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r LabelKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LabelKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r LabelKeyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -11810,6 +12094,45 @@ func (c *ClientWithResponses) AcceptInviteWithResponse(ctx context.Context, toke
 	return ParseAcceptInviteResponse(rsp)
 }
 
+// ListKeysWithResponse SSH key fingerprints seen in standard authorized_keys files
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /keys (the `ListKeys` operationId).
+func (c *ClientWithResponses) ListKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListKeysResponse, error) {
+	rsp, err := c.ListKeys(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListKeysResponse(rsp)
+}
+
+// LabelKeyWithBodyWithResponse Name a fingerprint in this space, or clear the name
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /keys (the `LabelKey` operationId).
+func (c *ClientWithResponses) LabelKeyWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*LabelKeyResponse, error) {
+	rsp, err := c.LabelKeyWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLabelKeyResponse(rsp)
+}
+
+// LabelKeyWithResponse Name a fingerprint in this space, or clear the name
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /keys (the `LabelKey` operationId).
+func (c *ClientWithResponses) LabelKeyWithResponse(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*LabelKeyResponse, error) {
+	rsp, err := c.LabelKey(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLabelKeyResponse(rsp)
+}
+
 // GetMeWithResponse The signed-in user and their current account
 //
 // Returns a wrapper object for the known response body format(s).
@@ -13554,6 +13877,68 @@ func ParseAcceptInviteResponse(rsp *http.Response) (*AcceptInviteResponse, error
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListKeysResponse parses an HTTP response from a ListKeysWithResponse call
+func ParseListKeysResponse(rsp *http.Response) (*ListKeysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListKeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KeyList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLabelKeyResponse parses an HTTP response from a LabelKeyWithResponse call
+func ParseLabelKeyResponse(rsp *http.Response) (*LabelKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LabelKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

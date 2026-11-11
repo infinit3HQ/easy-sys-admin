@@ -1036,6 +1036,42 @@ type InvitePreview struct {
 // JobsReport defines model for JobsReport.
 type JobsReport = proto.JobsReport
 
+// Key defines model for Key.
+type Key struct {
+	Fingerprint string `json:"fingerprint"`
+
+	// HasCommand True when any occurrence forces a command. The command text is not stored.
+	HasCommand bool   `json:"hasCommand"`
+	KeyType    string `json:"keyType"`
+
+	// Label Name given in this space. Empty until someone sets one.
+	Label string          `json:"label"`
+	Uses  []KeyOccurrence `json:"uses"`
+}
+
+// KeyLabelRequest defines model for KeyLabelRequest.
+type KeyLabelRequest struct {
+	Fingerprint string `json:"fingerprint"`
+
+	// Label Empty clears the name.
+	Label string `json:"label"`
+}
+
+// KeyList defines model for KeyList.
+type KeyList struct {
+	Items []Key `json:"items"`
+}
+
+// KeyOccurrence defines model for KeyOccurrence.
+type KeyOccurrence struct {
+	Comment    string    `json:"comment"`
+	From       string    `json:"from"`
+	ObservedAt time.Time `json:"observedAt"`
+	ServerId   int64     `json:"serverId"`
+	ServerName string    `json:"serverName"`
+	User       string    `json:"user"`
+}
+
 // Listener defines model for Listener.
 type Listener = proto.Listener
 
@@ -1609,6 +1645,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
 
+// LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
+type LabelKeyJSONRequestBody = KeyLabelRequest
+
 // SwitchAccountJSONRequestBody defines body for SwitchAccount for application/json ContentType.
 type SwitchAccountJSONRequestBody = SwitchAccountRequest
 
@@ -1746,6 +1785,12 @@ type ServerInterface interface {
 	// AcceptInvite Join the organization and switch this session to it (browser sessions only)
 	// (POST /invites/{token}/accept)
 	AcceptInvite(w http.ResponseWriter, r *http.Request, token LinkToken)
+	// ListKeys SSH key fingerprints seen in standard authorized_keys files
+	// (GET /keys)
+	ListKeys(w http.ResponseWriter, r *http.Request)
+	// LabelKey Name a fingerprint in this space, or clear the name
+	// (PUT /keys)
+	LabelKey(w http.ResponseWriter, r *http.Request)
 	// GetMe The signed-in user and their current account
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -2546,6 +2591,34 @@ func (siw *ServerInterfaceWrapper) AcceptInvite(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AcceptInvite(w, r, token)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LabelKey operation middleware
+func (siw *ServerInterfaceWrapper) LabelKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LabelKey(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3997,6 +4070,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs", wrapper.ListRuns)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/runs", wrapper.StartRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents", wrapper.ListIncidents)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts", wrapper.ListAlerts)
@@ -5071,6 +5146,77 @@ type AcceptInvitedefaultJSONResponse struct {
 }
 
 func (response AcceptInvitedefaultJSONResponse) VisitAcceptInviteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListKeysRequestObject struct {
+}
+
+type ListKeysResponseObject interface {
+	VisitListKeysResponse(w http.ResponseWriter) error
+}
+
+type ListKeys200JSONResponse KeyList
+
+func (response ListKeys200JSONResponse) VisitListKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListKeysdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListKeysdefaultJSONResponse) VisitListKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type LabelKeyRequestObject struct {
+	Body *LabelKeyJSONRequestBody
+}
+
+type LabelKeyResponseObject interface {
+	VisitLabelKeyResponse(w http.ResponseWriter) error
+}
+
+type LabelKey204Response struct {
+}
+
+func (response LabelKey204Response) VisitLabelKeyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type LabelKeydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response LabelKeydefaultJSONResponse) VisitLabelKeyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7001,6 +7147,12 @@ type StrictServerInterface interface {
 	// AcceptInvite Join the organization and switch this session to it (browser sessions only)
 	// (POST /invites/{token}/accept)
 	AcceptInvite(ctx context.Context, request AcceptInviteRequestObject) (AcceptInviteResponseObject, error)
+	// ListKeys SSH key fingerprints seen in standard authorized_keys files
+	// (GET /keys)
+	ListKeys(ctx context.Context, request ListKeysRequestObject) (ListKeysResponseObject, error)
+	// LabelKey Name a fingerprint in this space, or clear the name
+	// (PUT /keys)
+	LabelKey(ctx context.Context, request LabelKeyRequestObject) (LabelKeyResponseObject, error)
 	// GetMe The signed-in user and their current account
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
@@ -7945,6 +8097,61 @@ func (sh *strictHandler) AcceptInvite(w http.ResponseWriter, r *http.Request, to
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AcceptInviteResponseObject); ok {
 		if err := validResponse.VisitAcceptInviteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListKeys operation middleware
+func (sh *strictHandler) ListKeys(w http.ResponseWriter, r *http.Request) {
+	var request ListKeysRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListKeys(ctx, request.(ListKeysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListKeys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListKeysResponseObject); ok {
+		if err := validResponse.VisitListKeysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LabelKey operation middleware
+func (sh *strictHandler) LabelKey(w http.ResponseWriter, r *http.Request) {
+	var request LabelKeyRequestObject
+
+	var body LabelKeyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LabelKey(ctx, request.(LabelKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LabelKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LabelKeyResponseObject); ok {
+		if err := validResponse.VisitLabelKeyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
