@@ -97,7 +97,7 @@ All packages are under `apps/esa/internal`.
 | Job      | Interval | First run after | What it does                                                                                                                                                                                      |
 | -------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                                                        |
-| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample, then evaluates alerts. |
+| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample. When the exposure summary is older than an hour, it also calls `access` and `security`, at most 8 servers per cycle, then evaluates alerts. |
 | Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                      |
 | Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).     |
 | Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                          |
@@ -163,7 +163,7 @@ Fleet:
 | `servers`            | Managed machines: address, pinned host key, enrollment state (`pending` or `ready`), helper version, protected containers. |
 | `server_credentials` | A sudo login kept for helper reinstalls, only when the owner chose to keep it. Sealed.                                     |
 | `enroll_tokens`      | One-time enroll commands for path A, valid 15 minutes. Token stored as SHA-256.                                            |
-| `server_states`      | One row per server: status, reasons, latest snapshot, pending updates, missed polls, host key mismatch.                    |
+| `server_states`      | One row per server: status, reasons, latest snapshot, pending updates, exposure summary, missed polls, host key mismatch.  |
 | `metric_samples`     | One row per poll, kept 48 hours.                                                                                           |
 | `metric_hourly`      | Hourly averages (disk is the hourly maximum), kept 90 days.                                                                |
 
@@ -252,6 +252,7 @@ Alert logic lives in `apps/esa/internal/fleet/alerts.go` and `alerts_manage.go`.
 | `cert_expiry`     | A certificate expires within the threshold, or its check failed | 14 days           | 0                | critical at 3 days, else warning |
 | `run_failed`      | A run had a failed server                                       |                   | 0                | warning                          |
 | `host_key`        | The server presented a different host key                       |                   | 0                | critical                         |
+| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it. Public ports are not an alert. | | 0 | warning, or critical for empty passwords and extra uid 0 |
 
 After each poll, `evaluateAlerts` compares the server's current conditions with its open alerts. A new condition opens a pending alert. A pending alert fires once its condition has lasted the rule's duration; a duration of 0 fires at once. An alert whose condition is gone resolves. A host key mismatch or an unreachable server suppresses the other server alerts. Certificate alerts are evaluated by the certificate job and belong to the account rather than a server. A `run_failed` alert is a one-off: it is stored already resolved and only sends a notification.
 

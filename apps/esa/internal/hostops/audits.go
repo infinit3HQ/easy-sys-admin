@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +29,11 @@ var noLoginShells = map[string]bool{
 
 // Access reports who can log in and how.
 func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
-	rep := proto.AccessReport{Users: []proto.LocalUser{}, Groups: map[string][]string{}, Logins: []proto.Login{}}
+	rep := proto.AccessReport{
+		Revision: proto.ReportRevision, Users: []proto.LocalUser{}, Groups: map[string][]string{},
+		Logins: []proto.Login{}, ListenPorts: []int{}, ListenAddresses: []string{}, SudoRules: []proto.SudoRule{},
+	}
+	passwords := h.passwordStates()
 
 	raw, err := h.readFile("/etc/passwd")
 	if err != nil {
@@ -39,12 +45,19 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 			continue
 		}
 		uid, _ := strconv.Atoi(f[2])
-		u := proto.LocalUser{Name: f[0], UID: uid, Home: f[5], Shell: f[6], AuthorizedKeys: []proto.AuthorizedKey{}}
+		pw := "unknown"
+		if passwords != nil {
+			if st, ok := passwords[f[0]]; ok {
+				pw = st
+			}
+		}
+		u := proto.LocalUser{Name: f[0], UID: uid, Home: f[5], Shell: f[6], Password: pw, AuthorizedKeys: []proto.AuthorizedKey{}}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
 			u.AuthorizedKeys = append(u.AuthorizedKeys, h.authorizedKeys(filepath.Join(f[5], ".ssh", name))...)
 		}
 		rep.Users = append(rep.Users, u)
 	}
+	rep.SudoRules, rep.SudoIncomplete = h.sudoRules()
 
 	if raw, err := h.readFile("/etc/group"); err == nil {
 		for _, line := range strings.Split(string(raw), "\n") {
@@ -76,6 +89,7 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 		}
 	}
 	if out, err := h.output(ctx, 10*time.Second, "sshd", "-T"); err == nil {
+		rep.SSHRead = true
 		for _, l := range strings.Split(out, "\n") {
 			k, v, _ := strings.Cut(l, " ")
 			switch k {
@@ -83,10 +97,328 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 				rep.PasswordAuth = v == "yes"
 			case "permitrootlogin":
 				rep.PermitRootLogin = v
+			case "permitemptypasswords":
+				rep.PermitEmptyPasswords = v == "yes"
+			case "pubkeyauthentication":
+				rep.PubkeyAuth = v == "yes"
+			case "x11forwarding":
+				rep.X11Forwarding = v == "yes"
+			case "allowtcpforwarding":
+				rep.AllowTcpForwarding = v
+			case "kbdinteractiveauthentication":
+				rep.KbdInteractive = v == "yes"
+			case "port":
+				if p, err := strconv.Atoi(v); err == nil && len(rep.ListenPorts) < 8 {
+					rep.ListenPorts = append(rep.ListenPorts, p)
+				}
+			case "listenaddress":
+				if v != "" && len(rep.ListenAddresses) < 16 {
+					rep.ListenAddresses = append(rep.ListenAddresses, v)
+				}
 			}
 		}
 	}
 	return rep, nil
+}
+
+// passwordStates classifies /etc/shadow. The hash never leaves this function.
+// A nil map means the file could not be read.
+func (h *Host) passwordStates() map[string]string {
+	raw, _, err := h.readRegular("/etc/shadow", 1<<20)
+	if err != nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		name, field, ok := strings.Cut(line, ":")
+		if !ok || name == "" {
+			continue
+		}
+		out[name] = classifyPassword(field)
+	}
+	return out
+}
+
+// classifyPassword reports locked, none, or set. field is one shadow column.
+func classifyPassword(field string) string {
+	switch {
+	case field == "":
+		return "none"
+	case strings.HasPrefix(field, "!") || strings.HasPrefix(field, "*"):
+		return "locked"
+	default:
+		return "set"
+	}
+}
+
+const (
+	maxSudoFile  = 256 << 10
+	maxSudoRules = 80
+	maxSudoCmd   = 180
+)
+
+// sudoRules reads /etc/sudoers and /etc/sudoers.d. It does not follow includes
+// that point anywhere else, and it does not expand aliases.
+func (h *Host) sudoRules() ([]proto.SudoRule, bool) {
+	rules := []proto.SudoRule{}
+	incomplete := false
+	add := func(path string) {
+		if len(rules) >= maxSudoRules {
+			incomplete = true
+			return
+		}
+		raw, trunc, err := h.readRegular(path, maxSudoFile)
+		if err != nil {
+			incomplete = true
+			return
+		}
+		if trunc {
+			incomplete = true
+		}
+		got, inc := parseSudoers(string(raw), path)
+		incomplete = incomplete || inc
+		rules = append(rules, got...)
+		if len(rules) > maxSudoRules {
+			rules = rules[:maxSudoRules]
+			incomplete = true
+		}
+	}
+	add("/etc/sudoers")
+	entries, err := os.ReadDir(h.path("/etc/sudoers.d"))
+	if err != nil {
+		return rules, incomplete
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		name := e.Name()
+		// sudo skips names that contain "." or end in "~".
+		if name == "" || strings.Contains(name, ".") || strings.HasSuffix(name, "~") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			incomplete = true
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		add("/etc/sudoers.d/" + name)
+	}
+	return rules, incomplete
+}
+
+// parseSudoers returns command specs. incomplete is set when an include
+// points outside /etc/sudoers.d, which this parser does not follow.
+func parseSudoers(text, source string) ([]proto.SudoRule, bool) {
+	var rules []proto.SudoRule
+	incomplete := false
+	for _, line := range sudoLogicalLines(text) {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if path, ok := sudoInclude(line); ok {
+			if path != "/etc/sudoers.d" && path != "/etc/sudoers.d/" {
+				incomplete = true
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		token, _, _ := strings.Cut(line, " ")
+		if strings.HasPrefix(token, "Defaults") || strings.Contains(token, "_Alias") {
+			continue
+		}
+		rules = append(rules, parseSudoRule(line, source)...)
+	}
+	return rules, incomplete
+}
+
+func sudoLogicalLines(text string) []string {
+	var lines []string
+	var b strings.Builder
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if strings.HasSuffix(line, `\`) {
+			b.WriteString(strings.TrimSuffix(line, `\`))
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteString(line)
+		lines = append(lines, b.String())
+		b.Reset()
+	}
+	if b.Len() > 0 {
+		lines = append(lines, b.String())
+	}
+	return lines
+}
+
+// sudoInclude reports the path of a #include, @include, #includedir, or
+// @includedir line.
+func sudoInclude(line string) (string, bool) {
+	for _, p := range []string{"#includedir", "@includedir", "#include", "@include"} {
+		if !strings.HasPrefix(line, p) {
+			continue
+		}
+		if len(line) == len(p) {
+			return "", true
+		}
+		if line[len(p)] != ' ' && line[len(p)] != '\t' {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(line[len(p):]), `"'`), true
+	}
+	return "", false
+}
+
+func parseSudoRule(line, source string) []proto.SudoRule {
+	eq := strings.IndexByte(line, '=')
+	if eq < 0 {
+		return nil
+	}
+	left := strings.Fields(strings.TrimSpace(line[:eq]))
+	if len(left) < 2 {
+		return nil
+	}
+	runAs, rest := lastRunAs(strings.TrimSpace(line[eq+1:]))
+	var out []proto.SudoRule
+	for _, who := range strings.Split(left[0], ",") {
+		who = strings.TrimSpace(who)
+		if who == "" {
+			continue
+		}
+		nopass := false
+		var cmd string
+		for _, spec := range splitSpecs(rest) {
+			nopass, cmd = splitSudoTags(spec, nopass)
+			cmd = strings.TrimSpace(cmd)
+			if cmd == "" {
+				continue
+			}
+			if len(cmd) > maxSudoCmd {
+				cmd = cmd[:maxSudoCmd]
+			}
+			out = append(out, proto.SudoRule{
+				Source: source, Who: who, RunAs: runAs, NoPassword: nopass,
+				Commands: cmd, Unrestricted: strings.EqualFold(cmd, "ALL"),
+			})
+		}
+	}
+	return out
+}
+
+// lastRunAs returns the last leading (runas) group and the command spec
+// that follows. sudo allows more than one.
+func lastRunAs(s string) (runAs, rest string) {
+	rest = strings.TrimSpace(s)
+	for {
+		inner, next, ok := takeRunAs(rest)
+		if !ok {
+			return runAs, rest
+		}
+		runAs, rest = inner, strings.TrimSpace(next)
+	}
+}
+
+func takeRunAs(s string) (inner, rest string, ok bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "(") {
+		return "", s, false
+	}
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return s[1:i], s[i+1:], true
+			}
+		}
+	}
+	return "", s, false
+}
+
+// splitSudoTags reads tags at the start of one command. nopass carries
+// from the previous command on the same line, which is how sudo applies it.
+func splitSudoTags(spec string, nopass bool) (bool, string) {
+	s := strings.TrimSpace(spec)
+	tags := []string{
+		"NOPASSWD:", "PASSWD:", "NOEXEC:", "EXEC:", "SETENV:", "NOSETENV:",
+		"LOG_INPUT:", "NOLOG_INPUT:", "LOG_OUTPUT:", "NOLOG_OUTPUT:", "MAIL:", "NOMAIL:",
+	}
+	for {
+		s = strings.TrimSpace(s)
+		up := strings.ToUpper(s)
+		tag := ""
+		for _, t := range tags {
+			if strings.HasPrefix(up, t) {
+				tag = t
+				break
+			}
+		}
+		if tag == "" {
+			break
+		}
+		switch tag {
+		case "NOPASSWD:":
+			nopass = true
+		case "PASSWD:":
+			nopass = false
+		}
+		s = strings.TrimSpace(s[len(tag):])
+	}
+	return nopass, s
+}
+
+func splitSpecs(s string) []string {
+	var out []string
+	var b strings.Builder
+	quote := byte(0)
+	depth := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if quote != 0 {
+			b.WriteByte(c)
+			if c == quote && (i == 0 || s[i-1] != '\\') {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '\'', '"':
+			quote = c
+			b.WriteByte(c)
+		case '(':
+			depth++
+			b.WriteByte(c)
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+			b.WriteByte(c)
+		case ',':
+			if depth == 0 {
+				if spec := strings.TrimSpace(b.String()); spec != "" {
+					out = append(out, spec)
+				}
+				b.Reset()
+				continue
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	if spec := strings.TrimSpace(b.String()); spec != "" {
+		out = append(out, spec)
+	}
+	return out
 }
 
 // maxAuthorizedKeys caps how much of one authorized_keys file is read.
@@ -153,18 +485,28 @@ func parseLast(out string) []proto.Login {
 
 // ---- Security ------------------------------------------------------------------
 
-var ssProcRe = regexp.MustCompile(`\(\("([^"]+)"`)
+var ssProcRe = regexp.MustCompile(`\(\("([^"]+)"(?:,pid=(\d+))?`)
 
 // Security reports listening sockets and protection services.
 func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
-	rep := proto.SecurityReport{Listening: []proto.Listener{}}
+	rep := proto.SecurityReport{Revision: proto.ReportRevision, Listening: []proto.Listener{}, FirewallRules: []string{}}
 	if out, err := h.output(ctx, 15*time.Second, "ss", "-H", "-tulpn"); err == nil {
-		rep.Listening = parseSS(out)
+		names := h.uidNames()
+		lookups := 0
+		for _, row := range parseSSRows(out) {
+			if row.pid > 0 && lookups < 64 {
+				row.User = h.userForPID(row.pid, names)
+				lookups++
+			}
+			rep.Listening = append(rep.Listening, row.Listener)
+		}
+		attachContainers(rep.Listening, h.publishedContainers(ctx))
 	}
 
 	rep.Firewall = "none"
 	if out, err := h.output(ctx, 10*time.Second, "ufw", "status"); err == nil && strings.Contains(out, "Status: active") {
 		rep.Firewall = "ufw active"
+		rep.FirewallRules = ufwRules(out)
 	} else if out, err := h.output(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && strings.Contains(out, "chain") {
 		rep.Firewall = "nftables rules"
 	}
@@ -177,8 +519,22 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 	return rep, nil
 }
 
+type ssRow struct {
+	proto.Listener
+	pid int
+}
+
 func parseSS(out string) []proto.Listener {
-	ls := []proto.Listener{}
+	rows := parseSSRows(out)
+	ls := make([]proto.Listener, len(rows))
+	for i, row := range rows {
+		ls[i] = row.Listener
+	}
+	return ls
+}
+
+func parseSSRows(out string) []ssRow {
+	ls := []ssRow{}
 	for _, l := range strings.Split(out, "\n") {
 		f := strings.Fields(l)
 		if len(f) < 5 {
@@ -198,10 +554,14 @@ func parseSS(out string) []proto.Listener {
 			addr = addr[:j]
 		}
 		proc := ""
+		pid := 0
 		if m := ssProcRe.FindStringSubmatch(l); m != nil {
 			proc = m[1]
+			pid, _ = strconv.Atoi(m[2])
 		}
-		ls = append(ls, proto.Listener{Proto: f[0], Address: addr, Port: port, Process: proc})
+		ls = append(ls, ssRow{Listener: proto.Listener{
+			Proto: f[0], Address: addr, Port: port, Process: proc, Exposure: listenExposure(addr),
+		}, pid: pid})
 	}
 	sort.Slice(ls, func(i, j int) bool {
 		if ls[i].Port != ls[j].Port {
@@ -210,6 +570,180 @@ func parseSS(out string) []proto.Listener {
 		return ls[i].Proto < ls[j].Proto
 	})
 	return ls
+}
+
+// listenExposure classifies the local address. "all" is every interface.
+func listenExposure(addr string) string {
+	switch addr {
+	case "", "*", "0.0.0.0", "::":
+		return "all"
+	}
+	if ip := net.ParseIP(addr); ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
+		if ip.IsLoopback() {
+			return "local"
+		}
+		return "all"
+	}
+	return "other"
+}
+
+func (h *Host) uidNames() map[int]string {
+	raw, err := h.readFile("/etc/passwd")
+	if err != nil {
+		return nil
+	}
+	out := map[int]string{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		f := strings.Split(line, ":")
+		if len(f) < 3 {
+			continue
+		}
+		uid, err := strconv.Atoi(f[2])
+		if err == nil {
+			out[uid] = f[0]
+		}
+	}
+	return out
+}
+
+func (h *Host) userForPID(pid int, names map[int]string) string {
+	raw, _, err := h.readRegular("/proc/"+strconv.Itoa(pid)+"/status", 64<<10)
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.HasPrefix(line, "Uid:") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			return ""
+		}
+		uid, err := strconv.Atoi(f[1])
+		if err != nil {
+			return ""
+		}
+		return names[uid]
+	}
+	return ""
+}
+
+// publishedContainers maps "port/proto" to container names for published ports.
+func (h *Host) publishedContainers(ctx context.Context) map[string]string {
+	if h.Docker == nil {
+		return nil
+	}
+	list, err := h.Docker.containers(ctx)
+	if err != nil {
+		return nil
+	}
+	found := map[string][]string{}
+	for _, c := range list {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+		if name == "" || len(c.ID) < 12 {
+			continue
+		}
+		for _, p := range c.Ports {
+			if p.PublicPort == 0 || p.Type == "" {
+				continue
+			}
+			key := strconv.Itoa(int(p.PublicPort)) + "/" + p.Type
+			found[key] = appendName(found[key], name)
+		}
+	}
+	out := map[string]string{}
+	for key, names := range found {
+		if len(names) > 3 {
+			names = names[:3]
+		}
+		out[key] = strings.Join(names, ", ")
+	}
+	return out
+}
+
+func appendName(names []string, name string) []string {
+	for _, n := range names {
+		if n == name {
+			return names
+		}
+	}
+	return append(names, name)
+}
+
+func attachContainers(ls []proto.Listener, published map[string]string) {
+	if len(published) == 0 {
+		return
+	}
+	for i := range ls {
+		if ls[i].Process != "docker-proxy" {
+			continue
+		}
+		p := ls[i].Proto
+		switch {
+		case strings.HasPrefix(p, "tcp"):
+			p = "tcp"
+		case strings.HasPrefix(p, "udp"):
+			p = "udp"
+		}
+		ls[i].Container = published[strconv.Itoa(ls[i].Port)+"/"+p]
+	}
+}
+
+// ufwRules returns the rule lines of an active `ufw status`, capped at 40.
+func ufwRules(out string) []string {
+	lines := strings.Split(out, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "--") {
+			start = i + 1
+			break
+		}
+	}
+	if start < 0 {
+		return []string{}
+	}
+	rules := []string{}
+	for _, l := range lines[start:] {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		if len(l) > 160 {
+			l = l[:160]
+		}
+		rules = append(rules, l)
+		if len(rules) == 40 {
+			break
+		}
+	}
+	return rules
+}
+
+// readRegular reads a regular file and refuses symlinks, FIFOs, and devices.
+// truncated is true when the file is longer than max.
+func (h *Host) readRegular(path string, max int64) ([]byte, bool, error) {
+	full := h.path(path)
+	fi, err := os.Lstat(full)
+	if err != nil {
+		return nil, false, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("not a regular file")
+	}
+	f, err := os.OpenFile(full, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, false, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("not a regular file")
+	}
+	b, err := io.ReadAll(io.LimitReader(f, max))
+	return b, st.Size() > max, err
 }
 
 func (h *Host) serviceState(ctx context.Context, unit string) string {

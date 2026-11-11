@@ -678,7 +678,7 @@ paths:
       - $ref: '#/components/parameters/ServerId'
     get:
       operationId: getServerAccess
-      summary: Users with a login shell, SSH keys, sudo and docker group members, recent logins
+      summary: Login users, password state, sudo rules, SSH settings, recent logins
       tags: [server-live]
       responses:
         '200':
@@ -693,7 +693,7 @@ paths:
       - $ref: '#/components/parameters/ServerId'
     get:
       operationId: getServerSecurity
-      summary: Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades
+      summary: Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
       tags: [server-live]
       responses:
         '200':
@@ -1622,6 +1622,22 @@ components:
         other: { type: integer }
         checkedAt: { type: string, format: date-time, nullable: true }
 
+    Exposure:
+      type: object
+      required: [checkedAt, ready, publicPorts, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll]
+      properties:
+        checkedAt: { type: string, format: date-time }
+        ready: { type: boolean, description: False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. }
+        publicPorts: { type: array, items: { type: string }, description: 'Sockets on every interface, as port/proto. For example 22/tcp.' }
+        passwordAuth: { type: boolean }
+        permitRootLogin: { type: string }
+        permitEmptyPasswords: { type: boolean }
+        pubkeyAuth: { type: boolean }
+        sshRead: { type: boolean, description: True when sshd -T was read. pubkeyAuth is meaningful only then. }
+        firewall: { type: string }
+        extraRoot: { type: integer, description: Login accounts other than root with uid 0. }
+        noPasswordAll: { type: integer, description: Sudo rules that grant NOPASSWD and ALL. }
+
     Server:
       type: object
       required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole]
@@ -1660,6 +1676,11 @@ components:
         updates:
           type: object
           allOf: [{ $ref: '#/components/schemas/UpdateCounts' }]
+          nullable: true
+        exposure:
+          description: Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
+          type: object
+          allOf: [{ $ref: '#/components/schemas/Exposure' }]
           nullable: true
 
     ServerDetail:
@@ -1988,8 +2009,28 @@ components:
       x-go-type: proto.AccessReport
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [users, groups, logins, failedSsh24h, passwordAuth, permitRootLogin]
+      required:
+        [
+          revision,
+          users,
+          groups,
+          logins,
+          failedSsh24h,
+          passwordAuth,
+          permitRootLogin,
+          permitEmptyPasswords,
+          pubkeyAuth,
+          x11Forwarding,
+          allowTcpForwarding,
+          kbdInteractive,
+          listenPorts,
+          listenAddresses,
+          sshRead,
+          sudoRules,
+          sudoIncomplete,
+        ]
       properties:
+        revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         users: { type: array, items: { $ref: '#/components/schemas/LocalUser' } }
         groups:
           type: object
@@ -1998,17 +2039,45 @@ components:
         failedSsh24h: { type: integer }
         passwordAuth: { type: boolean }
         permitRootLogin: { type: string }
+        permitEmptyPasswords: { type: boolean }
+        pubkeyAuth: { type: boolean, description: Meaningful when sshRead is true. }
+        x11Forwarding: { type: boolean }
+        allowTcpForwarding: { type: string }
+        kbdInteractive: { type: boolean }
+        listenPorts: { type: array, items: { type: integer } }
+        listenAddresses: { type: array, items: { type: string } }
+        sshRead: { type: boolean, description: True when sshd -T returned a config. }
+        sudoRules: { type: array, items: { $ref: '#/components/schemas/SudoRule' } }
+        sudoIncomplete:
+          type: boolean
+          description: True when a sudoers include outside /etc/sudoers.d was skipped, or a file could not be read.
+
+    SudoRule:
+      x-go-type: proto.SudoRule
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [source, who, runAs, noPassword, commands, unrestricted]
+      properties:
+        source: { type: string }
+        who: { type: string, description: 'A user, or a group name with a leading percent sign.' }
+        runAs: { type: string }
+        noPassword: { type: boolean }
+        commands: { type: string }
+        unrestricted: { type: boolean, description: True when the command is ALL. }
 
     LocalUser:
       x-go-type: proto.LocalUser
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [name, uid, home, shell, authorizedKeys]
+      required: [name, uid, home, shell, password, authorizedKeys]
       properties:
         name: { type: string }
         uid: { type: integer }
         home: { type: string }
         shell: { type: string }
+        password:
+          type: string
+          description: 'locked, none, set, or unknown. Never a hash. Empty when the helper is older than this field.'
         authorizedKeys: { type: array, items: { $ref: '#/components/schemas/AuthorizedKey' } }
 
     AuthorizedKey:
@@ -2035,10 +2104,15 @@ components:
       x-go-type: proto.SecurityReport
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [listening, firewall, crowdsec, fail2ban, unattendedUpgrades]
+      required: [revision, listening, firewall, firewallRules, crowdsec, fail2ban, unattendedUpgrades]
       properties:
+        revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         listening: { type: array, items: { $ref: '#/components/schemas/Listener' } }
         firewall: { type: string }
+        firewallRules:
+          type: array
+          description: Up to 40 lines from an active ufw. Empty for nftables, which is named only.
+          items: { type: string }
         crowdsec: { type: string }
         fail2ban: { type: string }
         unattendedUpgrades: { type: boolean }
@@ -2047,12 +2121,15 @@ components:
       x-go-type: proto.Listener
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [proto, address, port, process]
+      required: [proto, address, port, process, user, exposure]
       properties:
         proto: { type: string }
         address: { type: string }
         port: { type: integer }
         process: { type: string }
+        user: { type: string }
+        exposure: { type: string, enum: [all, local, other], description: all is every interface. local is loopback. }
+        container: { type: string, description: Set when docker-proxy publishes this port for a container. }
 
     JobsReport:
       x-go-type: proto.JobsReport
@@ -2269,7 +2346,7 @@ components:
       required: [id, kind, enabled, threshold, forMinutes]
       properties:
         id: { type: integer, format: int64 }
-        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key] }
+        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key, exposure] }
         enabled: { type: boolean }
         threshold: { type: number, format: double, description: 'Percent for disk, inode, and memory; days for cert_expiry; unused otherwise.' }
         forMinutes: { type: integer, description: How long the condition must hold before the alert fires. }

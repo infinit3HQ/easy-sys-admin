@@ -40,6 +40,7 @@ func (s *Service) PollAll(ctx context.Context) {
 		s.log.Error("list servers to poll", "err", err)
 		return
 	}
+	s.exposureBudget.Store(exposurePerCycle)
 	sem := make(chan struct{}, s.pollConcurrency)
 	var wg sync.WaitGroup
 	skipped, deferred := 0, 0
@@ -74,7 +75,7 @@ loop:
 			defer wg.Done()
 			defer func() { <-sem }()
 			began := time.Now()
-			ok := s.pollServer(ctx, id)
+			ok := s.pollServer(ctx, id, true)
 			s.recordPoll(ok, time.Since(began))
 		}(id)
 	}
@@ -89,11 +90,12 @@ loop:
 
 // PollServer collects one status snapshot, stores it, and evaluates alerts.
 func (s *Service) PollServer(ctx context.Context, serverID int64) {
-	s.pollServer(ctx, serverID)
+	s.pollServer(ctx, serverID, false)
 }
 
 // pollServer is PollServer. It reports whether the server answered.
-func (s *Service) pollServer(ctx context.Context, serverID int64) bool {
+// budgeted limits exposure collection to this poll cycle's cap.
+func (s *Service) pollServer(ctx context.Context, serverID int64, budgeted bool) bool {
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", serverID).Take(&srv).Error; err != nil {
 		return false
@@ -177,6 +179,7 @@ func (s *Service) pollServer(ctx context.Context, serverID int64) bool {
 	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Omit(clause.Associations).Create(&sample).Error; err != nil {
 		s.log.Warn("store metric sample", "server_id", serverID, "err", err)
 	}
+	s.maybeExposure(ctx, srv, &state, budgeted)
 	s.evaluateAlerts(ctx, srv, &state)
 
 	if state.UpdatesAt == nil || now.Sub(*state.UpdatesAt) > updatesEvery {

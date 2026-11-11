@@ -131,7 +131,11 @@ type ServerState struct {
 	// Every operation stops until a person accepts the new key.
 	HostKeyMismatch  bool   `gorm:"not null;default:false"`
 	PresentedHostKey string `gorm:"not null;default:''"`
-	UpdatedAt        time.Time
+	// Exposure is the board summary: public ports and a few flags.
+	// It is not the user list. ExposureAt is when it was last attempted.
+	Exposure   JSON `gorm:"type:jsonb"`
+	ExposureAt *time.Time
+	UpdatedAt  time.Time
 
 	Server Server `gorm:"constraint:OnDelete:CASCADE"`
 }

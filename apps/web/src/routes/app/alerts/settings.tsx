@@ -71,6 +71,7 @@ const ruleText: Record<AlertRule['kind'], { title: string; unit?: string }> = {
   cert_expiry: { title: 'Certificate expires within', unit: 'days' },
   run_failed: { title: 'A maintenance run failed' },
   host_key: { title: 'Host key changed' },
+  exposure: { title: 'Weak SSH, no firewall, or unrestricted sudo' },
 }
 
 function Rules() {

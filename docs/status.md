@@ -15,6 +15,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 - Reboots: wait for a new boot time, then check that containers with a restart policy came back.
 - Cleanups: Docker build cache (skipped during builds), old VS Code server copies, journal cap.
 - Services, containers (including pulling and recreating one compose service), logs, access and security reports, scheduled jobs, image update checks.
+- Exposure summary on the board, collected about once an hour and at most 8 servers per poll cycle. It stores public ports, SSH flags, the firewall name, and two counts. The exposure alert is off until an admin enables it. An older helper is reported as not ready rather than clean.
 - Groups with schedules. A slot runs once; a slot missed by over an hour is recorded as missed (tests).
 - Alerts fire after their duration and resolve (tests). ntfy delivery. TLS certificate checks.
 - API tokens with scopes, account isolation, and an audit log that marks web, API and MCP calls.
@@ -33,7 +34,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 
 - CLI commands for organizations, teams, and sharing. They are in the web app and the API only.
 - On a run shared with another organization, the overall status can reflect servers that organization cannot see.
-- The helper protocol version is reported but not checked. A new helper action needs a reinstall on older servers.
+- The helper protocol version is reported but not checked. A new helper action needs a reinstall on older servers. The exposure summary needs that reinstall too. An older helper is shown as not ready.
 - Rotating `ESA_MASTER_KEY` has no re-seal step, so old keys must stay in the list.
 - The audit log is never pruned.
 - A required reviewer on the GitHub `production` environment needs a paid plan while the repository is private.

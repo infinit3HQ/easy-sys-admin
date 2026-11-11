@@ -69,6 +69,7 @@ const (
 	AlertRuleKindCertExpiry     AlertRuleKind = "cert_expiry"
 	AlertRuleKindContainer      AlertRuleKind = "container"
 	AlertRuleKindDisk           AlertRuleKind = "disk"
+	AlertRuleKindExposure       AlertRuleKind = "exposure"
 	AlertRuleKindFailedUnit     AlertRuleKind = "failed_unit"
 	AlertRuleKindHostKey        AlertRuleKind = "host_key"
 	AlertRuleKindInode          AlertRuleKind = "inode"
@@ -86,6 +87,8 @@ func (e AlertRuleKind) Valid() bool {
 	case AlertRuleKindContainer:
 		return true
 	case AlertRuleKindDisk:
+		return true
+	case AlertRuleKindExposure:
 		return true
 	case AlertRuleKindFailedUnit:
 		return true
@@ -816,6 +819,31 @@ type ErrorDetail struct {
 	Message string `json:"message"`
 }
 
+// Exposure defines model for Exposure.
+type Exposure struct {
+	CheckedAt time.Time `json:"checkedAt"`
+
+	// ExtraRoot Login accounts other than root with uid 0.
+	ExtraRoot int    `json:"extraRoot"`
+	Firewall  string `json:"firewall"`
+
+	// NoPasswordAll Sudo rules that grant NOPASSWD and ALL.
+	NoPasswordAll        int    `json:"noPasswordAll"`
+	PasswordAuth         bool   `json:"passwordAuth"`
+	PermitEmptyPasswords bool   `json:"permitEmptyPasswords"`
+	PermitRootLogin      string `json:"permitRootLogin"`
+	PubkeyAuth           bool   `json:"pubkeyAuth"`
+
+	// PublicPorts Sockets on every interface, as port/proto. For example 22/tcp.
+	PublicPorts []string `json:"publicPorts"`
+
+	// Ready False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result.
+	Ready bool `json:"ready"`
+
+	// SshRead True when sshd -T was read. pubkeyAuth is meaningful only then.
+	SshRead bool `json:"sshRead"`
+}
+
 // FleetOverview defines model for FleetOverview.
 type FleetOverview struct {
 	Servers []Server    `json:"servers"`
@@ -1142,23 +1170,26 @@ type SecurityReport = proto.SecurityReport
 // Server defines model for Server.
 type Server struct {
 	// Access own: the group belongs to the current account. view or operate: another team shares it.
-	Access             GroupAccess      `json:"access"`
-	Arch               string           `json:"arch"`
-	CreatedAt          time.Time        `json:"createdAt"`
-	Enrollment         ServerEnrollment `json:"enrollment"`
-	GroupId            *int64           `json:"groupId,omitempty"`
-	GroupName          *string          `json:"groupName,omitempty"`
-	HasStoredLogin     bool             `json:"hasStoredLogin"`
-	HelperVersion      string           `json:"helperVersion"`
-	Host               string           `json:"host"`
-	HostKeyFingerprint string           `json:"hostKeyFingerprint"`
-	HostKeyMismatch    bool             `json:"hostKeyMismatch"`
-	HostsControlPlane  bool             `json:"hostsControlPlane"`
-	Id                 int64            `json:"id"`
-	LastError          string           `json:"lastError"`
-	LastSeenAt         *time.Time       `json:"lastSeenAt,omitempty"`
-	Metrics            *ServerMetrics   `json:"metrics,omitempty"`
-	Name               string           `json:"name"`
+	Access     GroupAccess      `json:"access"`
+	Arch       string           `json:"arch"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	Enrollment ServerEnrollment `json:"enrollment"`
+
+	// Exposure Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
+	Exposure           *Exposure      `json:"exposure,omitempty"`
+	GroupId            *int64         `json:"groupId,omitempty"`
+	GroupName          *string        `json:"groupName,omitempty"`
+	HasStoredLogin     bool           `json:"hasStoredLogin"`
+	HelperVersion      string         `json:"helperVersion"`
+	Host               string         `json:"host"`
+	HostKeyFingerprint string         `json:"hostKeyFingerprint"`
+	HostKeyMismatch    bool           `json:"hostKeyMismatch"`
+	HostsControlPlane  bool           `json:"hostsControlPlane"`
+	Id                 int64          `json:"id"`
+	LastError          string         `json:"lastError"`
+	LastSeenAt         *time.Time     `json:"lastSeenAt,omitempty"`
+	Metrics            *ServerMetrics `json:"metrics,omitempty"`
+	Name               string         `json:"name"`
 
 	// OwnerTeam Set when the server is in a group another organization shares.
 	OwnerTeam *string `json:"ownerTeam,omitempty"`
@@ -1263,6 +1294,9 @@ type StartRunRequest struct {
 	Options   *RunOptions `json:"options,omitempty"`
 	ServerIds *[]int64    `json:"serverIds,omitempty"`
 }
+
+// SudoRule defines model for SudoRule.
+type SudoRule = proto.SudoRule
 
 // SwitchAccountRequest defines model for SwitchAccountRequest.
 type SwitchAccountRequest struct {
@@ -1709,7 +1743,7 @@ type ServerInterface interface {
 	// UpdateServer Rename a server, move it to another group, or change its protection settings
 	// (PATCH /servers/{serverId})
 	UpdateServer(w http.ResponseWriter, r *http.Request, serverId ServerId)
-	// GetServerAccess Users with a login shell, SSH keys, sudo and docker group members, recent logins
+	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// ListContainers Docker containers on the server
@@ -1739,7 +1773,7 @@ type ServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerMetricsParams)
-	// GetServerSecurity Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades
+	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// ListServices systemd services on the server, failed first
@@ -6819,7 +6853,7 @@ type StrictServerInterface interface {
 	// UpdateServer Rename a server, move it to another group, or change its protection settings
 	// (PATCH /servers/{serverId})
 	UpdateServer(ctx context.Context, request UpdateServerRequestObject) (UpdateServerResponseObject, error)
-	// GetServerAccess Users with a login shell, SSH keys, sudo and docker group members, recent logins
+	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(ctx context.Context, request GetServerAccessRequestObject) (GetServerAccessResponseObject, error)
 	// ListContainers Docker containers on the server
@@ -6849,7 +6883,7 @@ type StrictServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(ctx context.Context, request GetServerMetricsRequestObject) (GetServerMetricsResponseObject, error)
-	// GetServerSecurity Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades
+	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(ctx context.Context, request GetServerSecurityRequestObject) (GetServerSecurityResponseObject, error)
 	// ListServices systemd services on the server, failed first

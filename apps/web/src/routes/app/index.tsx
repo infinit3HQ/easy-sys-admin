@@ -113,6 +113,7 @@ function Board() {
                     'Load',
                     'Up',
                     'Updates',
+                    'Exposure',
                     'Why',
                     'Seen',
                   ].map((h) => (
@@ -153,6 +154,44 @@ function why(s: Server): string {
   if (reasons.length) return reasons.join(' · ')
   if (s.enrollment === 'pending') return 'waiting for enroll command'
   return 'all clear'
+}
+
+function ExposureCell({ s, className }: { s: Server; className?: string }) {
+  const e = s.exposure
+  if (!e) return <span className={cn('text-xs text-faint', className)}>—</span>
+  if (!e.ready) {
+    return (
+      <span
+        className={cn('text-xs text-warn', className)}
+        title="This helper is too old to collect the exposure summary. Reinstall it."
+      >
+        reinstall helper
+      </span>
+    )
+  }
+  const bits: string[] = []
+  if (e.publicPorts.length)
+    bits.push(`${e.publicPorts.length} on all interfaces`)
+  if (e.passwordAuth) bits.push('password login')
+  if (e.permitRootLogin === 'yes') bits.push('root login')
+  if (e.permitEmptyPasswords) bits.push('empty passwords')
+  if (e.sshRead && !e.pubkeyAuth) bits.push('pubkey off')
+  if (e.firewall === 'none') bits.push('no firewall')
+  if (e.extraRoot > 0) bits.push('extra uid 0')
+  if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
+  const warn = bits.some((b) => !b.endsWith('on all interfaces'))
+  return (
+    <span
+      className={cn(
+        'line-clamp-2 text-xs',
+        warn ? 'text-warn' : 'text-faint',
+        className,
+      )}
+      title={e.publicPorts.length ? e.publicPorts.join(', ') : undefined}
+    >
+      {bits.length ? bits.join(' · ') : 'none'}
+    </span>
+  )
 }
 
 function Updates({ s }: { s: Server }) {
@@ -210,6 +249,9 @@ function Row({ s }: { s: Server }) {
       </TableCell>
       <TableCell className="num py-3 text-xs">
         <Updates s={s} />
+      </TableCell>
+      <TableCell className="max-w-[220px] py-3">
+        <ExposureCell s={s} />
       </TableCell>
       <TableCell className="max-w-[260px] py-3">
         <span
@@ -302,6 +344,7 @@ function ServerCard({ s }: { s: Server }) {
           <Updates s={s} />
         </span>
       </div>
+      <ExposureCell s={s} className="mt-2" />
     </Link>
   )
 }

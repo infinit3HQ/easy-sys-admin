@@ -55,8 +55,8 @@ Every token has `read`, so these tools are always listed. The control plane stil
 | `list_services`          | `server`, `onlyFailed`                                              | systemd services.                                                                       |
 | `list_containers`        | `server`                                                            | Docker containers.                                                                      |
 | `check_container_images` | `server`                                                            | Image updates in the registries. Refused on a view-only share.                          |
-| `get_security_report`    | `server`                                                            | Listening ports, firewall, CrowdSec, fail2ban, unattended-upgrades.                     |
-| `get_access_report`      | `server`                                                            | Login shells, key fingerprints, sudo and docker members, recent logins.                 |
+| `get_security_report`    | `server`                                                            | Listening ports, exposure, firewall rules, CrowdSec, fail2ban, unattended-upgrades.     |
+| `get_access_report`      | `server`                                                            | Login users, password state, sudo rules, SSH settings, key fingerprints, recent logins. |
 | `get_scheduled_jobs`     | `server`                                                            | Cron and systemd timers. Cron command lines are blank unless the token could read logs. |
 | `get_metrics`            | `server`, `window` (`1h`, `24h`, `7d`, `30d`, `90d`; default `24h`) | CPU, memory, disk, and load history.                                                    |
 | `list_certificates`      | none                                                                | TLS certificates and days until expiry.                                                 |

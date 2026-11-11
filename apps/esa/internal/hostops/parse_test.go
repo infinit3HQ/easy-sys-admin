@@ -1,8 +1,11 @@
 package hostops
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
 // Captured from Ubuntu 24.04 on arm64.
@@ -70,8 +73,85 @@ func TestParseSS(t *testing.T) {
 tcp LISTEN 0 128 [::]:22 [::]:* users:(("sshd",pid=2,fd=4))
 udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=3,fd=14))`
 	ls := parseSS(out)
-	if len(ls) != 3 || ls[0].Port != 22 || ls[0].Address != "::" || ls[0].Process != "sshd" || ls[1].Address != "127.0.0.53" {
+	if len(ls) != 3 || ls[0].Port != 22 || ls[0].Address != "::" || ls[0].Process != "sshd" || ls[0].Exposure != "all" {
 		t.Fatalf("got %+v", ls)
+	}
+	if ls[1].Address != "127.0.0.53" || ls[1].Exposure != "local" || ls[2].Exposure != "all" || ls[2].Process != "docker-proxy" {
+		t.Fatalf("got %+v", ls)
+	}
+	attachContainers(ls, map[string]string{"443/tcp": "proxy"})
+	if ls[2].Container != "proxy" || ls[0].Container != "" {
+		t.Fatalf("container join: %+v", ls)
+	}
+}
+
+func TestClassifyPassword(t *testing.T) {
+	hash := "$y$j9T$salt$hash"
+	got := map[string]string{
+		"": "none", "*": "locked", "!": "locked", "!!": "locked", "!*": "locked",
+		"!" + hash: "locked", hash: "set",
+	}
+	for field, want := range got {
+		if classifyPassword(field) != want {
+			t.Errorf("classifyPassword(%q) = %s, want %s", field, classifyPassword(field), want)
+		}
+	}
+	if strings.Contains(classifyPassword(hash), "salt") || strings.Contains(classifyPassword(hash), "$") {
+		t.Fatal("password state must not contain the hash")
+	}
+}
+
+func TestParseSudoers(t *testing.T) {
+	text := `
+Defaults env_reset
+root ALL=(ALL:ALL) ALL
+%sudo ALL=(ALL:ALL) ALL
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart nginx, /usr/bin/systemctl reload nginx
+esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *
+limited ALL=(root) NOPASSWD: /bin/a, PASSWD: /bin/b
+#includedir /etc/sudoers.d
+@include /tmp/not-followed
+`
+	rules, incomplete := parseSudoers(text, "/etc/sudoers")
+	if !incomplete {
+		t.Fatal("an include outside /etc/sudoers.d must be flagged and not followed")
+	}
+	byWho := map[string]proto.SudoRule{}
+	for _, r := range rules {
+		byWho[r.Who+" "+r.Commands] = r
+	}
+	root := byWho["root ALL"]
+	if !root.Unrestricted || root.NoPassword || root.RunAs != "ALL:ALL" {
+		t.Fatalf("root: %+v", root)
+	}
+	sudo := byWho["%sudo ALL"]
+	if !sudo.Unrestricted || sudo.Who != "%sudo" {
+		t.Fatalf("sudo group: %+v", sudo)
+	}
+	esa := byWho["esa /usr/local/lib/esa/esa-helper *"]
+	if esa.Unrestricted || !esa.NoPassword || esa.RunAs != "root" {
+		t.Fatalf("esa: %+v", esa)
+	}
+	if _, ok := byWho["deploy /usr/bin/systemctl restart nginx"]; !ok {
+		t.Fatalf("missing deploy restart: %+v", rules)
+	}
+	reload := byWho["deploy /usr/bin/systemctl reload nginx"]
+	if !reload.NoPassword {
+		t.Fatalf("deploy reload: %+v", reload)
+	}
+	if byWho["limited /bin/a"].NoPassword != true || byWho["limited /bin/b"].NoPassword {
+		t.Fatalf("PASSWD must clear NOPASSWD: %+v", rules)
+	}
+}
+
+func TestUFWRules(t *testing.T) {
+	out := "Status: active\n\nTo                         Action      From\n--                         ------      ----\n22/tcp                     ALLOW       Anywhere\n80/tcp                     ALLOW       Anywhere\n"
+	rules := ufwRules(out)
+	if len(rules) != 2 || !strings.HasPrefix(rules[0], "22/tcp") {
+		t.Fatalf("got %#v", rules)
+	}
+	if len(ufwRules("Status: inactive")) != 0 {
+		t.Fatal("inactive status has no rules")
 	}
 }
 

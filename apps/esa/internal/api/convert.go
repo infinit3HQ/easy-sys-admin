@@ -98,6 +98,14 @@ func toServer(v fleet.ServerView) Server {
 	if v.Updates != nil {
 		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt}
 	}
+	if ex := v.Exposure; ex != nil {
+		s.Exposure = &Exposure{
+			CheckedAt: ex.CheckedAt, Ready: ex.Ready, PublicPorts: nonNil(ex.PublicPorts),
+			PasswordAuth: ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
+			PermitEmptyPasswords: ex.PermitEmptyPasswords, PubkeyAuth: ex.PubkeyAuth,
+			SshRead: ex.SSHRead, Firewall: ex.Firewall, ExtraRoot: ex.ExtraRoot, NoPasswordAll: ex.NoPasswordAll,
+		}
+	}
 	return s
 }
 

@@ -57,15 +57,19 @@ Journal lines for one unit, or the log of one container. The API allows 1 to 100
 
 ## Access and security reports
 
-The access report lists users with a login shell, the fingerprints of their SSH keys, who is in the sudo and docker groups, recent logins, and failed SSH attempts.
+The access report lists users with a login shell, whether each password is locked, empty, or set, and the fingerprints of their SSH keys. It does not return the password hash or the key. It lists sudo rules from `/etc/sudoers` and `/etc/sudoers.d`, including `NOPASSWD` and `ALL`. Aliases are not expanded, and includes that point outside that directory are skipped. It also shows who is in the sudo and docker groups, recent logins, failed SSH attempts, and the SSH server's password, root, empty-password, public-key, and forwarding settings.
 
-The security report lists listening ports and their processes, the firewall, CrowdSec, fail2ban, and unattended-upgrades.
+The security report lists listening ports, the user that owns each socket, and whether the socket is on every interface, on loopback, or on one address. A `docker-proxy` socket is joined to the container that publishes it. The report shows ufw rules when ufw is active, up to 40 lines. nftables is named only. It also shows CrowdSec, fail2ban, and unattended-upgrades.
+
+The board keeps a short summary of that picture, refreshed about once an hour: public ports, those SSH flags, the firewall name, extra uid 0 accounts, and `NOPASSWD ALL` rules. The user list and login addresses are not stored. A helper older than this summary says so, and its empty fields are not treated as a clean result. Reinstall the helper to collect it.
+
+An exposure alert is off until you turn it on under alert settings. It fires for password login, empty passwords, root password login, no firewall, an extra uid 0 account, or a `NOPASSWD ALL` rule. Public ports stay on the board and do not raise that alert.
 
 Scheduled jobs lists cron entries and systemd timers. Cron command lines are hidden from a token that cannot read logs, because those lines often contain secrets.
 
 ## Alerts
 
-An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, and host key change.
+An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, and exposure. Exposure is off until you enable it.
 
 Channels are ntfy, a generic webhook, Discord, Slack, and email. You can send a test message. Certificate checks are a list of TLS endpoints the control plane connects to.
 

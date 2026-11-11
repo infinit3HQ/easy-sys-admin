@@ -71,6 +71,7 @@ These rules are enforced in the helper, not only hidden in the board:
 - `ssh`, `sshd`, Docker, containerd, and a short list of other system units can be started or restarted, and cannot be stopped.
 - Network and firewall units are never started, stopped, or restarted from here.
 - A reboot started by a schedule skips the server that hosts the control plane.
+- There is no shell, and the board does not open one. The `esa` key cannot allocate a terminal. Work that needs a shell uses your own SSH client.
 
 The full list of actions is on the [Features](/features) page. Removing the user, the sudo rule, and the helper is in [Remove a server](/remove-a-server).
 

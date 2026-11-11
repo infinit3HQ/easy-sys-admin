@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -105,6 +106,9 @@ type Service struct {
 
 	// serverLocks serialises maintenance runs per server.
 	serverLocks sync.Map // int64 -> *sync.Mutex
+
+	// exposureBudget is how many exposure reports this poll cycle may start.
+	exposureBudget atomic.Int32
 }
 
 // New returns a Service.

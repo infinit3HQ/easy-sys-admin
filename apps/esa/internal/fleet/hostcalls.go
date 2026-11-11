@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -140,6 +141,29 @@ func (s *Service) Access(ctx context.Context, a Actor, serverID int64) (proto.Ac
 	}
 	var out proto.AccessReport
 	_, err := s.call(ctx, a, serverID, time.Minute, &out, "access")
+	if out.Users == nil {
+		out.Users = []proto.LocalUser{}
+	}
+	if out.Logins == nil {
+		out.Logins = []proto.Login{}
+	}
+	if out.Groups == nil {
+		out.Groups = map[string][]string{}
+	}
+	if out.ListenPorts == nil {
+		out.ListenPorts = []int{}
+	}
+	if out.ListenAddresses == nil {
+		out.ListenAddresses = []string{}
+	}
+	if out.SudoRules == nil {
+		out.SudoRules = []proto.SudoRule{}
+	}
+	for i := range out.Users {
+		if out.Users[i].AuthorizedKeys == nil {
+			out.Users[i].AuthorizedKeys = []proto.AuthorizedKey{}
+		}
+	}
 	return out, err
 }
 
@@ -150,7 +174,34 @@ func (s *Service) Security(ctx context.Context, a Actor, serverID int64) (proto.
 	}
 	var out proto.SecurityReport
 	_, err := s.call(ctx, a, serverID, time.Minute, &out, "security")
+	if out.Listening == nil {
+		out.Listening = []proto.Listener{}
+	}
+	for i := range out.Listening {
+		if out.Listening[i].Exposure == "" {
+			out.Listening[i].Exposure = exposureOf(out.Listening[i].Address)
+		}
+	}
+	if out.FirewallRules == nil {
+		out.FirewallRules = []string{}
+	}
 	return out, err
+}
+
+// exposureOf matches hostops.listenExposure for helpers that omit the field.
+func exposureOf(addr string) string {
+	switch addr {
+	case "", "*", "0.0.0.0", "::":
+		return "all"
+	}
+	ip := net.ParseIP(addr)
+	if ip != nil && ip.IsLoopback() {
+		return "local"
+	}
+	if ip != nil && ip.IsUnspecified() {
+		return "all"
+	}
+	return "other"
 }
 
 // Jobs lists cron entries and timers on a server.

@@ -26,6 +26,7 @@ const (
 	AlertCertExpiry     AlertKind = "cert_expiry"
 	AlertRunFailed      AlertKind = "run_failed"
 	AlertHostKey        AlertKind = "host_key"
+	AlertExposure       AlertKind = "exposure"
 )
 
 // defaultRules are created for every account on first use.
@@ -40,6 +41,7 @@ var defaultRules = []store.AlertRule{
 	{Kind: string(AlertCertExpiry), Threshold: 14},
 	{Kind: string(AlertRunFailed)},
 	{Kind: string(AlertHostKey)},
+	{Kind: string(AlertExposure)},
 }
 
 func (s *Service) rules(ctx context.Context, accountID int64) (map[AlertKind]store.AlertRule, error) {
@@ -50,7 +52,10 @@ func (s *Service) rules(ctx context.Context, accountID int64) (map[AlertKind]sto
 	if len(rows) < len(defaultRules) {
 		now := s.now()
 		for _, d := range defaultRules {
-			d.AccountID, d.Enabled, d.CreatedAt, d.UpdatedAt = accountID, true, now, now
+			// Password login and a missing firewall are common. The rule
+			// stays off until an admin turns it on.
+			enabled := d.Kind != string(AlertExposure)
+			d.AccountID, d.Enabled, d.CreatedAt, d.UpdatedAt = accountID, enabled, now, now
 			s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Omit(clause.Associations).Create(&d)
 		}
 		if err := s.db.WithContext(ctx).Where("account_id = ?", accountID).Find(&rows).Error; err != nil {
@@ -133,6 +138,12 @@ func serverConditions(srv store.Server, st *store.ServerState, rules map[AlertKi
 	}
 	if snap.RebootRequired {
 		add(AlertRebootRequired, "", "info", "a reboot is required")
+	}
+	var ex Exposure
+	if st.Exposure.Decode(&ex) == nil {
+		for _, c := range exposureConditions(ex) {
+			add(c.kind, c.subject, c.severity, c.message)
+		}
 	}
 	return out
 }

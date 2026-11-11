@@ -581,7 +581,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Users with a login shell, SSH keys, sudo and docker group members, recent logins */
+        /** Login users, password state, sudo rules, SSH settings, recent logins */
         get: operations["getServerAccess"];
         put?: never;
         post?: never;
@@ -600,7 +600,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades */
+        /** Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades */
         get: operations["getServerSecurity"];
         put?: never;
         post?: never;
@@ -1335,6 +1335,25 @@ export interface components {
             /** Format: date-time */
             checkedAt?: string | null;
         };
+        Exposure: {
+            /** Format: date-time */
+            checkedAt: string;
+            /** @description False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. */
+            ready: boolean;
+            /** @description Sockets on every interface, as port/proto. For example 22/tcp. */
+            publicPorts: string[];
+            passwordAuth: boolean;
+            permitRootLogin: string;
+            permitEmptyPasswords: boolean;
+            pubkeyAuth: boolean;
+            /** @description True when sshd -T was read. pubkeyAuth is meaningful only then. */
+            sshRead: boolean;
+            firewall: string;
+            /** @description Login accounts other than root with uid 0. */
+            extraRoot: number;
+            /** @description Sudo rules that grant NOPASSWD and ALL. */
+            noPasswordAll: number;
+        };
         Server: {
             /** Format: int64 */
             id: number;
@@ -1371,6 +1390,8 @@ export interface components {
             presentedFingerprint: string;
             metrics?: components["schemas"]["ServerMetrics"] | null;
             updates?: components["schemas"]["UpdateCounts"] | null;
+            /** @description Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored. */
+            exposure?: components["schemas"]["Exposure"] | null;
         };
         ServerDetail: {
             server: components["schemas"]["Server"];
@@ -1644,6 +1665,8 @@ export interface components {
             items: components["schemas"]["LogLine"][];
         };
         AccessReport: {
+            /** @description 1 when the helper collected the fields below. 0 means reinstall the helper. */
+            revision: number;
             users: components["schemas"]["LocalUser"][];
             groups: {
                 [key: string]: string[];
@@ -1652,12 +1675,37 @@ export interface components {
             failedSsh24h: number;
             passwordAuth: boolean;
             permitRootLogin: string;
+            permitEmptyPasswords: boolean;
+            /** @description Meaningful when sshRead is true. */
+            pubkeyAuth: boolean;
+            x11Forwarding: boolean;
+            allowTcpForwarding: string;
+            kbdInteractive: boolean;
+            listenPorts: number[];
+            listenAddresses: string[];
+            /** @description True when sshd -T returned a config. */
+            sshRead: boolean;
+            sudoRules: components["schemas"]["SudoRule"][];
+            /** @description True when a sudoers include outside /etc/sudoers.d was skipped, or a file could not be read. */
+            sudoIncomplete: boolean;
+        };
+        SudoRule: {
+            source: string;
+            /** @description A user, or a group name with a leading percent sign. */
+            who: string;
+            runAs: string;
+            noPassword: boolean;
+            commands: string;
+            /** @description True when the command is ALL. */
+            unrestricted: boolean;
         };
         LocalUser: {
             name: string;
             uid: number;
             home: string;
             shell: string;
+            /** @description locked, none, set, or unknown. Never a hash. Empty when the helper is older than this field. */
+            password: string;
             authorizedKeys: components["schemas"]["AuthorizedKey"][];
         };
         AuthorizedKey: {
@@ -1672,8 +1720,12 @@ export interface components {
             at: string;
         };
         SecurityReport: {
+            /** @description 1 when the helper collected the fields below. 0 means reinstall the helper. */
+            revision: number;
             listening: components["schemas"]["Listener"][];
             firewall: string;
+            /** @description Up to 40 lines from an active ufw. Empty for nftables, which is named only. */
+            firewallRules: string[];
             crowdsec: string;
             fail2ban: string;
             unattendedUpgrades: boolean;
@@ -1683,6 +1735,14 @@ export interface components {
             address: string;
             port: number;
             process: string;
+            user: string;
+            /**
+             * @description all is every interface. local is loopback.
+             * @enum {string}
+             */
+            exposure: "all" | "local" | "other";
+            /** @description Set when docker-proxy publishes this port for a container. */
+            container?: string;
         };
         JobsReport: {
             cron: components["schemas"]["CronEntry"][];
@@ -1872,7 +1932,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key";
+            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key" | "exposure";
             enabled: boolean;
             /**
              * Format: double

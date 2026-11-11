@@ -53,8 +53,8 @@ Live data read from a server through esa-helper.
 | GET | `/servers/{serverId}/containers/image-check` | Session or token | Compare each container's image with its registry |
 | POST | `/servers/{serverId}/containers/{name}/{action}` | Session or token | Start, stop, restart, or update (pull and recreate) one container |
 | GET | `/servers/{serverId}/logs` | Session or token | Journal lines of a unit, or log lines of a container (needs logs:read) |
-| GET | `/servers/{serverId}/access` | Session or token | Users with a login shell, SSH keys, sudo and docker group members, recent logins |
-| GET | `/servers/{serverId}/security` | Session or token | Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades |
+| GET | `/servers/{serverId}/access` | Session or token | Login users, password state, sudo rules, SSH settings, recent logins |
+| GET | `/servers/{serverId}/security` | Session or token | Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades |
 | GET | `/servers/{serverId}/jobs` | Session or token | Cron entries and systemd timers |
 
 ## groups

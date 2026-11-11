@@ -1,6 +1,6 @@
 # Easy Sys Admin Privacy Policy
 
-_Last updated: November 8, 2026_
+_Last updated: November 11, 2026_
 
 This policy explains what personal data the hosted Easy Sys Admin service at easysysadmin.app (the "Service") collects, why, and what choices you have. The Service is run by **Niraj Dilshan, doing business as infinit3HQ**, Colombo, Sri Lanka ("we", "us"), who is responsible for your account data. Contact: support@easysysadmin.app.
 
@@ -16,7 +16,7 @@ This policy covers only the hosted Service. If you self-host the open source ver
 - **Logs and command output** that the Service reads from or produces on your servers.
 - An audit trail of actions taken through the Service, recording who did what, when, and on which server.
 
-Also stored: the pinned SSH host key and its fingerprint; whether a reboot is required; pending package lists; group schedules; alert rules and alert events; TLS certificate checks (hostname, port, expiry, issuer); and run history. A run stores its kind, status, summary, and, for an update, the package list and the last 40 lines of that upgrade's log. Journal and container logs shown in the board are read when you ask for them and are not saved as a log archive.
+Also stored: the pinned SSH host key and its fingerprint; whether a reboot is required; pending package lists; group schedules; alert rules and alert events; TLS certificate checks (hostname, port, expiry, issuer); and run history. A run stores its kind, status, summary, and, for an update, the package list and the last 40 lines of that upgrade's log. About once an hour the board stores an exposure summary for each server: public listen ports, SSH login settings, the firewall name, and counts of extra root accounts and unrestricted sudo rules. That summary does not include password hashes, SSH key material, the user list, or login addresses. Those are shown when you open the access report and are not saved. Journal and container logs shown in the board are read when you ask for them and are not saved as a log archive.
 
 **Credentials:** The SSH key material and connection details the Service needs to reach your servers through the `esa` user, plus API and MCP tokens. Each space has one ed25519 SSH key pair. The private key is encrypted at rest with AES-256-GCM under ESA_MASTER_KEY and stored in the database. ESA_MASTER_KEY is 32 random bytes and lives only in the control plane's environment, not in the database. Each ciphertext is bound to its row, so a copied value does not decrypt in another row. A sudo login is stored only if an owner chooses to keep it, and it is encrypted the same way. The API does not return a stored private key or password. API tokens and the session cookie are stored only as SHA-256 hashes.
 

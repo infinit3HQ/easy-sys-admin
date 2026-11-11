@@ -352,7 +352,7 @@ function buildServer(token: string, me: Me): McpServer {
 
   tool(
     'get_security_report',
-    'Listening ports, firewall, CrowdSec and fail2ban state, unattended-upgrades.',
+    'Listening ports and whether each is on every interface, firewall rules, CrowdSec, fail2ban, and unattended-upgrades.',
     { server: serverArg },
     async ({ server: ref }) => {
       const s = await resolveServer(ref)
@@ -366,7 +366,7 @@ function buildServer(token: string, me: Me): McpServer {
 
   tool(
     'get_access_report',
-    'Users with a login shell, their SSH key fingerprints, sudo and docker group members, recent logins, failed SSH attempts.',
+    'Login users and whether each has a password, sudo rules, SSH settings, key fingerprints, recent logins, and failed SSH attempts. Password hashes are not included.',
     { server: serverArg },
     async ({ server: ref }) => {
       const s = await resolveServer(ref)

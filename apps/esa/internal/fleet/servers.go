@@ -43,6 +43,7 @@ type ServerView struct {
 	Snapshot             *proto.Status
 	Updates              *proto.PendingUpdates
 	UpdatesAt            *time.Time
+	Exposure             *Exposure
 }
 
 // Totals are the counts shown above the overview table.
@@ -224,6 +225,12 @@ func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 		var snap proto.Status
 		if st.Snapshot.Decode(&snap) == nil {
 			v.Snapshot = &snap
+		}
+	}
+	if len(st.Exposure) > 0 {
+		var ex Exposure
+		if st.Exposure.Decode(&ex) == nil && !ex.CheckedAt.IsZero() {
+			v.Exposure = &ex
 		}
 	}
 	if len(st.Updates) > 0 {

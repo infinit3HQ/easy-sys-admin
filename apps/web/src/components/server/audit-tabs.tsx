@@ -32,6 +32,20 @@ export function AccessTab({ serverId }: { serverId: number }) {
             <li key={u.name} className="px-4 py-3">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <span className="font-mono text-sm text-ink">{u.name}</span>
+                {u.uid === 0 && u.name !== 'root' && (
+                  <Badge variant="warn">uid 0</Badge>
+                )}
+                {u.password && (
+                  <Badge
+                    variant={
+                      u.password === 'set' || u.password === 'none'
+                        ? 'warn'
+                        : 'secondary'
+                    }
+                  >
+                    password {u.password}
+                  </Badge>
+                )}
                 {Object.entries(d.groups)
                   .filter(([, m]) => m.includes(u.name))
                   .map(([g]) => (
@@ -91,11 +105,80 @@ export function AccessTab({ serverId }: { serverId: number }) {
               tone={d.permitRootLogin === 'yes' ? 'warn' : undefined}
             />
             <KeyValue
+              k="Empty passwords"
+              v={
+                d.sshRead
+                  ? d.permitEmptyPasswords
+                    ? 'allowed'
+                    : 'off'
+                  : 'unknown'
+              }
+              tone={d.permitEmptyPasswords ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="Public key login"
+              v={d.sshRead ? (d.pubkeyAuth ? 'on' : 'off') : 'unknown'}
+              tone={d.sshRead && !d.pubkeyAuth ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="Keyboard interactive"
+              v={d.sshRead ? (d.kbdInteractive ? 'on' : 'off') : 'unknown'}
+              tone={d.kbdInteractive ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="X11 forwarding"
+              v={d.sshRead ? (d.x11Forwarding ? 'on' : 'off') : 'unknown'}
+              tone={d.x11Forwarding ? 'warn' : undefined}
+            />
+            <KeyValue
+              k="TCP forwarding"
+              v={d.sshRead ? d.allowTcpForwarding || 'unknown' : 'unknown'}
+              tone={
+                d.allowTcpForwarding && d.allowTcpForwarding !== 'no'
+                  ? 'warn'
+                  : undefined
+              }
+            />
+            <KeyValue
+              k="Listen"
+              v={d.listenPorts.length ? d.listenPorts.join(', ') : 'unknown'}
+            />
+            <KeyValue
               k="Failed logins, 24h"
               v={String(d.failedSsh24h)}
               tone={d.failedSsh24h > 100 ? 'warn' : undefined}
             />
           </dl>
+        </Panel>
+        <Panel title="Sudo rules">
+          {d.revision < 1 ? (
+            <p className="text-sm text-muted-foreground">
+              Reinstall the helper to read sudoers.
+            </p>
+          ) : d.sudoRules.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No sudo rules read.</p>
+          ) : (
+            <ul className="space-y-2">
+              {d.sudoRules.map((rule, i) => (
+                <li key={i} className="font-mono text-[11px] break-all">
+                  <span className="text-ink">{rule.who}</span>
+                  {rule.runAs && (
+                    <span className="text-faint"> ({rule.runAs})</span>
+                  )}{' '}
+                  <span className="text-ink-2">{rule.commands}</span>
+                  {rule.noPassword && (
+                    <span className="text-warn"> NOPASSWD</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {d.sudoIncomplete && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Some sudoers includes were skipped. Only /etc/sudoers and
+              /etc/sudoers.d are read.
+            </p>
+          )}
         </Panel>
         <Panel title="Recent logins">
           {d.logins.length === 0 ? (
@@ -139,7 +222,8 @@ export function SecurityTab({ serverId }: { serverId: number }) {
               <TableHead className="pl-4">Port</TableHead>
               <TableHead>Proto</TableHead>
               <TableHead>Address</TableHead>
-              <TableHead className="pr-4">Process</TableHead>
+              <TableHead>Process</TableHead>
+              <TableHead className="pr-4">User</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -161,8 +245,12 @@ export function SecurityTab({ serverId }: { serverId: number }) {
                     ? `${l.address} (all interfaces)`
                     : l.address}
                 </TableCell>
-                <TableCell className="py-2 pr-4 text-ink">
+                <TableCell className="py-2 text-ink">
                   {l.process}
+                  {l.container ? ` · ${l.container}` : ''}
+                </TableCell>
+                <TableCell className="py-2 pr-4 text-muted-foreground">
+                  {l.user}
                 </TableCell>
               </TableRow>
             ))}
@@ -192,6 +280,20 @@ export function SecurityTab({ serverId }: { serverId: number }) {
             tone={!d.unattendedUpgrades ? 'warn' : undefined}
           />
         </dl>
+        {d.firewallRules.length > 0 && (
+          <ul className="mt-4 space-y-1 border-t border-line/60 pt-3 font-mono text-[11px] text-ink-2">
+            {d.firewallRules.map((rule) => (
+              <li key={rule} className="break-all">
+                {rule}
+              </li>
+            ))}
+          </ul>
+        )}
+        {d.revision < 1 && (
+          <p className="mt-3 text-xs text-muted-foreground">
+            Reinstall the helper for users, exposure, and firewall rules.
+          </p>
+        )}
       </Panel>
     </div>
   )

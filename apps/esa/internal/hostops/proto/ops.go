@@ -144,22 +144,54 @@ type LogLine struct {
 
 // ---- Audits ------------------------------------------------------------------
 
+// ReportRevision is set on access and security reports from a helper that
+// collects the fields below. An older helper omits it. The control plane
+// treats 0 as "reinstall the helper" and does not read the zero values as
+// a clean bill of health.
+const ReportRevision = 1
+
 // AccessReport answers `esa-helper access`.
 type AccessReport struct {
-	Users           []LocalUser         `json:"users"`
-	Groups          map[string][]string `json:"groups"`
-	Logins          []Login             `json:"logins"`
-	FailedSSH24h    int                 `json:"failedSsh24h"`
-	PasswordAuth    bool                `json:"passwordAuth"`
-	PermitRootLogin string              `json:"permitRootLogin"`
+	Revision             int                 `json:"revision"`
+	Users                []LocalUser         `json:"users"`
+	Groups               map[string][]string `json:"groups"`
+	Logins               []Login             `json:"logins"`
+	FailedSSH24h         int                 `json:"failedSsh24h"`
+	PasswordAuth         bool                `json:"passwordAuth"`
+	PermitRootLogin      string              `json:"permitRootLogin"`
+	PermitEmptyPasswords bool                `json:"permitEmptyPasswords"`
+	PubkeyAuth           bool                `json:"pubkeyAuth"`
+	X11Forwarding        bool                `json:"x11Forwarding"`
+	AllowTcpForwarding   string              `json:"allowTcpForwarding"`
+	KbdInteractive       bool                `json:"kbdInteractive"`
+	ListenPorts          []int               `json:"listenPorts"`
+	ListenAddresses      []string            `json:"listenAddresses"`
+	// SSHRead is true when `sshd -T` returned a config. The bools above are
+	// meaningful only then.
+	SSHRead        bool       `json:"sshRead"`
+	SudoRules      []SudoRule `json:"sudoRules"`
+	SudoIncomplete bool       `json:"sudoIncomplete"`
+}
+
+// SudoRule is one command spec from sudoers. Aliases are not expanded.
+// Includes outside /etc/sudoers.d are not followed.
+type SudoRule struct {
+	Source       string `json:"source"`
+	Who          string `json:"who"`
+	RunAs        string `json:"runAs"`
+	NoPassword   bool   `json:"noPassword"`
+	Commands     string `json:"commands"`
+	Unrestricted bool   `json:"unrestricted"`
 }
 
 // LocalUser is an account with a login shell.
+// Password is locked, none, set, or unknown. It is never a hash.
 type LocalUser struct {
 	Name           string          `json:"name"`
 	UID            int             `json:"uid"`
 	Home           string          `json:"home"`
 	Shell          string          `json:"shell"`
+	Password       string          `json:"password"`
 	AuthorizedKeys []AuthorizedKey `json:"authorizedKeys"`
 }
 
@@ -179,19 +211,26 @@ type Login struct {
 
 // SecurityReport answers `esa-helper security`.
 type SecurityReport struct {
+	Revision           int        `json:"revision"`
 	Listening          []Listener `json:"listening"`
 	Firewall           string     `json:"firewall"` // "ufw active", "nftables rules", "none"
+	FirewallRules      []string   `json:"firewallRules"`
 	CrowdSec           string     `json:"crowdsec"` // active | inactive | not installed
 	Fail2ban           string     `json:"fail2ban"`
 	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
 }
 
 // Listener is one listening socket.
+// Exposure is all (every interface), local (loopback), or other (one address).
+// Container is set when the process is docker-proxy and a container publishes the port.
 type Listener struct {
-	Proto   string `json:"proto"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-	Process string `json:"process"`
+	Proto     string `json:"proto"`
+	Address   string `json:"address"`
+	Port      int    `json:"port"`
+	Process   string `json:"process"`
+	User      string `json:"user"`
+	Exposure  string `json:"exposure"`
+	Container string `json:"container,omitempty"`
 }
 
 // JobsReport answers `esa-helper jobs`.

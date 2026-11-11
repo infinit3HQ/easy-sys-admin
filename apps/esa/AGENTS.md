@@ -95,6 +95,8 @@ These are enforced in `hostops` and pinned by `hostops/safety_test.go`. Do not w
 - Protected containers (default prefixes `traefik`, `authentik`, `portainer`, `crowdsec`, or the server's own list) need `--confirm <exact name>` for actions and updates. Compose project and service names count as names.
 - `container-update` refuses containers not managed by docker compose.
 - `authorized_keys` reading skips FIFOs and symlinks.
+- `/etc/shadow` is read only to classify a password as locked, empty, or set. The hash is not returned, logged, or stored.
+- Sudoers reads are regular files under `/etc/sudoers` and `/etc/sudoers.d` only. No symlink, no FIFO, size capped, and `#include` paths outside that directory are not followed.
 - A server whose host key changed gets no work until someone accepts the new key.
 - Reboot runs started by a schedule skip the server that hosts the control plane. The reboot after an update always skips it.
 
