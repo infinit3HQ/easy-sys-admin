@@ -162,6 +162,21 @@ func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestOb
 	return ListIncidents200JSONResponse{Items: mapSlice(items, toIncident)}, nil
 }
 
+func (h *Handlers) SnoozeIncident(ctx context.Context, req SnoozeIncidentRequestObject) (SnoozeIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.SnoozeIncident(ctx, a, req.IncidentId, req.Body.Until, req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return SnoozeIncident200JSONResponse(toIncident(v)), nil
+}
+
 func (h *Handlers) AcknowledgeIncident(ctx context.Context, req AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error) {
 	a, err := actor(ctx)
 	if err != nil {

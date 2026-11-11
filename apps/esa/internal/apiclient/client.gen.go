@@ -224,6 +224,7 @@ func (e GroupAccess) Valid() bool {
 const (
 	Acknowledged IncidentState = "acknowledged"
 	Open         IncidentState = "open"
+	Snoozed      IncidentState = "snoozed"
 )
 
 // Valid indicates whether the value is a known member of the IncidentState enum.
@@ -232,6 +233,8 @@ func (e IncidentState) Valid() bool {
 	case Acknowledged:
 		return true
 	case Open:
+		return true
+	case Snoozed:
 		return true
 	default:
 		return false
@@ -985,16 +988,18 @@ type ImageCheckList struct {
 
 // Incident defines model for Incident.
 type Incident struct {
-	AckedAt    *time.Time    `json:"ackedAt,omitempty"`
-	FirstSeen  time.Time     `json:"firstSeen"`
-	Id         int64         `json:"id"`
-	Kind       string        `json:"kind"`
-	LastSeen   time.Time     `json:"lastSeen"`
-	Message    string        `json:"message"`
-	ServerId   int64         `json:"serverId"`
-	ServerName string        `json:"serverName"`
-	State      IncidentState `json:"state"`
-	Subject    string        `json:"subject"`
+	AckedAt      *time.Time    `json:"ackedAt,omitempty"`
+	FirstSeen    time.Time     `json:"firstSeen"`
+	Id           int64         `json:"id"`
+	Kind         string        `json:"kind"`
+	LastSeen     time.Time     `json:"lastSeen"`
+	Message      string        `json:"message"`
+	ServerId     int64         `json:"serverId"`
+	ServerName   string        `json:"serverName"`
+	SnoozeReason *string       `json:"snoozeReason,omitempty"`
+	SnoozeUntil  *time.Time    `json:"snoozeUntil,omitempty"`
+	State        IncidentState `json:"state"`
+	Subject      string        `json:"subject"`
 }
 
 // IncidentState defines model for Incident.State.
@@ -1581,6 +1586,12 @@ type ListIncidentsParams struct {
 	IncludeAcknowledged *bool `form:"includeAcknowledged,omitempty" json:"includeAcknowledged,omitempty"`
 }
 
+// SnoozeIncidentJSONBody defines parameters for SnoozeIncident.
+type SnoozeIncidentJSONBody struct {
+	Reason string    `json:"reason"`
+	Until  time.Time `json:"until"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1644,6 +1655,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
+
+// SnoozeIncidentJSONRequestBody defines body for SnoozeIncident for application/json ContentType.
+type SnoozeIncidentJSONRequestBody SnoozeIncidentJSONBody
 
 // LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
 type LabelKeyJSONRequestBody = KeyLabelRequest
@@ -1974,6 +1988,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 	AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SnoozeIncidentWithBody Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+	SnoozeIncidentWithBody(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+	SnoozeIncident(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInvite What an invite link offers, for the signed-in user
 	//
@@ -2938,6 +2966,40 @@ func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams,
 // Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAcknowledgeIncidentRequest(c.Server, incidentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SnoozeIncidentWithBody Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+func (c *Client) SnoozeIncidentWithBody(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSnoozeIncidentRequestWithBody(c.Server, incidentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+func (c *Client) SnoozeIncident(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSnoozeIncidentRequest(c.Server, incidentId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5071,6 +5133,53 @@ func NewAcknowledgeIncidentRequest(server string, incidentId int64) (*http.Reque
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewSnoozeIncidentRequest calls the generic SnoozeIncident builder with application/json body
+func NewSnoozeIncidentRequest(server string, incidentId int64, body SnoozeIncidentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSnoozeIncidentRequestWithBody(server, incidentId, "application/json", bodyReader)
+}
+
+// NewSnoozeIncidentRequestWithBody constructs an http.Request for the SnoozeIncident method, with any body, and a specified content type
+func NewSnoozeIncidentRequestWithBody(server string, incidentId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "incidentId", incidentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/incidents/%s/snooze", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -7481,6 +7590,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 	AcknowledgeIncidentWithResponse(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error)
 
+	// SnoozeIncidentWithBodyWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+	SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
+
+	// SnoozeIncidentWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+	SnoozeIncidentWithResponse(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
+
 	// GetInviteWithResponse What an invite link offers, for the signed-in user
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -9187,6 +9310,54 @@ func (r AcknowledgeIncidentResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AcknowledgeIncidentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SnoozeIncidentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Incident
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SnoozeIncidentResponse) GetJSON200() *Incident {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SnoozeIncidentResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SnoozeIncidentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SnoozeIncidentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SnoozeIncidentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SnoozeIncidentResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -12068,6 +12239,32 @@ func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Contex
 	return ParseAcknowledgeIncidentResponse(rsp)
 }
 
+// SnoozeIncidentWithBodyWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+func (c *ClientWithResponses) SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
+	rsp, err := c.SnoozeIncidentWithBody(ctx, incidentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSnoozeIncidentResponse(rsp)
+}
+
+// SnoozeIncidentWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
+func (c *ClientWithResponses) SnoozeIncidentWithResponse(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
+	rsp, err := c.SnoozeIncident(ctx, incidentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSnoozeIncidentResponse(rsp)
+}
+
 // GetInviteWithResponse What an invite link offers, for the signed-in user
 //
 // Returns a wrapper object for the known response body format(s).
@@ -13800,6 +13997,39 @@ func ParseAcknowledgeIncidentResponse(rsp *http.Response) (*AcknowledgeIncidentR
 	}
 
 	response := &AcknowledgeIncidentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Incident
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSnoozeIncidentResponse parses an HTTP response from a SnoozeIncidentWithResponse call
+func ParseSnoozeIncidentResponse(rsp *http.Response) (*SnoozeIncidentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SnoozeIncidentResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

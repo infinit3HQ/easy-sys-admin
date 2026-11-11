@@ -81,7 +81,7 @@ A group with two or more servers that have a current exposure summary lists wher
 
 ## Alerts
 
-An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new socket on all interfaces, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once and stay on the alerts page until an admin marks them reviewed. Reviewing a notice does not change the server. A security update alerts after the number of days you set, 7 by default.
+An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new socket on all interfaces, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once and stay on the alerts page until an admin marks them reviewed or snoozes them for at most 7 days. A snooze comes back on its own. A later event for the same thing opens it again. Reviewing or snoozing does not change the server. Notifications are stored before they are sent, and a restart retries them. Five failures leave the delivery marked dead. A security update alerts after the number of days you set, 7 by default.
 
 Channels are ntfy, a generic webhook, Discord, Slack, and email. You can send a test message. Certificate checks are a list of TLS endpoints the control plane connects to.
 

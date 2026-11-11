@@ -205,6 +205,9 @@ func decodeEnvelope(res ExecResult, out any) error {
 	if !env.OK {
 		return &HelperError{Code: env.Code, Message: env.Error}
 	}
+	if env.Protocol != 0 && env.Protocol != proto.Version {
+		return &HelperError{Code: proto.CodeFailed, Message: fmt.Sprintf("helper protocol %d is not %d; reinstall the helper", env.Protocol, proto.Version)}
+	}
 	if out == nil || len(env.Data) == 0 {
 		return nil
 	}

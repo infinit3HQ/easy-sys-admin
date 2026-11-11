@@ -18,6 +18,7 @@ import (
 func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, log *slog.Logger) {
 	fl.ResumeRuns(ctx)
 	go every(ctx, log, "poll", time.Minute, 5*time.Second, fl.PollAll)
+	go every(ctx, log, "deliver", time.Minute, 10*time.Second, fl.DrainDeliveries)
 	go every(ctx, log, "schedule", time.Minute, 15*time.Second, fl.Tick)
 	go every(ctx, log, "rollup", time.Hour, 2*time.Minute, fl.Rollup)
 	go every(ctx, log, "sessions", time.Hour, time.Minute, sessions.CleanupExpired)

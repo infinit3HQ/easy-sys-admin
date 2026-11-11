@@ -24,6 +24,19 @@ function NeedsReview() {
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
   })
+  const snooze = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().POST('/incidents/{incidentId}/snooze', {
+          params: { path: { incidentId: id } },
+          body: {
+            until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            reason: 'look again tomorrow',
+          },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
+  })
   const items = incidents.data?.items ?? []
   if (items.length === 0) return null
   return (
@@ -42,20 +55,31 @@ function NeedsReview() {
               </div>
             </div>
             {canAct && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => ack.mutate(item.id)}
-                busy={ack.isPending}
-              >
-                Reviewed
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => snooze.mutate(item.id)}
+                  busy={snooze.isPending}
+                >
+                  Tomorrow
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => ack.mutate(item.id)}
+                  busy={ack.isPending}
+                >
+                  Reviewed
+                </Button>
+              </div>
             )}
           </li>
         ))}
       </ul>
       <p className="px-4 pb-4 text-xs text-muted-foreground">
-        Marking a notice reviewed does not change the server.
+        Reviewed means you have seen it. Tomorrow hides it for one day, then it
+        comes back. Neither changes the server.
       </p>
     </Card>
   )

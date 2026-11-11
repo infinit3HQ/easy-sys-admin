@@ -96,9 +96,34 @@ type SecurityIncident struct {
 	LastSeen  time.Time `gorm:"not null"`
 	AckedBy   *int64
 	AckedAt   *time.Time
+	// SnoozeUntil is set while State is snoozed. After it passes, the notice
+	// returns to open.
+	SnoozeUntil  *time.Time
+	SnoozeReason string `gorm:"not null;default:''"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// NotifyDelivery is one queued notification. It is written before the
+// in-memory workers see it, so a restart does not drop it.
+type NotifyDelivery struct {
+	ID        int64  `gorm:"primaryKey"`
+	AccountID int64  `gorm:"not null;index"`
+	ChannelID int64  `gorm:"not null;index"`
+	Title     string `gorm:"not null"`
+	Body      string `gorm:"not null"`
+	Severity  string `gorm:"not null"`
+	URL       string `gorm:"not null;default:''"`
+	// State is queued, sending, sent, or dead.
+	State     string `gorm:"not null;default:'queued';index"`
+	Attempts  int    `gorm:"not null;default:0"`
+	LastError string `gorm:"not null;default:''"`
+	CreatedAt time.Time
+	SentAt    *time.Time
+
+	Account Account       `gorm:"constraint:OnDelete:CASCADE"`
+	Channel NotifyChannel `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 // NotifyChannel is where alerts are sent. ConfigEnc holds the URL, token,

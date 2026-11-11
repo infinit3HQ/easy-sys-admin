@@ -92,7 +92,7 @@ All packages are under `apps/esa/internal`.
 
 ## Background jobs
 
-`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts six loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
+`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts seven loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
 
 | Job      | Interval | First run after | What it does                                                                                                                                                                                      |
 | -------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -101,6 +101,7 @@ All packages are under `apps/esa/internal`.
 | Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                      |
 | Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).     |
 | Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                          |
+| Deliver  | 1 minute | 10 seconds      | `fleet.DrainDeliveries`: sends notifications stored in the database, retries a delivery left in sending, and returns expired snoozes to the review list. Five failures mark a delivery dead. |
 | Digest   | 1 hour   | 3 minutes       | `fleet.SendDigests`: on Monday after 08:00 UTC, sends one summary per space to its channels. Unreachable servers, security updates waiting 7 days, and new ports and keys from the past week. An empty week sends nothing. A control plane that is down on Monday skips that week. |
 | Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                |
 

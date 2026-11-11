@@ -1007,6 +1007,31 @@ paths:
               schema: { $ref: '#/components/schemas/IncidentList' }
         default: { $ref: '#/components/responses/Error' }
 
+  /incidents/{incidentId}/snooze:
+    parameters:
+      - { name: incidentId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: snoozeIncident
+      summary: Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [until, reason]
+              properties:
+                until: { type: string, format: date-time }
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
   /incidents/{incidentId}/acknowledge:
     parameters:
       - { name: incidentId, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2482,7 +2507,9 @@ components:
         serverName: { type: string }
         kind: { type: string }
         subject: { type: string }
-        state: { type: string, enum: [open, acknowledged] }
+        state: { type: string, enum: [open, acknowledged, snoozed] }
+        snoozeUntil: { type: string, format: date-time, nullable: true }
+        snoozeReason: { type: string }
         message: { type: string }
         firstSeen: { type: string, format: date-time }
         lastSeen: { type: string, format: date-time }

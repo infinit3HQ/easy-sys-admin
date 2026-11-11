@@ -858,6 +858,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/incidents/{incidentId}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide a notice until a time within 7 days. A host key change cannot be snoozed. */
+        post: operations["snoozeIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incidents/{incidentId}/acknowledge": {
         parameters: {
             query?: never;
@@ -2056,7 +2075,10 @@ export interface components {
             kind: string;
             subject: string;
             /** @enum {string} */
-            state: "open" | "acknowledged";
+            state: "open" | "acknowledged" | "snoozed";
+            /** Format: date-time */
+            snoozeUntil?: string | null;
+            snoozeReason?: string;
             message: string;
             /** Format: date-time */
             firstSeen: string;
@@ -3681,6 +3703,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IncidentList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    snoozeIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: date-time */
+                    until: string;
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
                 };
             };
             default: components["responses"]["Error"];

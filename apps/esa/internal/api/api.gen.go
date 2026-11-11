@@ -224,6 +224,7 @@ func (e GroupAccess) Valid() bool {
 const (
 	Acknowledged IncidentState = "acknowledged"
 	Open         IncidentState = "open"
+	Snoozed      IncidentState = "snoozed"
 )
 
 // Valid indicates whether the value is a known member of the IncidentState enum.
@@ -232,6 +233,8 @@ func (e IncidentState) Valid() bool {
 	case Acknowledged:
 		return true
 	case Open:
+		return true
+	case Snoozed:
 		return true
 	default:
 		return false
@@ -985,16 +988,18 @@ type ImageCheckList struct {
 
 // Incident defines model for Incident.
 type Incident struct {
-	AckedAt    *time.Time    `json:"ackedAt,omitempty"`
-	FirstSeen  time.Time     `json:"firstSeen"`
-	Id         int64         `json:"id"`
-	Kind       string        `json:"kind"`
-	LastSeen   time.Time     `json:"lastSeen"`
-	Message    string        `json:"message"`
-	ServerId   int64         `json:"serverId"`
-	ServerName string        `json:"serverName"`
-	State      IncidentState `json:"state"`
-	Subject    string        `json:"subject"`
+	AckedAt      *time.Time    `json:"ackedAt,omitempty"`
+	FirstSeen    time.Time     `json:"firstSeen"`
+	Id           int64         `json:"id"`
+	Kind         string        `json:"kind"`
+	LastSeen     time.Time     `json:"lastSeen"`
+	Message      string        `json:"message"`
+	ServerId     int64         `json:"serverId"`
+	ServerName   string        `json:"serverName"`
+	SnoozeReason *string       `json:"snoozeReason,omitempty"`
+	SnoozeUntil  *time.Time    `json:"snoozeUntil,omitempty"`
+	State        IncidentState `json:"state"`
+	Subject      string        `json:"subject"`
 }
 
 // IncidentState defines model for Incident.State.
@@ -1581,6 +1586,12 @@ type ListIncidentsParams struct {
 	IncludeAcknowledged *bool `form:"includeAcknowledged,omitempty" json:"includeAcknowledged,omitempty"`
 }
 
+// SnoozeIncidentJSONBody defines parameters for SnoozeIncident.
+type SnoozeIncidentJSONBody struct {
+	Reason string    `json:"reason"`
+	Until  time.Time `json:"until"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1644,6 +1655,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
+
+// SnoozeIncidentJSONRequestBody defines body for SnoozeIncident for application/json ContentType.
+type SnoozeIncidentJSONRequestBody SnoozeIncidentJSONBody
 
 // LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
 type LabelKeyJSONRequestBody = KeyLabelRequest
@@ -1779,6 +1793,9 @@ type ServerInterface interface {
 	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
 	// (POST /incidents/{incidentId}/acknowledge)
 	AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId int64)
+	// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	// (POST /incidents/{incidentId}/snooze)
+	SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId int64)
 	// GetInvite What an invite link offers, for the signed-in user
 	// (GET /invites/{token})
 	GetInvite(w http.ResponseWriter, r *http.Request, token LinkToken)
@@ -2539,6 +2556,32 @@ func (siw *ServerInterfaceWrapper) AcknowledgeIncident(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AcknowledgeIncident(w, r, incidentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SnoozeIncident operation middleware
+func (siw *ServerInterfaceWrapper) SnoozeIncident(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "incidentId" -------------
+	var incidentId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "incidentId", r.PathValue("incidentId"), &incidentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "incidentId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SnoozeIncident(w, r, incidentId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4073,6 +4116,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents", wrapper.ListIncidents)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/snooze", wrapper.SnoozeIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts", wrapper.ListAlerts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts/rules", wrapper.ListAlertRules)
@@ -5068,6 +5112,46 @@ type AcknowledgeIncidentdefaultJSONResponse struct {
 }
 
 func (response AcknowledgeIncidentdefaultJSONResponse) VisitAcknowledgeIncidentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SnoozeIncidentRequestObject struct {
+	IncidentId int64 `json:"incidentId"`
+	Body       *SnoozeIncidentJSONRequestBody
+}
+
+type SnoozeIncidentResponseObject interface {
+	VisitSnoozeIncidentResponse(w http.ResponseWriter) error
+}
+
+type SnoozeIncident200JSONResponse Incident
+
+func (response SnoozeIncident200JSONResponse) VisitSnoozeIncidentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SnoozeIncidentdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SnoozeIncidentdefaultJSONResponse) VisitSnoozeIncidentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7141,6 +7225,9 @@ type StrictServerInterface interface {
 	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
 	// (POST /incidents/{incidentId}/acknowledge)
 	AcknowledgeIncident(ctx context.Context, request AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error)
+	// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
+	// (POST /incidents/{incidentId}/snooze)
+	SnoozeIncident(ctx context.Context, request SnoozeIncidentRequestObject) (SnoozeIncidentResponseObject, error)
 	// GetInvite What an invite link offers, for the signed-in user
 	// (GET /invites/{token})
 	GetInvite(ctx context.Context, request GetInviteRequestObject) (GetInviteResponseObject, error)
@@ -8045,6 +8132,39 @@ func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AcknowledgeIncidentResponseObject); ok {
 		if err := validResponse.VisitAcknowledgeIncidentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SnoozeIncident operation middleware
+func (sh *strictHandler) SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId int64) {
+	var request SnoozeIncidentRequestObject
+
+	request.IncidentId = incidentId
+
+	var body SnoozeIncidentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SnoozeIncident(ctx, request.(SnoozeIncidentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SnoozeIncident")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SnoozeIncidentResponseObject); ok {
+		if err := validResponse.VisitSnoozeIncidentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

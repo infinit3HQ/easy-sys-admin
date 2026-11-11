@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -47,7 +48,15 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 		s.log.Error("load incident", "err", err)
 		return
 	}
-	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"last_seen": now, "message": message}).Error; err != nil {
+	updates := map[string]any{"last_seen": now, "message": message}
+	if row.State != "open" {
+		updates["state"] = "open"
+		updates["acked_by"] = nil
+		updates["acked_at"] = nil
+		updates["snooze_until"] = nil
+		updates["snooze_reason"] = ""
+	}
+	if err := s.db.WithContext(ctx).Model(&row).Updates(updates).Error; err != nil {
 		s.log.Error("update incident", "err", err)
 	}
 }
@@ -58,6 +67,9 @@ func (s *Service) ListIncidents(ctx context.Context, a Actor, includeAcknowledge
 	if err := a.can(RoleViewer, ScopeRead); err != nil {
 		return nil, err
 	}
+	s.db.WithContext(ctx).Model(&store.SecurityIncident{}).
+		Where("state = ? AND snooze_until IS NOT NULL AND snooze_until <= ?", "snoozed", s.now()).
+		Updates(map[string]any{"state": "open", "snooze_until": nil, "snooze_reason": ""})
 	q := s.db.WithContext(ctx).Where("(security_incidents.account_id = ? OR security_incidents.server_id IN ("+sharedServerIDsSQL+"))", a.AccountID, a.AccountID).
 		Preload("Server").Order("last_seen DESC").Limit(100)
 	if !includeAcknowledged {
@@ -96,4 +108,35 @@ func (s *Service) AcknowledgeIncident(ctx context.Context, a Actor, id int64) (I
 	row.State, row.AckedAt = "acknowledged", &now
 	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
 		State: row.State, Message: row.Message, FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, AckedAt: row.AckedAt}, nil
+}
+
+// SnoozeIncident hides a notice until until, which must be within 7 days.
+// A later event for the same subject opens it again.
+func (s *Service) SnoozeIncident(ctx context.Context, a Actor, id int64, until time.Time, reason string) (IncidentView, error) {
+	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+		return IncidentView{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > 200 {
+		return IncidentView{}, invalid("reason", "say why, in at most 200 characters")
+	}
+	now := s.now()
+	if !until.After(now) || until.After(now.Add(7*24*time.Hour)) {
+		return IncidentView{}, invalid("until", "must be within the next 7 days")
+	}
+	var row store.SecurityIncident
+	if err := s.db.WithContext(ctx).Preload("Server").Where("id = ? AND account_id = ?", id, a.AccountID).Take(&row).Error; err != nil {
+		return IncidentView{}, mapStore(err)
+	}
+	if row.Kind == string(AlertHostKey) {
+		return IncidentView{}, invalid("until", "a host key change cannot be snoozed")
+	}
+	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{
+		"state": "snoozed", "snooze_until": until, "snooze_reason": reason,
+	}).Error; err != nil {
+		return IncidentView{}, err
+	}
+	s.audit(ctx, nil, a, "incident.snooze", row.Server.Name, map[string]any{"kind": row.Kind, "until": until, "reason": reason})
+	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
+		State: "snoozed", Message: row.Message, FirstSeen: row.FirstSeen, LastSeen: row.LastSeen}, nil
 }

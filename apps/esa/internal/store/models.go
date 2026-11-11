@@ -28,6 +28,7 @@ func Models() []any {
 		&KeyOccurrence{},
 		&KeyLabel{},
 		&NotifyChannel{},
+		&NotifyDelivery{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
