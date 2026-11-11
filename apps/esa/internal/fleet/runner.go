@@ -94,19 +94,62 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 			queued = append(queued, i)
 		}
 	}
-	batches := planBatches(items, queued, size)
-	failed, started := runBatches(ctx, batches, maxFailures, failed, func(ctx context.Context, i int) bool {
-		return fn(ctx, &items[i])
-	})
+	work := func(ctx context.Context, i int) bool { return fn(ctx, &items[i]) }
+	canary, rest := partitionCanaries(items, queued, o.CanaryServerIDs)
+	if len(canary) > 0 {
+		batches := planBatches(items, canary, len(canary))
+		var started int
+		failed, started = runBatches(ctx, batches, maxFailures, failed, work)
+		if canaryFailed(items, canary, failed) || stopRun(len(failed), maxFailures) {
+			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary)
+			return
+		}
+	}
+	batches := planBatches(items, rest, size)
+	var started int
+	failed, started = runBatches(ctx, batches, maxFailures, failed, work)
 	if !stopRun(len(failed), maxFailures) {
 		return
 	}
-	msg := stopMessage(items, failed)
+	s.skipRest(ctx, items, unstarted(batches, started), failed, nil)
+}
+
+func unstarted(batches [][]int, started int) []int {
+	var out []int
 	for _, batch := range batches[started:] {
-		for _, i := range batch {
-			if items[i].Status == "queued" {
-				s.setRunServer(ctx, &items[i], "skipped", msg, nil, 0)
-			}
+		out = append(out, batch...)
+	}
+	return out
+}
+
+func canaryFailed(items []store.RunServer, canary, failed []int) bool {
+	isCanary := map[int]bool{}
+	for _, i := range canary {
+		isCanary[i] = true
+	}
+	for _, i := range failed {
+		if isCanary[i] && items[i].Status == "failed" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) skipRest(ctx context.Context, items []store.RunServer, idx, failed, canary []int) {
+	msg := stopMessage(items, failed)
+	isCanary := map[int]bool{}
+	for _, i := range canary {
+		isCanary[i] = true
+	}
+	for _, i := range failed {
+		if isCanary[i] && items[i].Status == "failed" {
+			msg = "stopped after canary " + items[i].Server.Name + " failed"
+			break
+		}
+	}
+	for _, i := range idx {
+		if items[i].Status == "queued" {
+			s.setRunServer(ctx, &items[i], "skipped", msg, nil, 0)
 		}
 	}
 }
@@ -330,7 +373,17 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 		s.setRunServer(ctx, rs, "failed", "could not read status before the upgrade: "+err.Error(), nil, 0)
 		return false
 	}
-	s.db.WithContext(ctx).Model(rs).Update("detail", store.MustJSON(map[string]any{"healthBefore": before}))
+	pre, block := s.runHealthChecks(ctx, rs.Server, ep, o.Checks, "before")
+	saved := map[string]any{"healthBefore": before}
+	if len(pre) > 0 {
+		saved["checks"] = pre
+	}
+	if block != "" {
+		s.setRunServer(ctx, rs, "failed", "check before upgrade: "+block, saved, 0)
+		return false
+	}
+	rs.Detail = store.MustJSON(saved)
+	s.db.WithContext(ctx).Model(rs).Update("detail", rs.Detail)
 
 	cctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
 	err = s.pool.Call(cctx, ep, nil, "upgrade-start", args...)
@@ -398,7 +451,18 @@ func (s *Service) followUpgrade(ctx context.Context, run store.Run, rs *store.Ru
 	}
 	if msg := s.healthRegressed(ctx, ep, healthBefore(rs)); msg != "" {
 		detail["health"] = msg
+		detail["checks"] = savedChecks(rs)
 		s.setRunServer(ctx, rs, "failed", "upgrade finished, "+msg, detail, 0)
+		_ = s.RefreshUpdates(ctx, rs.ServerID, false)
+		s.PollServer(ctx, rs.ServerID)
+		return false
+	}
+	post, block := s.runHealthChecks(ctx, rs.Server, ep, o.Checks, "after")
+	if all := append(savedChecks(rs), post...); len(all) > 0 {
+		detail["checks"] = all
+	}
+	if block != "" {
+		s.setRunServer(ctx, rs, "failed", "check after upgrade: "+block, detail, 0)
 		_ = s.RefreshUpdates(ctx, rs.ServerID, false)
 		s.PollServer(ctx, rs.ServerID)
 		return false
@@ -428,6 +492,14 @@ func (s *Service) readHealth(ctx context.Context, ep remote.Endpoint) (serviceHe
 		h.BadContainers = snap.Docker.Unhealthy + snap.Docker.Restarting
 	}
 	return h, nil
+}
+
+func savedChecks(rs *store.RunServer) []CheckResult {
+	var saved struct {
+		Checks []CheckResult `json:"checks"`
+	}
+	_ = rs.Detail.Decode(&saved)
+	return saved.Checks
 }
 
 func healthBefore(rs *store.RunServer) serviceHealth {

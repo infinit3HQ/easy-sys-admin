@@ -224,11 +224,11 @@ The run executes in the background. Each server is locked while it is worked on.
 For each server, in parallel with the rest of its batch, the runner:
 
 1. Calls `upgrade-precheck` (3 minute timeout). Problems fail the server.
-2. Reads `status` and stores the failed units and unhealthy containers. A failed read fails the server before the upgrade starts.
+2. Reads `status` and stores the failed units and unhealthy containers. A failed read fails the server before the upgrade starts. The group's checks run here too. A blocking failure stops that server before apt starts. A check dials the enrolled address, or asks the helper about one service or container. It does not follow an HTTP redirect.
 3. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
 4. Polls `upgrade-status` every 10 seconds for up to 2 hours. Connection errors are retried, because the upgrade does not depend on SSH. A host key mismatch fails the server at once.
 5. If the upgrade succeeded, the server needs a reboot, and the group has "reboot if required" on, it reboots and waits. A server marked as hosting the control plane is not rebooted here.
-6. Reads `status` again. A failed unit that was not already failed, or a rise in unhealthy or restarting containers, fails that server. A status read that fails also fails that server. A problem that was already there does not. The failure limit can then stop the rest of the batch.
+6. Reads `status` again. A failed unit that was not already failed, or a rise in unhealthy or restarting containers, fails that server. A status read that fails also fails that server. A problem that was already there does not. The same checks run again. A blocking failure fails that server. The failure limit can then stop the rest of the batch. Servers named as canaries run first, and one failed canary skips the rest even when the failure limit is higher.
 
 ### Reboots
 

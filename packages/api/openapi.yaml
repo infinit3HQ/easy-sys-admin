@@ -2468,6 +2468,20 @@ components:
           default: 1
           description: Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
 
+    HealthCheck:
+      type: object
+      required: [name, kind, blocking]
+      properties:
+        name: { type: string, maxLength: 40 }
+        kind: { type: string, enum: [tcp, http, unit, container] }
+        blocking: { type: boolean, description: A blocking failure stops that server. An advisory failure is recorded and the upgrade continues. }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        tls: { type: boolean, description: 'For http, use HTTPS and verify the certificate. The name is the server enrolled address.' }
+        method: { type: string, enum: [GET, HEAD] }
+        path: { type: string, description: 'For http, a path on the enrolled server. It must start with a slash.' }
+        unit: { type: string, description: A systemd service name. .service is added when omitted. }
+        container: { type: string, description: A Docker container name. }
+
     GroupInput:
       type: object
       required: [name, timezone, clean, updates]
@@ -2476,10 +2490,14 @@ components:
         timezone: { type: string, example: Asia/Colombo }
         clean: { $ref: '#/components/schemas/CleanPolicy' }
         updates: { $ref: '#/components/schemas/UpdatePolicy' }
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
+          description: Run before and after a package upgrade. At most 8. Each dials this group's servers, never an address you type.
 
     Group:
       type: object
-      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns, access, yourRole]
+      required: [id, name, timezone, clean, updates, checks, serverCount, createdAt, lastRuns, access, yourRole]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2490,6 +2508,9 @@ components:
         timezone: { type: string }
         clean: { $ref: '#/components/schemas/CleanPolicy' }
         updates: { $ref: '#/components/schemas/UpdatePolicy' }
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
         serverCount: { type: integer }
         nextClean: { type: string, format: date-time, nullable: true }
         nextUpdate: { type: string, format: date-time, nullable: true }
@@ -2528,6 +2549,14 @@ components:
           minimum: 1
           maximum: 1000
           description: For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group).
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
+          description: Omit to keep the group's checks. An update copies them onto the run.
+        canaryServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: These servers run first. One failure among them skips the rest, even when the failure limit is higher.
 
     StartRunRequest:
       type: object
@@ -2536,6 +2565,10 @@ components:
         kind: { $ref: '#/components/schemas/RunKind' }
         groupId: { type: integer, format: int64, nullable: true }
         serverIds: { type: array, items: { type: integer, format: int64 } }
+        canaryServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: On an update, these servers run first. One failure among them skips the rest.
         options:
           type: object
           allOf: [{ $ref: '#/components/schemas/RunOptions' }]

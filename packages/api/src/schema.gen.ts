@@ -2051,12 +2051,32 @@ export interface components {
              */
             maxFailures: number;
         };
+        HealthCheck: {
+            name: string;
+            /** @enum {string} */
+            kind: "tcp" | "http" | "unit" | "container";
+            /** @description A blocking failure stops that server. An advisory failure is recorded and the upgrade continues. */
+            blocking: boolean;
+            port?: number;
+            /** @description For http, use HTTPS and verify the certificate. The name is the server enrolled address. */
+            tls?: boolean;
+            /** @enum {string} */
+            method?: "GET" | "HEAD";
+            /** @description For http, a path on the enrolled server. It must start with a slash. */
+            path?: string;
+            /** @description A systemd service name. .service is added when omitted. */
+            unit?: string;
+            /** @description A Docker container name. */
+            container?: string;
+        };
         GroupInput: {
             name: string;
             /** @example Asia/Colombo */
             timezone: string;
             clean: components["schemas"]["CleanPolicy"];
             updates: components["schemas"]["UpdatePolicy"];
+            /** @description Run before and after a package upgrade. At most 8. Each dials this group's servers, never an address you type. */
+            checks?: components["schemas"]["HealthCheck"][];
         };
         Group: {
             /** Format: int64 */
@@ -2074,6 +2094,7 @@ export interface components {
             timezone: string;
             clean: components["schemas"]["CleanPolicy"];
             updates: components["schemas"]["UpdatePolicy"];
+            checks: components["schemas"]["HealthCheck"][];
             serverCount: number;
             /** Format: date-time */
             nextClean?: string | null;
@@ -2101,12 +2122,18 @@ export interface components {
             batchSize?: number;
             /** @description For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group). */
             maxFailures?: number;
+            /** @description Omit to keep the group's checks. An update copies them onto the run. */
+            checks?: components["schemas"]["HealthCheck"][];
+            /** @description These servers run first. One failure among them skips the rest, even when the failure limit is higher. */
+            canaryServerIds?: number[];
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];
             /** Format: int64 */
             groupId?: number | null;
             serverIds?: number[];
+            /** @description On an update, these servers run first. One failure among them skips the rest. */
+            canaryServerIds?: number[];
             /** @description Overrides the group's settings. Omit to use them. */
             options?: components["schemas"]["RunOptions"] | null;
         };

@@ -42,6 +42,7 @@ type GroupInput struct {
 	Timezone string
 	Clean    CleanPolicy
 	Updates  UpdatePolicy
+	Checks   []HealthCheck
 }
 
 // GroupView is a group as the front doors show it.
@@ -64,6 +65,7 @@ type GroupView struct {
 	// YourRole is the actor's effective role on the group (see roleOn),
 	// limited by the share when another account owns it.
 	YourRole Role
+	Checks   []HealthCheck
 }
 
 func toGroupView(g store.Group) GroupView {
@@ -78,9 +80,13 @@ func toGroupView(g store.Group) GroupView {
 			Time: g.UpdateTime, Hold: []string{}, RebootIfRequired: g.RebootIfRequired,
 			BatchSize: max(g.UpdateBatchSize, 1), MaxFailures: max(g.UpdateMaxFailures, 1),
 		},
-		LastRuns: []RunView{},
+		LastRuns: []RunView{}, Checks: []HealthCheck{},
 	}
 	_ = g.HoldPackages.Decode(&v.Updates.Hold)
+	_ = g.HealthChecks.Decode(&v.Checks)
+	if v.Checks == nil {
+		v.Checks = []HealthCheck{}
+	}
 	now := time.Now()
 	if sc, err := parseSchedule(g.CleanDays, g.CleanTime, g.Timezone); err == nil && g.CleanEnabled {
 		n := sc.Next(now)
@@ -135,6 +141,10 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	if err := validBatching(in.Updates.BatchSize, in.Updates.MaxFailures); err != nil {
 		return err
 	}
+	checks, err := validChecks(in.Checks)
+	if err != nil {
+		return err
+	}
 	hold := cleanList(in.Updates.Hold)
 	for _, p := range hold {
 		if !pkgNameRe.MatchString(p) {
@@ -147,6 +157,7 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	g.UpdatesEnabled, g.UpdateMode, g.UpdateDays, g.UpdateTime = in.Updates.Enabled, string(in.Updates.Mode), strings.Join(us.Days, ","), us.Time
 	g.HoldPackages, g.RebootIfRequired = store.MustJSON(hold), in.Updates.RebootIfRequired
 	g.UpdateBatchSize, g.UpdateMaxFailures = max(in.Updates.BatchSize, 1), max(in.Updates.MaxFailures, 1)
+	g.HealthChecks = store.MustJSON(checks)
 
 	// Mark the most recent slot as taken, so saving the form never starts a
 	// run (or records a "missed" one) for a time that already passed.

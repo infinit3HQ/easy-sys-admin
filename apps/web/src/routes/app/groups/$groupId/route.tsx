@@ -4,7 +4,7 @@ import {
   createFileRoute,
   useNavigate,
 } from '@tanstack/react-router'
-import { useMutation, useSuspenseQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
 import { BrushCleaningIcon, DownloadIcon, GaugeIcon } from 'lucide-react'
@@ -44,10 +44,24 @@ function GroupLayout() {
     RunKind,
     'clean' | 'update'
   > | null>(null)
+  const [canaries, setCanaries] = useState<number[]>([])
+  const fleet = useQuery(q.overview())
+  const members = (fleet.data?.servers ?? []).filter(
+    (s) => s.groupId === groupId,
+  )
   const empty = g.serverCount === 0
   const run = useMutation({
     mutationFn: (kind: RunKind) =>
-      call(api().POST('/runs', { body: { kind, groupId } })),
+      call(
+        api().POST('/runs', {
+          body: {
+            kind,
+            groupId,
+            canaryServerIds:
+              kind === 'update' && canaries.length > 0 ? canaries : undefined,
+          },
+        }),
+      ),
     onSuccess: async (r) => {
       setConfirm(null)
       await navigate({ to: '/app/runs/$runId', params: { runId: r.id } })
@@ -81,7 +95,13 @@ function GroupLayout() {
             >
               <BrushCleaningIcon /> Clean
             </Button>
-            <Button onClick={() => setConfirm('update')} disabled={empty}>
+            <Button
+              onClick={() => {
+                setCanaries([])
+                setConfirm('update')
+              }}
+              disabled={empty}
+            >
               <DownloadIcon /> Update
             </Button>
           </div>
@@ -118,9 +138,51 @@ function GroupLayout() {
         open={confirm === 'clean' || confirm === 'update'}
         title={confirm === 'update' ? `Update ${g.name}` : `Clean ${g.name}`}
         body={
-          confirm === 'update'
-            ? `Installs ${g.updates.mode === 'all' ? 'all pending updates' : 'security updates'} on ${g.serverCount} servers, ${g.updates.batchSize > 1 ? `${g.updates.batchSize} at a time` : 'one at a time'}${g.updates.rebootIfRequired ? ', rebooting where required' : ''}.`
-            : `Runs the group's cleanups on ${g.serverCount} servers now.`
+          confirm === 'update' ? (
+            <div className="space-y-3">
+              <p>
+                Installs{' '}
+                {g.updates.mode === 'all'
+                  ? 'all pending updates'
+                  : 'security updates'}{' '}
+                on {g.serverCount} servers,{' '}
+                {g.updates.batchSize > 1
+                  ? `${g.updates.batchSize} at a time`
+                  : 'one at a time'}
+                {g.updates.rebootIfRequired ? ', rebooting where required' : ''}
+                .
+              </p>
+              {members.length > 1 && (
+                <fieldset className="space-y-1">
+                  <legend className="text-xs text-muted-foreground">
+                    Canaries run first. If one fails its checks, the others are
+                    skipped.
+                  </legend>
+                  {members.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={canaries.includes(s.id)}
+                        onChange={(e) =>
+                          setCanaries(
+                            e.target.checked
+                              ? [...canaries, s.id]
+                              : canaries.filter((id) => id !== s.id),
+                          )
+                        }
+                      />
+                      {s.name}
+                    </label>
+                  ))}
+                </fieldset>
+              )}
+            </div>
+          ) : (
+            `Runs the group's cleanups on ${g.serverCount} servers now.`
+          )
         }
         actionLabel="Start"
         busy={run.isPending}

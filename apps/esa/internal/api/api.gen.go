@@ -220,6 +220,48 @@ func (e GroupAccess) Valid() bool {
 	}
 }
 
+// Defines values for HealthCheckKind.
+const (
+	HealthCheckKindContainer HealthCheckKind = "container"
+	HealthCheckKindHttp      HealthCheckKind = "http"
+	HealthCheckKindTcp       HealthCheckKind = "tcp"
+	HealthCheckKindUnit      HealthCheckKind = "unit"
+)
+
+// Valid indicates whether the value is a known member of the HealthCheckKind enum.
+func (e HealthCheckKind) Valid() bool {
+	switch e {
+	case HealthCheckKindContainer:
+		return true
+	case HealthCheckKindHttp:
+		return true
+	case HealthCheckKindTcp:
+		return true
+	case HealthCheckKindUnit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthCheckMethod.
+const (
+	GET  HealthCheckMethod = "GET"
+	HEAD HealthCheckMethod = "HEAD"
+)
+
+// Valid indicates whether the value is a known member of the HealthCheckMethod enum.
+func (e HealthCheckMethod) Valid() bool {
+	switch e {
+	case GET:
+		return true
+	case HEAD:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IncidentState.
 const (
 	Acknowledged IncidentState = "acknowledged"
@@ -913,14 +955,15 @@ type FleetTotals struct {
 // Group defines model for Group.
 type Group struct {
 	// Access own: the group belongs to the current account. view or operate: another team shares it.
-	Access     GroupAccess `json:"access"`
-	Clean      CleanPolicy `json:"clean"`
-	CreatedAt  time.Time   `json:"createdAt"`
-	Id         int64       `json:"id"`
-	LastRuns   []Run       `json:"lastRuns"`
-	Name       string      `json:"name"`
-	NextClean  *time.Time  `json:"nextClean,omitempty"`
-	NextUpdate *time.Time  `json:"nextUpdate,omitempty"`
+	Access     GroupAccess   `json:"access"`
+	Checks     []HealthCheck `json:"checks"`
+	Clean      CleanPolicy   `json:"clean"`
+	CreatedAt  time.Time     `json:"createdAt"`
+	Id         int64         `json:"id"`
+	LastRuns   []Run         `json:"lastRuns"`
+	Name       string        `json:"name"`
+	NextClean  *time.Time    `json:"nextClean,omitempty"`
+	NextUpdate *time.Time    `json:"nextUpdate,omitempty"`
 
 	// OwnerTeam Set when another organization shares the group.
 	OwnerTeam   *string `json:"ownerTeam,omitempty"`
@@ -945,8 +988,10 @@ type GroupAccess string
 
 // GroupInput defines model for GroupInput.
 type GroupInput struct {
-	Clean CleanPolicy `json:"clean"`
-	Name  string      `json:"name"`
+	// Checks Run before and after a package upgrade. At most 8. Each dials this group's servers, never an address you type.
+	Checks *[]HealthCheck `json:"checks,omitempty"`
+	Clean  CleanPolicy    `json:"clean"`
+	Name   string         `json:"name"`
 
 	// Timezone Example: Asia/Colombo
 	Timezone string       `json:"timezone"`
@@ -977,6 +1022,34 @@ type GroupShare struct {
 type GroupShareList struct {
 	Items []GroupShare `json:"items"`
 }
+
+// HealthCheck defines model for HealthCheck.
+type HealthCheck struct {
+	// Blocking A blocking failure stops that server. An advisory failure is recorded and the upgrade continues.
+	Blocking bool `json:"blocking"`
+
+	// Container A Docker container name.
+	Container *string            `json:"container,omitempty"`
+	Kind      HealthCheckKind    `json:"kind"`
+	Method    *HealthCheckMethod `json:"method,omitempty"`
+	Name      string             `json:"name"`
+
+	// Path For http, a path on the enrolled server. It must start with a slash.
+	Path *string `json:"path,omitempty"`
+	Port *int    `json:"port,omitempty"`
+
+	// Tls For http, use HTTPS and verify the certificate. The name is the server enrolled address.
+	Tls *bool `json:"tls,omitempty"`
+
+	// Unit A systemd service name. .service is added when omitted.
+	Unit *string `json:"unit,omitempty"`
+}
+
+// HealthCheckKind defines model for HealthCheck.Kind.
+type HealthCheckKind string
+
+// HealthCheckMethod defines model for HealthCheck.Method.
+type HealthCheckMethod string
 
 // HostStatus defines model for HostStatus.
 type HostStatus = proto.Status
@@ -1433,8 +1506,10 @@ type SharePreview struct {
 
 // StartRunRequest defines model for StartRunRequest.
 type StartRunRequest struct {
-	GroupId *int64  `json:"groupId,omitempty"`
-	Kind    RunKind `json:"kind"`
+	// CanaryServerIds On an update, these servers run first. One failure among them skips the rest.
+	CanaryServerIds *[]int64 `json:"canaryServerIds,omitempty"`
+	GroupId         *int64   `json:"groupId,omitempty"`
+	Kind            RunKind  `json:"kind"`
 
 	// Options Overrides the group's settings. Omit to use them.
 	Options   *RunOptions `json:"options,omitempty"`

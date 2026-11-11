@@ -155,7 +155,41 @@ func toGroup(g fleet.GroupView) Group {
 			Time: g.Updates.Time, Hold: nonNil(g.Updates.Hold), RebootIfRequired: g.Updates.RebootIfRequired,
 			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures,
 		},
+		Checks: toAPIChecks(g.Checks),
 	}
+}
+
+func toAPIChecks(in []fleet.HealthCheck) []HealthCheck {
+	out := make([]HealthCheck, 0, len(in))
+	for _, c := range in {
+		item := HealthCheck{Name: c.Name, Kind: HealthCheckKind(c.Kind), Blocking: c.Blocking}
+		if c.Port != 0 {
+			p := c.Port
+			item.Port = &p
+		}
+		if c.TLS {
+			v := true
+			item.Tls = &v
+		}
+		if c.Method != "" {
+			m := HealthCheckMethod(c.Method)
+			item.Method = &m
+		}
+		if c.Path != "" {
+			p := c.Path
+			item.Path = &p
+		}
+		if c.Unit != "" {
+			u := c.Unit
+			item.Unit = &u
+		}
+		if c.Container != "" {
+			n := c.Container
+			item.Container = &n
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func toRun(r fleet.RunView) Run {

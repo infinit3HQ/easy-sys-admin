@@ -29,7 +29,23 @@ func toGroupInput(b *GroupInput) fleet.GroupInput {
 			Hold: b.Updates.Hold, RebootIfRequired: b.Updates.RebootIfRequired,
 			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures,
 		},
+		Checks: toFleetChecks(b.Checks),
 	}
+}
+
+func toFleetChecks(in *[]HealthCheck) []fleet.HealthCheck {
+	if in == nil {
+		return nil
+	}
+	out := make([]fleet.HealthCheck, len(*in))
+	for i, c := range *in {
+		out[i] = fleet.HealthCheck{
+			Name: c.Name, Kind: string(c.Kind), Blocking: c.Blocking, Port: deref(c.Port),
+			TLS: deref(c.Tls), Method: string(deref(c.Method)), Path: deref(c.Path),
+			Unit: deref(c.Unit), Container: deref(c.Container),
+		}
+	}
+	return out
 }
 
 func (h *Handlers) ListGroups(ctx context.Context, _ ListGroupsRequestObject) (ListGroupsResponseObject, error) {
@@ -128,6 +144,9 @@ func (h *Handlers) StartRun(ctx context.Context, req StartRunRequestObject) (Sta
 	r := fleet.RunRequest{Kind: fleet.RunKind(b.Kind), GroupID: b.GroupId, Options: b.Options}
 	if b.ServerIds != nil {
 		r.ServerIDs = *b.ServerIds
+	}
+	if b.CanaryServerIds != nil {
+		r.CanaryServerIDs = *b.CanaryServerIds
 	}
 	run, err := h.fleet.StartRun(ctx, a, r)
 	if err != nil {

@@ -85,6 +85,7 @@ function GroupSettings() {
           timezone: g.timezone,
           clean: g.clean,
           updates: g.updates,
+          checks: g.checks,
         }}
         submitLabel="Save group"
         busy={save.isPending}

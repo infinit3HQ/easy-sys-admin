@@ -40,6 +40,11 @@ type RunOptions struct {
 	// BatchSize and MaxFailures shape update and reboot runs. 0 means 1.
 	BatchSize   int `json:"batchSize,omitempty"`
 	MaxFailures int `json:"maxFailures,omitempty"`
+	// Checks are copied from the group when an update starts. Nil on a
+	// request keeps the group's list.
+	Checks []HealthCheck `json:"checks,omitempty"`
+	// CanaryServerIDs run first. One failure there skips the other servers.
+	CanaryServerIDs []int64 `json:"canaryServerIds,omitempty"`
 }
 
 // Limits on a group's rolling update settings.
@@ -72,6 +77,8 @@ type RunRequest struct {
 	ServerIDs []int64
 	// Options overrides the group's settings. Nil uses the group's.
 	Options *RunOptions
+	// CanaryServerIDs run first on an update. One failure there skips the rest.
+	CanaryServerIDs []int64
 }
 
 // RunView is a run as the front doors show it.
@@ -173,11 +180,13 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 			BatchSize: group.UpdateBatchSize, MaxFailures: group.UpdateMaxFailures,
 		}
 		_ = group.HoldPackages.Decode(&opts.Hold)
+		_ = group.HealthChecks.Decode(&opts.Checks)
 	}
 	if req.Options != nil {
-		// An override replaces the settings, except that a batch size or
-		// failure limit left out keeps the group's.
+		// An override replaces the settings, except that a batch size,
+		// failure limit, or check list left out keeps the group's.
 		batch, maxFailures := opts.BatchSize, opts.MaxFailures
+		checks := opts.Checks
 		opts = *req.Options
 		if opts.JournalSize == "" {
 			opts.JournalSize = "200M"
@@ -190,6 +199,9 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		}
 		if opts.MaxFailures == 0 {
 			opts.MaxFailures = maxFailures
+		}
+		if opts.Checks == nil {
+			opts.Checks = checks
 		}
 	}
 	if err := validBatching(opts.BatchSize, opts.MaxFailures); err != nil {
@@ -213,6 +225,21 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if !pkgNameRe.MatchString(p) {
 			return RunView{}, invalid("hold", "%q is not a valid package name", p)
 		}
+	}
+	if req.Kind == RunUpdate {
+		checks, err := validChecks(opts.Checks)
+		if err != nil {
+			return RunView{}, err
+		}
+		opts.Checks = checks
+		if len(req.CanaryServerIDs) > 0 {
+			opts.CanaryServerIDs = req.CanaryServerIDs
+		}
+		if err := validCanaries(opts.CanaryServerIDs, servers); err != nil {
+			return RunView{}, err
+		}
+	} else {
+		opts.Checks, opts.CanaryServerIDs = nil, nil
 	}
 
 	trigger := TriggerManual

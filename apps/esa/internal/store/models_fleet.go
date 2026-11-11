@@ -43,6 +43,9 @@ type Group struct {
 	// stop the run. Reboot runs use them too.
 	UpdateBatchSize   int `gorm:"not null;default:1"`
 	UpdateMaxFailures int `gorm:"not null;default:1"`
+	// HealthChecks run before and after a package upgrade. A blocking
+	// failure stops that server. The list is frozen onto the run.
+	HealthChecks JSON `gorm:"type:jsonb;not null;default:'[]'"`
 
 	// Last schedule slot each job claimed, so a slot runs once.
 	CleanSlotAt  *time.Time
