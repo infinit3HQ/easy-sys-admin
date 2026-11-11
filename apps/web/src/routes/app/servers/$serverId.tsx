@@ -82,6 +82,7 @@ function ServerPage() {
           </>
         }
         title={s.name}
+        description={s.note || undefined}
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:block sm:text-right">
           <StatusBadge status={s.status} />

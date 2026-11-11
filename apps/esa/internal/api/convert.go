@@ -69,7 +69,7 @@ func toServer(v fleet.ServerView) Server {
 		GroupId: v.GroupID, GroupName: optional(v.GroupName), Enrollment: ServerEnrollment(v.Enrollment),
 		HostKeyFingerprint: v.HostKeyFingerprint, HelperVersion: v.HelperVersion, Arch: v.Arch,
 		HostsControlPlane: v.HostsControlPlane, ProtectedContainers: nonNil(v.ProtectedContainers),
-		HasStoredLogin: v.HasStoredLogin, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
+		HasStoredLogin: v.HasStoredLogin, Note: v.Note, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
 		Reasons: nonNil(v.Reasons), LastSeenAt: v.LastSeenAt, LastError: v.LastError,
 		HostKeyMismatch: v.HostKeyMismatch, PresentedFingerprint: v.PresentedFingerprint,
 		Access: groupAccess(v.Access), OwnerTeam: optional(v.OwnerTeam), YourRole: EffectiveRole(v.YourRole),
@@ -100,7 +100,8 @@ func toServer(v fleet.ServerView) Server {
 	}
 	if ex := v.Exposure; ex != nil {
 		s.Exposure = &Exposure{
-			CheckedAt: ex.CheckedAt, Ready: ex.Ready, PublicPorts: nonNil(ex.PublicPorts),
+			CheckedAt: ex.CheckedAt, AttemptedAt: ex.AttemptedAt, Ready: ex.Ready,
+			PublicPorts: nonNil(ex.PublicPorts), ListeningOnAllInterfaces: nonNil(ex.ListeningOnAllInterfaces),
 			PasswordAuth: ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
 			PermitEmptyPasswords: ex.PermitEmptyPasswords, PubkeyAuth: ex.PubkeyAuth,
 			SshRead: ex.SSHRead, Firewall: ex.Firewall, ExtraRoot: ex.ExtraRoot, NoPasswordAll: ex.NoPasswordAll,

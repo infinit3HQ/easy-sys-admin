@@ -1336,12 +1336,22 @@ export interface components {
             checkedAt?: string | null;
         };
         Exposure: {
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description When this summary was last collected successfully.
+             */
             checkedAt: string;
+            /**
+             * Format: date-time
+             * @description When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
+             */
+            attemptedAt: string;
             /** @description False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. */
             ready: boolean;
-            /** @description Sockets on every interface, as port/proto. For example 22/tcp. */
+            /** @description Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect. */
             publicPorts: string[];
+            /** @description Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified. */
+            listeningOnAllInterfaces: string[];
             passwordAuth: boolean;
             permitRootLogin: string;
             permitEmptyPasswords: boolean;
@@ -1380,6 +1390,8 @@ export interface components {
             /** @description Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec). */
             protectedContainers: string[];
             hasStoredLogin: boolean;
+            /** @description A short note kept in the control plane. It is not sent to the server. */
+            note: string;
             /** Format: date-time */
             createdAt: string;
             status: components["schemas"]["ServerStatus"];
@@ -1488,6 +1500,8 @@ export interface components {
             clearGroup?: boolean;
             hostsControlPlane?: boolean;
             protectedContainers?: string[];
+            /** @description Replace the note. Empty clears it. Omit to leave it unchanged. */
+            note?: string;
         };
         AcceptHostKeyRequest: {
             /** @description Must equal the presented fingerprint, to confirm what you checked. */
@@ -1511,6 +1525,8 @@ export interface components {
         MetricsResponse: {
             window: string;
             points: components["schemas"]["MetricPoint"][];
+            /** @description About how many days until the fullest disk reaches 100 percent, from up to 14 days of samples. Absent when the trend is flat, falling, or shorter than a day. */
+            diskFullInDays?: number | null;
         };
         ContainerActionRequest: {
             /** @description The container's name; required for protected containers. */

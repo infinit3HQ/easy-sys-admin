@@ -25,6 +25,7 @@ type ServerView struct {
 	HostsControlPlane   bool
 	ProtectedContainers []string
 	HasStoredLogin      bool
+	Note                string
 	CreatedAt           time.Time
 	// Access is own for the actor's servers, or the share's access.
 	Access Access
@@ -202,7 +203,7 @@ func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 		ID: srv.ID, Name: srv.Name, Host: srv.Host, Port: srv.Port, Username: srv.Username,
 		GroupID: srv.GroupID, Enrollment: srv.Enrollment, HostKeyFingerprint: srv.HostKeyFingerprint,
 		HelperVersion: srv.HelperVersion, Arch: srv.Arch, HostsControlPlane: srv.HostsControlPlane,
-		HasStoredLogin: hasLogin, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},
+		HasStoredLogin: hasLogin, Note: srv.Note, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},
 		Status: StatusPending, Reasons: []string{},
 	}
 	_ = srv.ProtectedContainers.Decode(&v.ProtectedContainers)
@@ -230,6 +231,14 @@ func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 	if len(st.Exposure) > 0 {
 		var ex Exposure
 		if st.Exposure.Decode(&ex) == nil && !ex.CheckedAt.IsZero() {
+			if len(ex.ListeningOnAllInterfaces) == 0 {
+				ex.ListeningOnAllInterfaces = ex.PublicPorts
+			}
+			if st.ExposureAt != nil {
+				ex.AttemptedAt = *st.ExposureAt
+			} else {
+				ex.AttemptedAt = ex.CheckedAt
+			}
 			v.Exposure = &ex
 		}
 	}

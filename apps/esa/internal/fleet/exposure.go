@@ -27,17 +27,21 @@ const (
 // Exposure is the small summary stored for the board. It has no user
 // list, no key material, and no login addresses.
 type Exposure struct {
-	CheckedAt            time.Time `json:"checkedAt"`
-	Ready                bool      `json:"ready"`
-	PublicPorts          []string  `json:"publicPorts"`
-	PasswordAuth         bool      `json:"passwordAuth"`
-	PermitRootLogin      string    `json:"permitRootLogin"`
-	PermitEmptyPasswords bool      `json:"permitEmptyPasswords"`
-	PubkeyAuth           bool      `json:"pubkeyAuth"`
-	SSHRead              bool      `json:"sshRead"`
-	Firewall             string    `json:"firewall"`
-	ExtraRoot            int       `json:"extraRoot"`
-	NoPasswordAll        int       `json:"noPasswordAll"`
+	CheckedAt   time.Time `json:"checkedAt"`
+	Ready       bool      `json:"ready"`
+	PublicPorts []string  `json:"publicPorts"`
+	// ListeningOnAllInterfaces is the same list as PublicPorts. The old name
+	// stays so existing clients keep working. Neither list is a reachability check.
+	ListeningOnAllInterfaces []string  `json:"listeningOnAllInterfaces,omitempty"`
+	AttemptedAt              time.Time `json:"attemptedAt,omitempty"`
+	PasswordAuth             bool      `json:"passwordAuth"`
+	PermitRootLogin          string    `json:"permitRootLogin"`
+	PermitEmptyPasswords     bool      `json:"permitEmptyPasswords"`
+	PubkeyAuth               bool      `json:"pubkeyAuth"`
+	SSHRead                  bool      `json:"sshRead"`
+	Firewall                 string    `json:"firewall"`
+	ExtraRoot                int       `json:"extraRoot"`
+	NoPasswordAll            int       `json:"noPasswordAll"`
 	// Uncovered is how many sockets on every interface ufw does not mention.
 	Uncovered int `json:"uncovered"`
 	// Baseline* is the previous public ports and key fingerprints. The API
@@ -75,6 +79,7 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 		ex.PublicPorts = append(ex.PublicPorts, key)
 	}
 	slices.Sort(ex.PublicPorts)
+	ex.ListeningOnAllInterfaces = ex.PublicPorts
 	ex.PasswordAuth = access.PasswordAuth
 	ex.PermitRootLogin = access.PermitRootLogin
 	ex.PermitEmptyPasswords = access.PermitEmptyPasswords
@@ -279,7 +284,7 @@ func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts
 		return
 	}
 	if rules[AlertNewPort].Enabled {
-		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new public port")
+		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new socket on all interfaces")
 	}
 	if rules[AlertNewKey].Enabled {
 		var fresh []string

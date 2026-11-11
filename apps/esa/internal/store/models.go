@@ -52,6 +52,8 @@ type Account struct {
 	// members with the admin role and those with the viewer role.
 	AdminTeamName  string `gorm:"not null;size:100;default:'Admins'"`
 	ViewerTeamName string `gorm:"not null;size:100;default:'Viewers'"`
+	// DigestAt is when the Monday summary was last sent for this space.
+	DigestAt *time.Time
 
 	PersonalUser *User `gorm:"foreignKey:PersonalOf;constraint:OnDelete:CASCADE"`
 }

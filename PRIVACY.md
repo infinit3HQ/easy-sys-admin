@@ -12,7 +12,7 @@ This policy covers only the hosted Service. If you self-host the open source ver
 
 **Server and operational data ("Customer Data"):**
 
-- Information about servers you connect: hostname, IP address, operating system, installed packages, services and containers, and status and metrics.
+- Information about servers you connect: hostname, IP address, operating system, installed packages, services and containers, and status and metrics. A short note you write on a server is stored with that server and is not sent to the machine.
 - **Logs and command output** that the Service reads from or produces on your servers.
 - An audit trail of actions taken through the Service, recording who did what, when, and on which server.
 

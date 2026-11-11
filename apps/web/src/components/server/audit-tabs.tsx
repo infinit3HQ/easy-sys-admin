@@ -239,6 +239,10 @@ export function SecurityTab({ serverId }: { serverId: number }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
       <Panel title="Listening sockets" flush>
+        <p className="px-4 pt-3 text-xs text-muted-foreground">
+          A socket on 0.0.0.0 or :: listens on all interfaces. That does not
+          show whether a network can reach it.
+        </p>
         <Table className="min-w-[480px] font-mono text-xs">
           <TableHeader>
             <TableRow>
@@ -265,7 +269,7 @@ export function SecurityTab({ serverId }: { serverId: number }) {
                 </TableCell>
                 <TableCell className="py-2 text-ink-2">
                   {exposed(l.address)
-                    ? `${l.address} (all interfaces)`
+                    ? `${l.address} (all interfaces, reachability not verified)`
                     : l.address}
                   {l.ufw === 'unmentioned' && exposed(l.address) && (
                     <span className="text-warn"> not in ufw</span>
@@ -293,20 +297,24 @@ export function SecurityTab({ serverId }: { serverId: number }) {
             v={d.firewall}
             tone={d.firewall === 'none' ? 'warn' : undefined}
           />
-          <KeyValue
-            k="CrowdSec"
-            v={
-              d.crowdsec === 'active'
-                ? `${d.crowdsec}, ${d.crowdSecBans} bans`
-                : d.crowdsec
-            }
-            tone={d.crowdsec === 'failed' ? 'warn' : undefined}
-          />
-          <KeyValue
-            k="fail2ban"
-            v={banText(d.fail2ban, d.fail2banJails)}
-            tone={d.fail2ban === 'failed' ? 'warn' : undefined}
-          />
+          {d.crowdsec !== 'not installed' && (
+            <KeyValue
+              k="CrowdSec"
+              v={
+                d.crowdsec === 'active'
+                  ? `${d.crowdsec}, ${d.crowdSecBans} bans`
+                  : d.crowdsec
+              }
+              tone={d.crowdsec === 'failed' ? 'warn' : undefined}
+            />
+          )}
+          {d.fail2ban !== 'not installed' && (
+            <KeyValue
+              k="fail2ban"
+              v={banText(d.fail2ban, d.fail2banJails)}
+              tone={d.fail2ban === 'failed' ? 'warn' : undefined}
+            />
+          )}
           <KeyValue
             k="unattended-upgrades"
             v={d.unattendedUpgrades ? 'on' : 'off'}

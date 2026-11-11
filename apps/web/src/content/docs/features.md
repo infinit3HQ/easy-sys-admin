@@ -11,7 +11,11 @@ Each ready server is polled about once a minute. The snapshot includes CPU, memo
 
 Samples are kept 48 hours by default. Hourly averages are kept 90 days. Charts for a short window use the raw samples. Longer windows use the hourly averages. A server that stops answering is polled every 5 minutes instead of every minute. The TCP connect gives up after 5 seconds.
 
-The board loads the servers in the current space every 15 seconds.
+The board loads the servers in the current space every 15 seconds. A server whose helper is too old to collect the exposure summary is counted at the top of the board.
+
+Each server can carry a short note. It stays in the control plane and is shown on the board. It is not sent to the machine.
+
+On a server's status tab, the fullest disk can show about how many days it has until it fills. The estimate uses up to 14 days of samples. A flat or shrinking disk shows no estimate.
 
 ## Updates
 
@@ -59,23 +63,27 @@ Journal lines for one unit, or the log of one container. The API allows 1 to 100
 
 The access report lists users with a login shell, whether each password is locked, empty, or set, and the fingerprints of their SSH keys. It does not return the password hash or the key. It lists sudo rules from `/etc/sudoers` and `/etc/sudoers.d`, including `NOPASSWD` and `ALL`. Aliases are not expanded, and includes that point outside that directory are skipped. It also shows who is in the sudo and docker groups, recent logins, failed SSH attempts, and the SSH server's password, root, empty-password, public-key, and forwarding settings.
 
-The security report lists listening ports, the user that owns each socket, and whether the socket is on every interface, on loopback, or on one address. A `docker-proxy` socket is joined to the container that publishes it. The report shows ufw rules when ufw is active, up to 40 lines. nftables is named only. It also shows CrowdSec, fail2ban, and unattended-upgrades.
+The security report lists listening ports, the user that owns each socket, and whether the socket is on every interface, on loopback, or on one address. A `docker-proxy` socket is joined to the container that publishes it. The report shows ufw rules when ufw is active, up to 40 lines. nftables is named only. It also shows unattended-upgrades. CrowdSec and fail2ban are shown only when that server has them installed.
 
-The board keeps a short summary of that picture, refreshed about once an hour: public ports, those SSH flags, the firewall name, extra uid 0 accounts, and `NOPASSWD ALL` rules. The user list and login addresses are not stored. A helper older than this summary says so, and its empty fields are not treated as a clean result. Reinstall the helper to collect it.
+The board keeps a short summary of that picture, refreshed about once an hour: sockets listening on all interfaces, those SSH flags, the firewall name, extra uid 0 accounts, and `NOPASSWD ALL` rules. A socket on every interface is not proof that a network can reach it. The summary shows when it was last collected and when the control plane last tried. The user list and login addresses are not stored. A helper older than this summary says so, and its empty fields are not treated as a clean result. Reinstall the helper to collect it.
 
 An exposure alert is off until you turn it on under alert settings. It fires for password login, empty passwords, root password login, no firewall, an extra uid 0 account, or a `NOPASSWD ALL` rule.
 
-Two more alerts are on by default. A new public port, and a new SSH key, each send one notice. The first report seeds the baseline and does not alert. A security update that is still pending after 7 days also alerts. The wait is the number of days in alert settings. The board already turns yellow as soon as a security update is pending.
+Two more alerts are on by default. A new socket on all interfaces, and a new SSH key, each send one notice. The socket notice does not claim the internet can connect. The first report seeds the baseline and does not alert. A security update that is still pending after 7 days also alerts. The wait is the number of days in alert settings. The board already turns yellow as soon as a security update is pending.
 
-When ufw is active, each listening socket says whether ufw allows it, denies it, or does not mention it. Sockets on every interface that ufw does not mention are counted on the board. fail2ban shows how many addresses each jail currently bans. CrowdSec shows how many decisions are active. The addresses are not collected. An SSH key shows its `from=` restriction, and whether it forces a command. The command text is not shown. A uid 0 key with neither restriction is marked.
+When ufw is active, each listening socket says whether ufw allows it, denies it, or does not mention it. Sockets on every interface that ufw does not mention are counted on the board. If fail2ban is installed, each jail shows how many addresses it currently bans. If CrowdSec is installed, the report shows how many decisions are active. The addresses are not collected. A server without either tool is not marked for that. An SSH key shows its `from=` restriction, and whether it forces a command. The command text is not shown. A uid 0 key with neither restriction is marked.
 
 Scheduled jobs lists cron entries and systemd timers. Cron command lines are hidden from a token that cannot read logs, because those lines often contain secrets.
 
+A group with two or more servers that have a current exposure summary lists where they differ: password login, root login, firewall, and sockets listening on all interfaces. A socket that is not on every server in the group is named. Reachability is not verified.
+
 ## Alerts
 
-An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new public port, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once. A security update alerts after the number of days you set, 7 by default.
+An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new socket on all interfaces, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once. A security update alerts after the number of days you set, 7 by default.
 
 Channels are ntfy, a generic webhook, Discord, Slack, and email. You can send a test message. Certificate checks are a list of TLS endpoints the control plane connects to.
+
+On Monday after 08:00 UTC, each space with a channel gets one summary if there is something to say: unreachable servers, security updates that have been waiting at least 7 days, and new sockets on all interfaces or SSH keys from the past week. A quiet week sends nothing. If the control plane is down that Monday, that week is skipped.
 
 ## Organizations and spaces
 

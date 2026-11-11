@@ -1624,11 +1624,19 @@ components:
 
     Exposure:
       type: object
-      required: [checkedAt, ready, publicPorts, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered]
+      required: [checkedAt, attemptedAt, ready, publicPorts, listeningOnAllInterfaces, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered]
       properties:
-        checkedAt: { type: string, format: date-time }
+        checkedAt: { type: string, format: date-time, description: When this summary was last collected successfully. }
+        attemptedAt: { type: string, format: date-time, description: When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged. }
         ready: { type: boolean, description: False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. }
-        publicPorts: { type: array, items: { type: string }, description: 'Sockets on every interface, as port/proto. For example 22/tcp.' }
+        publicPorts:
+          type: array
+          items: { type: string }
+          description: Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect.
+        listeningOnAllInterfaces:
+          type: array
+          items: { type: string }
+          description: 'Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified.'
         passwordAuth: { type: boolean }
         permitRootLogin: { type: string }
         permitEmptyPasswords: { type: boolean }
@@ -1641,7 +1649,7 @@ components:
 
     Server:
       type: object
-      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole]
+      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole, note]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -1663,6 +1671,7 @@ components:
           description: Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec).
           items: { type: string }
         hasStoredLogin: { type: boolean }
+        note: { type: string, maxLength: 200, description: A short note kept in the control plane. It is not sent to the server. }
         createdAt: { type: string, format: date-time }
         status: { $ref: '#/components/schemas/ServerStatus' }
         reasons: { type: array, items: { type: string } }
@@ -1784,6 +1793,7 @@ components:
         clearGroup: { type: boolean }
         hostsControlPlane: { type: boolean }
         protectedContainers: { type: array, items: { type: string } }
+        note: { type: string, maxLength: 200, description: Replace the note. Empty clears it. Omit to leave it unchanged. }
 
     AcceptHostKeyRequest:
       type: object
@@ -1814,6 +1824,10 @@ components:
         points:
           type: array
           items: { $ref: '#/components/schemas/MetricPoint' }
+        diskFullInDays:
+          type: integer
+          nullable: true
+          description: About how many days until the fullest disk reaches 100 percent, from up to 14 days of samples. Absent when the trend is flat, falling, or shorter than a day.
 
     ContainerActionRequest:
       type: object

@@ -833,11 +833,18 @@ type ErrorDetail struct {
 
 // Exposure defines model for Exposure.
 type Exposure struct {
+	// AttemptedAt When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
+	AttemptedAt time.Time `json:"attemptedAt"`
+
+	// CheckedAt When this summary was last collected successfully.
 	CheckedAt time.Time `json:"checkedAt"`
 
 	// ExtraRoot Login accounts other than root with uid 0.
 	ExtraRoot int    `json:"extraRoot"`
 	Firewall  string `json:"firewall"`
+
+	// ListeningOnAllInterfaces Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified.
+	ListeningOnAllInterfaces []string `json:"listeningOnAllInterfaces"`
 
 	// NoPasswordAll Sudo rules that grant NOPASSWD and ALL.
 	NoPasswordAll        int    `json:"noPasswordAll"`
@@ -846,7 +853,7 @@ type Exposure struct {
 	PermitRootLogin      string `json:"permitRootLogin"`
 	PubkeyAuth           bool   `json:"pubkeyAuth"`
 
-	// PublicPorts Sockets on every interface, as port/proto. For example 22/tcp.
+	// PublicPorts Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect.
 	PublicPorts []string `json:"publicPorts"`
 
 	// Ready False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result.
@@ -1060,8 +1067,10 @@ type MetricPoint struct {
 
 // MetricsResponse defines model for MetricsResponse.
 type MetricsResponse struct {
-	Points []MetricPoint `json:"points"`
-	Window string        `json:"window"`
+	// DiskFullInDays About how many days until the fullest disk reaches 100 percent, from up to 14 days of samples. Absent when the trend is flat, falling, or shorter than a day.
+	DiskFullInDays *int          `json:"diskFullInDays,omitempty"`
+	Points         []MetricPoint `json:"points"`
+	Window         string        `json:"window"`
 }
 
 // NetIf defines model for NetIf.
@@ -1205,6 +1214,9 @@ type Server struct {
 	LastSeenAt         *time.Time     `json:"lastSeenAt,omitempty"`
 	Metrics            *ServerMetrics `json:"metrics,omitempty"`
 	Name               string         `json:"name"`
+
+	// Note A short note kept in the control plane. It is not sent to the server.
+	Note string `json:"note"`
 
 	// OwnerTeam Set when the server is in a group another organization shares.
 	OwnerTeam *string `json:"ownerTeam,omitempty"`
@@ -1440,9 +1452,12 @@ type UpdateServerRequest struct {
 	ClearGroup *bool `json:"clearGroup,omitempty"`
 
 	// GroupId Move to this group. Send clearGroup to remove from its group.
-	GroupId             *int64    `json:"groupId,omitempty"`
-	HostsControlPlane   *bool     `json:"hostsControlPlane,omitempty"`
-	Name                *string   `json:"name,omitempty"`
+	GroupId           *int64  `json:"groupId,omitempty"`
+	HostsControlPlane *bool   `json:"hostsControlPlane,omitempty"`
+	Name              *string `json:"name,omitempty"`
+
+	// Note Replace the note. Empty clears it. Omit to leave it unchanged.
+	Note                *string   `json:"note,omitempty"`
 	ProtectedContainers *[]string `json:"protectedContainers,omitempty"`
 }
 

@@ -81,6 +81,8 @@ type Server struct {
 	HostsControlPlane bool `gorm:"not null;default:false"`
 	// ProtectedContainers are name prefixes; empty means the defaults.
 	ProtectedContainers JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	// Note is a short reminder kept in the control plane. It is never sent to the server.
+	Note string `gorm:"not null;default:''"`
 
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`

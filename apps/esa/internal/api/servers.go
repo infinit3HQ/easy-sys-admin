@@ -112,7 +112,7 @@ func (h *Handlers) UpdateServer(ctx context.Context, req UpdateServerRequestObje
 	}
 	v, err := h.fleet.UpdateServer(ctx, a, req.ServerId, fleet.UpdateServerInput{
 		Name: b.Name, GroupID: b.GroupId, ClearGroup: deref(b.ClearGroup),
-		HostsControlPlane: b.HostsControlPlane, ProtectedContainers: b.ProtectedContainers,
+		HostsControlPlane: b.HostsControlPlane, ProtectedContainers: b.ProtectedContainers, Note: b.Note,
 	})
 	if err != nil {
 		return nil, err
@@ -187,7 +187,13 @@ func (h *Handlers) GetServerMetrics(ctx context.Context, req GetServerMetricsReq
 	for _, p := range pts {
 		out = append(out, MetricPoint{At: p.At, CpuPercent: p.CPUPercent, MemPercent: p.MemPercent, DiskPercent: p.DiskPercent, Load1: p.Load1})
 	}
-	return GetServerMetrics200JSONResponse{Window: string(w), Points: out}, nil
+	resp := GetServerMetrics200JSONResponse{Window: string(w), Points: out}
+	if days, ok, err := h.fleet.DiskForecast(ctx, a, req.ServerId); err != nil {
+		return nil, err
+	} else if ok {
+		resp.DiskFullInDays = &days
+	}
+	return resp, nil
 }
 
 func (h *Handlers) CheckServerUpdates(ctx context.Context, req CheckServerUpdatesRequestObject) (CheckServerUpdatesResponseObject, error) {

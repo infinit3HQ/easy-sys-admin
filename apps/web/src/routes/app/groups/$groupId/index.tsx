@@ -84,6 +84,8 @@ function GroupOverview() {
         </Card>
       </div>
 
+      <Differences members={members} />
+
       <section className="mb-8">
         <h2 className="label mb-3">Servers</h2>
         {members.length === 0 ? (
@@ -132,6 +134,71 @@ function GroupOverview() {
       </section>
     </div>
   )
+}
+
+function Differences({ members }: { members: Server[] }) {
+  const ready = members.filter((s) => s.exposure?.ready)
+  const old = members.filter((s) => s.exposure && !s.exposure.ready).length
+  if (ready.length < 2 && old === 0) return null
+  const lines = groupDifferences(ready)
+  return (
+    <Card className="mb-6 p-4 sm:p-5">
+      <h2 className="label mb-3">Differences</h2>
+      {ready.length < 2 ? (
+        <p className="text-sm text-muted-foreground">
+          Needs two servers with a current exposure summary.
+        </p>
+      ) : lines.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          These servers agree on password login, root login, the firewall, and
+          sockets listening on all interfaces. Reachability is not verified.
+        </p>
+      ) : (
+        <ul className="space-y-1.5 text-sm text-ink-2">
+          {lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
+      {old > 0 && (
+        <p className="mt-3 text-xs text-warn">
+          {old === 1 ? '1 server needs' : `${old} servers need`} a helper
+          reinstall before it is included.
+        </p>
+      )}
+    </Card>
+  )
+}
+
+function groupDifferences(ready: Server[]) {
+  const lines: string[] = []
+  const n = ready.length
+  const count = (pred: (s: Server) => boolean) => ready.filter(pred).length
+  const password = count((s) => s.exposure?.passwordAuth === true)
+  if (password > 0 && password < n) {
+    lines.push(`${password} of ${n} allow password login`)
+  }
+  const root = count((s) => s.exposure?.permitRootLogin === 'yes')
+  if (root > 0 && root < n) {
+    lines.push(`${root} of ${n} allow root to log in with a password`)
+  }
+  const firewall = count((s) => s.exposure?.firewall === 'none')
+  if (firewall > 0 && firewall < n) {
+    lines.push(`${firewall} of ${n} have no firewall`)
+  }
+  const ports = new Map<string, number>()
+  for (const s of ready) {
+    for (const p of s.exposure?.listeningOnAllInterfaces ?? []) {
+      ports.set(p, (ports.get(p) ?? 0) + 1)
+    }
+  }
+  for (const [port, have] of [...ports.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0]),
+  )) {
+    if (have < n)
+      lines.push(`${port} listens on all interfaces on ${have} of ${n}`)
+  }
+  return lines.slice(0, 8)
 }
 
 function countStatus(servers: Array<Server>) {

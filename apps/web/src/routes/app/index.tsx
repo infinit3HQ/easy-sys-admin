@@ -70,6 +70,17 @@ function Board() {
         <Stat label="Pending" value={t.pending} />
       </Card>
 
+      {data.servers.some((s) => s.exposure && !s.exposure.ready) && (
+        <p className="mb-6 text-sm text-warn">
+          {plural(
+            data.servers.filter((s) => s.exposure && !s.exposure.ready).length,
+            'server needs a helper reinstall',
+            'servers need a helper reinstall',
+          )}{' '}
+          before the exposure summary includes them.
+        </p>
+      )}
+
       {data.servers.length === 0 ? (
         <Empty
           title="No servers yet"
@@ -170,8 +181,9 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
     )
   }
   const bits: string[] = []
-  if (e.publicPorts.length)
-    bits.push(`${e.publicPorts.length} on all interfaces`)
+  const listeners = e.listeningOnAllInterfaces
+  if (listeners.length)
+    bits.push(`${listeners.length} listening on all interfaces`)
   if (e.passwordAuth) bits.push('password login')
   if (e.permitRootLogin === 'yes') bits.push('root login')
   if (e.permitEmptyPasswords) bits.push('empty passwords')
@@ -180,7 +192,10 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
   if (e.uncovered > 0) bits.push(`${e.uncovered} not in ufw`)
   if (e.extraRoot > 0) bits.push('extra uid 0')
   if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
-  const warn = bits.some((b) => !b.endsWith('on all interfaces'))
+  const warn = bits.some((b) => !b.endsWith('listening on all interfaces'))
+  const heard = e.attemptedAt
+    ? `Last try ${e.attemptedAt}. Last success ${e.checkedAt}. Reachability is not verified.`
+    : `Collected ${e.checkedAt}. Reachability is not verified.`
   return (
     <span
       className={cn(
@@ -188,9 +203,9 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
         warn ? 'text-warn' : 'text-faint',
         className,
       )}
-      title={e.publicPorts.length ? e.publicPorts.join(', ') : undefined}
+      title={listeners.length ? `${listeners.join(', ')}. ${heard}` : heard}
     >
-      {bits.length ? bits.join(' · ') : 'none'}
+      {bits.length ? bits.join(' · ') : 'no notable local findings'}
     </span>
   )
 }
@@ -237,6 +252,11 @@ function Row({ s }: { s: Server }) {
             {s.groupName ?? 'no group'}
             <OwnerTag s={s} /> · {s.host}
           </span>
+          {s.note && (
+            <span className="mt-0.5 block truncate text-xs text-ink-2 normal-case">
+              {s.note}
+            </span>
+          )}
         </Link>
       </TableCell>
       <Gauge value={m?.cpuPercent} warn={85} fail={97} />
@@ -310,6 +330,11 @@ function ServerCard({ s }: { s: Server }) {
             {s.groupName ?? 'no group'}
             <OwnerTag s={s} /> · {s.host}
           </div>
+          {s.note && (
+            <div className="truncate text-xs text-ink-2 normal-case">
+              {s.note}
+            </div>
+          )}
         </div>
         <span className="num shrink-0 text-[10px] text-muted-foreground">
           <Ago iso={s.lastSeenAt} />

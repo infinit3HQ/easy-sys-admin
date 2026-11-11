@@ -72,7 +72,7 @@ const ruleText: Record<AlertRule['kind'], { title: string; unit?: string }> = {
   run_failed: { title: 'A maintenance run failed' },
   host_key: { title: 'Host key changed' },
   exposure: { title: 'Weak SSH, no firewall, or unrestricted sudo' },
-  new_port: { title: 'A new public port' },
+  new_port: { title: 'A new socket on all interfaces' },
   new_key: { title: 'A new SSH key' },
   security_update: { title: 'Security updates waiting', unit: 'days' },
 }

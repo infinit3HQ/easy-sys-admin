@@ -37,6 +37,7 @@ export function SettingsTab({ serverId }: { serverId: number }) {
     (g) => g.access === 'own' || g.id === s.groupId,
   )
   const [name, setName] = useState(s.name)
+  const [note, setNote] = useState(s.note)
   const [groupId, setGroupId] = useState<number | null>(s.groupId ?? null)
   const [cp, setCp] = useState(s.hostsControlPlane)
   const [prot, setProt] = useState(s.protectedContainers.join(', '))
@@ -55,6 +56,7 @@ export function SettingsTab({ serverId }: { serverId: number }) {
             groupId: groupId ?? undefined,
             clearGroup: groupId === null,
             hostsControlPlane: cp,
+            note,
             protectedContainers: prot
               .split(',')
               .map((p) => p.trim())
@@ -62,7 +64,10 @@ export function SettingsTab({ serverId }: { serverId: number }) {
           },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['server', serverId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['server', serverId] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
   })
   const remove = useMutation({
     mutationFn: () =>
@@ -111,6 +116,17 @@ export function SettingsTab({ serverId }: { serverId: number }) {
           <fieldset disabled={!canAct} className="space-y-4">
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field
+              label="Note"
+              hint="Shown on the board. Kept here, not sent to the server. 200 characters."
+            >
+              <Textarea
+                value={note}
+                maxLength={200}
+                rows={2}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </Field>
             <Field
               label="Group"

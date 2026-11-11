@@ -3,7 +3,9 @@ package fleet
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
@@ -16,6 +18,7 @@ type UpdateServerInput struct {
 	ClearGroup          bool
 	HostsControlPlane   *bool
 	ProtectedContainers *[]string
+	Note                *string
 }
 
 // UpdateServer changes a server's name, group, or protection settings.
@@ -49,12 +52,28 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 	if in.ProtectedContainers != nil {
 		changes["protected_containers"] = store.MustJSON(cleanList(*in.ProtectedContainers))
 	}
+	if in.Note != nil {
+		note, err := cleanNote(*in.Note)
+		if err != nil {
+			return ServerView{}, err
+		}
+		changes["note"] = note
+	}
 	if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Updates(changes).Error; err != nil {
 		return ServerView{}, mapStore(err)
 	}
 	delete(changes, "updated_at")
 	s.audit(ctx, nil, a, "server.update", srv.Name, changes)
 	return s.GetServer(ctx, a, id)
+}
+
+// cleanNote keeps a single line of at most 200 characters.
+func cleanNote(s string) (string, error) {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > 200 {
+		return "", invalid("note", "must be at most 200 characters")
+	}
+	return s, nil
 }
 
 // AcceptHostKey accepts the new host key a server presented. fingerprint

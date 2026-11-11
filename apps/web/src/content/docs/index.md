@@ -14,8 +14,8 @@ The hosted public beta is at [easysysadmin.app](https://easysysadmin.app). Sign 
 - See CPU, memory, disks, inodes, load, network, time sync, failed units, Docker, and whether a reboot is required. The board keeps history for 90 days.
 - Install package updates, security updates only or all of them, in batches, and stop after a set number of failures. An upgrade runs in a systemd unit, so a dropped connection does not leave `apt` half finished.
 - Clean idle Docker build cache, old VS Code server copies, and the journal, on a schedule. The helper does not delete volumes or images a container is using.
-- Read services, containers, logs, scheduled jobs, and access and security reports. The board keeps a short exposure summary: public ports, SSH login settings, the firewall, and counts of extra root accounts and unrestricted sudo rules.
-- Send alerts for disk, inodes, memory, unreachable servers, failed units, unhealthy containers, certificates, failed runs, a new public port, a new SSH key, and security updates that have been waiting. An exposure alert for weak SSH, a missing firewall, or unrestricted sudo is off until you turn it on. Delivery is ntfy, a webhook, Discord, Slack, or email.
+- Read services, containers, logs, scheduled jobs, and access and security reports. The board keeps a short exposure summary: sockets listening on all interfaces, SSH login settings, the firewall, and counts of extra root accounts and unrestricted sudo rules. Listening on all interfaces is not a reachability check.
+- Send alerts for disk, inodes, memory, unreachable servers, failed units, unhealthy containers, certificates, failed runs, a new socket on all interfaces, a new SSH key, and security updates that have been waiting. An exposure alert for weak SSH, a missing firewall, or unrestricted sudo is off until you turn it on. Delivery is ntfy, a webhook, Discord, Slack, or email.
 - Use a personal space, organizations with owner, admin, and viewer roles, extra teams, and groups shared between organizations.
 
 ## Three ways in
