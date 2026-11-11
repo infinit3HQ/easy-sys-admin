@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago, Until, When } from '#/components/time'
 import {
@@ -10,6 +11,8 @@ import {
   cn,
 } from '#/components/kit'
 import { Badge } from '#/components/ui/badge'
+import { Button } from '#/components/ui/button'
+import { useServerAccess } from '#/components/server/use-access'
 import {
   Table,
   TableBody,
@@ -21,6 +24,22 @@ import {
 
 export function AccessTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.access(serverId))
+  const detail = useQuery(q.server(serverId))
+  const { canManage } = useServerAccess(
+    detail.data?.server ?? {
+      access: 'view',
+      yourRole: 'viewer',
+      ownerTeam: '',
+    },
+  )
+  const approve = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/servers/{serverId}/key-baseline', {
+          params: { path: { serverId } },
+        }),
+      ),
+  })
   if (r.isLoading) return <Loading />
   if (r.error || !r.data) return <ErrorBanner error={r.error} />
   const d = r.data
@@ -38,6 +57,23 @@ export function AccessTab({ serverId }: { serverId: number }) {
           This helper is too old for a complete access report. Reinstall it.
           What you see below is only what that helper could read.
         </Notice>
+      )}
+      {canManage && (
+        <div className="xl:col-span-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            Approving stores the fingerprints recorded now. Later checks report
+            a key that appears, disappears, or changes its restriction. A
+            missing key is not proof that access was removed.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            busy={approve.isPending}
+            onClick={() => approve.mutate()}
+          >
+            {approve.isSuccess ? 'Approved' : 'Approve these keys'}
+          </Button>
+        </div>
       )}
       <Panel title="Users with a login shell" flush>
         <ul className="divide-y divide-line/60">
@@ -295,6 +331,12 @@ export function SecurityTab({ serverId }: { serverId: number }) {
                   )}
                   {l.ufw === 'deny' && (
                     <span className="text-warn"> denied by ufw</span>
+                  )}
+                  {l.ufw === 'unknown' && (
+                    <span className="text-warn">
+                      {' '}
+                      protection unknown (Docker may bypass ufw)
+                    </span>
                   )}
                 </TableCell>
                 <TableCell className="py-2 text-ink">

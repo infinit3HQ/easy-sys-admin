@@ -18,6 +18,12 @@ export const Route = createFileRoute('/app/keys')({
 
 function Keys() {
   const r = useQuery(q.keys())
+  const [name, setName] = useState('')
+  const [asked, setAsked] = useState('')
+  const off = useQuery({
+    ...q.offboarding(asked),
+    enabled: asked !== '',
+  })
   const items = r.data?.items ?? []
   return (
     <div>
@@ -26,6 +32,46 @@ function Keys() {
         title="Keys"
         description="Fingerprints found in the standard authorized_keys files of accounts with a login shell. A key stored anywhere else is not on this list. Naming a key does not change the server."
       />
+      <Card className="mb-6 p-4">
+        <form
+          className="flex flex-col gap-2 sm:flex-row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            setAsked(name.trim())
+          }}
+        >
+          <Input
+            value={name}
+            maxLength={80}
+            placeholder="Name to look up"
+            aria-label="Name to look up"
+            onChange={(e) => setName(e.target.value)}
+          />
+          <Button type="submit" variant="outline">
+            Where this name still appears
+          </Button>
+        </form>
+        {off.data && (
+          <div className="mt-3 text-sm text-ink-2">
+            <p>{off.data.statement}</p>
+            {off.data.items.length === 0 ? (
+              <p className="mt-2 text-muted-foreground">
+                No recorded key has this name.
+              </p>
+            ) : (
+              <ul className="mt-2 space-y-1 font-mono text-[11px]">
+                {off.data.items.map((k) => (
+                  <li key={k.fingerprint}>
+                    {k.fingerprint}
+                    {k.uses.map((u) => ` · ${u.serverName}/${u.user}`)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {off.error && <ErrorBanner error={off.error} />}
+      </Card>
       {r.isLoading ? (
         <Loading />
       ) : r.error ? (

@@ -155,6 +155,22 @@ func TestUFWRules(t *testing.T) {
 	}
 }
 
+func TestDockerPublishIsNotUFWProof(t *testing.T) {
+	published := map[string]string{"80/tcp": "web"}
+	ls := []proto.Listener{{Proto: "tcp", Port: 80, Exposure: "all", UFW: "allow", Process: "docker-proxy"}}
+	markDockerUnknown(ls, published)
+	if ls[0].UFW != "unknown" {
+		t.Fatalf("ufw on a published port: %s", ls[0].UFW)
+	}
+	added := addMissingPublications(nil, published)
+	if len(added) != 1 || added[0].Process != "docker" || added[0].UFW != "unknown" || added[0].Container != "web" {
+		t.Fatalf("missing publication: %+v", added)
+	}
+	if got := addMissingPublications(ls, published); len(got) != 1 {
+		t.Fatalf("a socket already listed must not be added again: %+v", got)
+	}
+}
+
 func TestUFWFor(t *testing.T) {
 	rules := []string{
 		"22/tcp                     ALLOW       Anywhere",

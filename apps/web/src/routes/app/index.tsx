@@ -184,6 +184,8 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
   const listeners = e.listeningOnAllInterfaces
   if (listeners.length)
     bits.push(`${listeners.length} listening on all interfaces`)
+  if (e.specificBinds.length)
+    bits.push(`${e.specificBinds.length} on one address`)
   if (e.passwordAuth) bits.push('password login')
   if (e.permitRootLogin === 'yes') bits.push('root login')
   if (e.permitEmptyPasswords) bits.push('empty passwords')
@@ -193,7 +195,11 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
   if (e.gaps.length) bits.push(`not collected: ${e.gaps.join(', ')}`)
   if (e.extraRoot > 0) bits.push('extra uid 0')
   if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
-  const warn = bits.some((b) => !b.endsWith('listening on all interfaces'))
+  const warn = bits.some(
+    (b) =>
+      !b.endsWith('listening on all interfaces') &&
+      !b.endsWith('on one address'),
+  )
   const heard = e.attemptedAt
     ? `Last try ${e.attemptedAt}. Last success ${e.checkedAt}. Reachability is not verified.`
     : `Collected ${e.checkedAt}. Reachability is not verified.`

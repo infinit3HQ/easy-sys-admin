@@ -177,6 +177,51 @@ func (h *Handlers) SnoozeIncident(ctx context.Context, req SnoozeIncidentRequest
 	return SnoozeIncident200JSONResponse(toIncident(v)), nil
 }
 
+func toWindow(v fleet.MaintenanceView) MaintenanceWindow {
+	return MaintenanceWindow{
+		Id: v.ID, GroupId: v.GroupID, ServerId: v.ServerID, Reason: v.Reason,
+		StartsAt: v.StartsAt, EndsAt: v.EndsAt,
+	}
+}
+
+func (h *Handlers) ListMaintenance(ctx context.Context, _ ListMaintenanceRequestObject) (ListMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.fleet.ListMaintenance(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return ListMaintenance200JSONResponse{Items: mapSlice(items, toWindow)}, nil
+}
+
+func (h *Handlers) CreateMaintenance(ctx context.Context, req CreateMaintenanceRequestObject) (CreateMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.CreateMaintenance(ctx, a, req.Body.GroupId, req.Body.ServerId, req.Body.Reason, req.Body.StartsAt, req.Body.EndsAt)
+	if err != nil {
+		return nil, err
+	}
+	return CreateMaintenance201JSONResponse(toWindow(v)), nil
+}
+
+func (h *Handlers) DeleteMaintenance(ctx context.Context, req DeleteMaintenanceRequestObject) (DeleteMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.fleet.DeleteMaintenance(ctx, a, req.WindowId); err != nil {
+		return nil, err
+	}
+	return DeleteMaintenance204Response{}, nil
+}
+
 func (h *Handlers) AcknowledgeIncident(ctx context.Context, req AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error) {
 	a, err := actor(ctx)
 	if err != nil {

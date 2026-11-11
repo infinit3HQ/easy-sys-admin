@@ -27,6 +27,8 @@ func Models() []any {
 		&SecurityIncident{},
 		&KeyOccurrence{},
 		&KeyLabel{},
+		&KeyBaseline{},
+		&MaintenanceWindow{},
 		&NotifyChannel{},
 		&NotifyDelivery{},
 		&CertTarget{},

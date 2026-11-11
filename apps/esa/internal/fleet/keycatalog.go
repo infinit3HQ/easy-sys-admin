@@ -57,7 +57,94 @@ func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys
 	}
 	if err := tx.Commit().Error; err != nil {
 		s.log.Error("sync keys", "err", err)
+		return
 	}
+	s.reportKeyDrift(ctx, srv, keys)
+}
+
+type baselineKey struct {
+	User        string `json:"user"`
+	Fingerprint string `json:"fingerprint"`
+	From        string `json:"from"`
+	HasCommand  bool   `json:"hasCommand"`
+}
+
+func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []keyUse) {
+	var base store.KeyBaseline
+	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Take(&base).Error; err != nil {
+		return
+	}
+	var approved []baselineKey
+	_ = base.Items.Decode(&approved)
+	have := map[string]baselineKey{}
+	for _, item := range approved {
+		have[item.User+"\n"+item.Fingerprint] = item
+	}
+	seen := map[string]bool{}
+	for _, k := range keys {
+		id := k.User + "\n" + k.Fingerprint
+		seen[id] = true
+		old, ok := have[id]
+		if !ok {
+			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline")
+			continue
+		}
+		if old.From != k.From || old.HasCommand != k.HasCommand {
+			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" changed", srv.Name+": restrictions changed for "+k.Fingerprint+" on "+k.User)
+		}
+	}
+	for id, item := range have {
+		if seen[id] {
+			continue
+		}
+		s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", "removed "+item.Fingerprint, srv.Name+": approved key "+item.Fingerprint+" on "+item.User+" was not in the files checked this time")
+	}
+}
+
+// ApproveKeyBaseline stores the keys currently recorded for the server.
+// It does not change the server.
+func (s *Service) ApproveKeyBaseline(ctx context.Context, a Actor, serverID int64) error {
+	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+		return err
+	}
+	srv, err := s.loadServer(ctx, a, serverID)
+	if err != nil {
+		return err
+	}
+	var rows []store.KeyOccurrence
+	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Find(&rows).Error; err != nil {
+		return err
+	}
+	items := make([]baselineKey, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, baselineKey{User: r.User, Fingerprint: r.Fingerprint, From: r.From, HasCommand: r.HasCommand})
+	}
+	row := store.KeyBaseline{ServerID: srv.ID, AccountID: srv.AccountID, Items: store.MustJSON(items), ApprovedAt: s.now(), ApprovedBy: a.UserID}
+	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
+		return err
+	}
+	s.audit(ctx, nil, a, "key.baseline", srv.Name, map[string]any{"keys": len(items)})
+	return nil
+}
+
+// Offboarding lists keys with this name. It only covers standard
+// authorized_keys files that a current helper has read.
+func (s *Service) Offboarding(ctx context.Context, a Actor, label string) (string, []KeyView, error) {
+	label = strings.Join(strings.Fields(label), " ")
+	if label == "" {
+		return "", nil, invalid("label", "is required")
+	}
+	all, err := s.ListKeys(ctx, a)
+	if err != nil {
+		return "", nil, err
+	}
+	var matched []KeyView
+	for _, k := range all {
+		if k.Label == label {
+			matched = append(matched, k)
+		}
+	}
+	return "These are keys you named in this space, from standard authorized_keys files on servers a current helper has read. A key that is absent here is not proof that access was removed.", matched, nil
 }
 
 // ListKeys returns fingerprints seen on servers the actor can see.

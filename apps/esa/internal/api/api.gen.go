@@ -883,6 +883,9 @@ type Exposure struct {
 	// Ready False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result.
 	Ready bool `json:"ready"`
 
+	// SpecificBinds Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot.
+	SpecificBinds []string `json:"specificBinds"`
+
 	// SshRead True when sshd -T was read. pubkeyAuth is meaningful only then.
 	SshRead bool `json:"sshRead"`
 
@@ -1106,6 +1109,30 @@ type Login struct {
 // LoginRecord defines model for LoginRecord.
 type LoginRecord = proto.Login
 
+// MaintenanceList defines model for MaintenanceList.
+type MaintenanceList struct {
+	Items []MaintenanceWindow `json:"items"`
+}
+
+// MaintenanceRequest defines model for MaintenanceRequest.
+type MaintenanceRequest struct {
+	EndsAt   time.Time `json:"endsAt"`
+	GroupId  *int64    `json:"groupId,omitempty"`
+	Reason   string    `json:"reason"`
+	ServerId *int64    `json:"serverId,omitempty"`
+	StartsAt time.Time `json:"startsAt"`
+}
+
+// MaintenanceWindow defines model for MaintenanceWindow.
+type MaintenanceWindow struct {
+	EndsAt   time.Time `json:"endsAt"`
+	GroupId  *int64    `json:"groupId,omitempty"`
+	Id       int64     `json:"id"`
+	Reason   string    `json:"reason"`
+	ServerId *int64    `json:"serverId,omitempty"`
+	StartsAt time.Time `json:"startsAt"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	Account  AccountMembership   `json:"account"`
@@ -1159,6 +1186,14 @@ type MetricsResponse struct {
 
 // NetIf defines model for NetIf.
 type NetIf = proto.NetIf
+
+// Offboarding defines model for Offboarding.
+type Offboarding struct {
+	Items []Key `json:"items"`
+
+	// Statement What this list does not prove.
+	Statement string `json:"statement"`
+}
 
 // Organization defines model for Organization.
 type Organization struct {
@@ -1592,6 +1627,11 @@ type SnoozeIncidentJSONBody struct {
 	Until  time.Time `json:"until"`
 }
 
+// OffboardingParams defines parameters for Offboarding.
+type OffboardingParams struct {
+	Label string `form:"label" json:"label"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1661,6 +1701,9 @@ type SnoozeIncidentJSONRequestBody SnoozeIncidentJSONBody
 
 // LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
 type LabelKeyJSONRequestBody = KeyLabelRequest
+
+// CreateMaintenanceJSONRequestBody defines body for CreateMaintenance for application/json ContentType.
+type CreateMaintenanceJSONRequestBody = MaintenanceRequest
 
 // SwitchAccountJSONRequestBody defines body for SwitchAccount for application/json ContentType.
 type SwitchAccountJSONRequestBody = SwitchAccountRequest
@@ -1808,12 +1851,24 @@ type ServerInterface interface {
 	// LabelKey Name a fingerprint in this space, or clear the name
 	// (PUT /keys)
 	LabelKey(w http.ResponseWriter, r *http.Request)
+	// ListMaintenance Windows that quiet ordinary notifications
+	// (GET /maintenance)
+	ListMaintenance(w http.ResponseWriter, r *http.Request)
+	// CreateMaintenance Quiet ordinary notifications for at most 7 days
+	// (POST /maintenance)
+	CreateMaintenance(w http.ResponseWriter, r *http.Request)
+	// DeleteMaintenance Remove a maintenance window
+	// (DELETE /maintenance/{windowId})
+	DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId int64)
 	// GetMe The signed-in user and their current account
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
 	// SwitchAccount Change the account this browser session works in
 	// (PUT /me/account)
 	SwitchAccount(w http.ResponseWriter, r *http.Request)
+	// Offboarding Keys with this name from the files a current helper has read
+	// (GET /offboarding)
+	Offboarding(w http.ResponseWriter, r *http.Request, params OffboardingParams)
 	// DeleteOrganization Delete the current organization with its servers, groups and history (owners only; not the personal space)
 	// (DELETE /org)
 	DeleteOrganization(w http.ResponseWriter, r *http.Request, params DeleteOrganizationParams)
@@ -1913,6 +1968,9 @@ type ServerInterface interface {
 	// GetServerJobs Cron entries and systemd timers
 	// (GET /servers/{serverId}/jobs)
 	GetServerJobs(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	// (POST /servers/{serverId}/key-baseline)
+	ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId int64)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerLogsParams)
@@ -2671,6 +2729,60 @@ func (siw *ServerInterfaceWrapper) LabelKey(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// ListMaintenance operation middleware
+func (siw *ServerInterfaceWrapper) ListMaintenance(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMaintenance(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMaintenance operation middleware
+func (siw *ServerInterfaceWrapper) CreateMaintenance(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMaintenance(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMaintenance operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMaintenance(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "windowId" -------------
+	var windowId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "windowId", r.PathValue("windowId"), &windowId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "windowId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMaintenance(w, r, windowId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
 
@@ -2690,6 +2802,39 @@ func (siw *ServerInterfaceWrapper) SwitchAccount(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SwitchAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Offboarding operation middleware
+func (siw *ServerInterfaceWrapper) Offboarding(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params OffboardingParams
+
+	// ------------- Required query parameter "label" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "label", r.URL.Query(), &params.Label, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "label"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "label", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Offboarding(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3531,6 +3676,32 @@ func (siw *ServerInterfaceWrapper) GetServerJobs(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ApproveKeyBaseline operation middleware
+func (siw *ServerInterfaceWrapper) ApproveKeyBaseline(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveKeyBaseline(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetServerLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -4115,6 +4286,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/offboarding", wrapper.Offboarding)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/maintenance", wrapper.ListMaintenance)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/maintenance", wrapper.CreateMaintenance)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/maintenance/{windowId}", wrapper.DeleteMaintenance)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents", wrapper.ListIncidents)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/snooze", wrapper.SnoozeIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
@@ -5312,6 +5488,116 @@ func (response LabelKeydefaultJSONResponse) VisitLabelKeyResponse(w http.Respons
 	return err
 }
 
+type ListMaintenanceRequestObject struct {
+}
+
+type ListMaintenanceResponseObject interface {
+	VisitListMaintenanceResponse(w http.ResponseWriter) error
+}
+
+type ListMaintenance200JSONResponse MaintenanceList
+
+func (response ListMaintenance200JSONResponse) VisitListMaintenanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMaintenancedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListMaintenancedefaultJSONResponse) VisitListMaintenanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMaintenanceRequestObject struct {
+	Body *CreateMaintenanceJSONRequestBody
+}
+
+type CreateMaintenanceResponseObject interface {
+	VisitCreateMaintenanceResponse(w http.ResponseWriter) error
+}
+
+type CreateMaintenance201JSONResponse MaintenanceWindow
+
+func (response CreateMaintenance201JSONResponse) VisitCreateMaintenanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateMaintenancedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateMaintenancedefaultJSONResponse) VisitCreateMaintenanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMaintenanceRequestObject struct {
+	WindowId int64 `json:"windowId"`
+}
+
+type DeleteMaintenanceResponseObject interface {
+	VisitDeleteMaintenanceResponse(w http.ResponseWriter) error
+}
+
+type DeleteMaintenance204Response struct {
+}
+
+func (response DeleteMaintenance204Response) VisitDeleteMaintenanceResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMaintenancedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteMaintenancedefaultJSONResponse) VisitDeleteMaintenanceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetMeRequestObject struct {
 }
 
@@ -5378,6 +5664,45 @@ type SwitchAccountdefaultJSONResponse struct {
 }
 
 func (response SwitchAccountdefaultJSONResponse) VisitSwitchAccountResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OffboardingRequestObject struct {
+	Params OffboardingParams
+}
+
+type OffboardingResponseObject interface {
+	VisitOffboardingResponse(w http.ResponseWriter) error
+}
+
+type Offboarding200JSONResponse Offboarding
+
+func (response Offboarding200JSONResponse) VisitOffboardingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OffboardingdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response OffboardingdefaultJSONResponse) VisitOffboardingResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6647,6 +6972,39 @@ func (response GetServerJobsdefaultJSONResponse) VisitGetServerJobsResponse(w ht
 	return err
 }
 
+type ApproveKeyBaselineRequestObject struct {
+	ServerId int64 `json:"serverId"`
+}
+
+type ApproveKeyBaselineResponseObject interface {
+	VisitApproveKeyBaselineResponse(w http.ResponseWriter) error
+}
+
+type ApproveKeyBaseline204Response struct {
+}
+
+func (response ApproveKeyBaseline204Response) VisitApproveKeyBaselineResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ApproveKeyBaselinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ApproveKeyBaselinedefaultJSONResponse) VisitApproveKeyBaselineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerLogsRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 	Params   GetServerLogsParams
@@ -7240,12 +7598,24 @@ type StrictServerInterface interface {
 	// LabelKey Name a fingerprint in this space, or clear the name
 	// (PUT /keys)
 	LabelKey(ctx context.Context, request LabelKeyRequestObject) (LabelKeyResponseObject, error)
+	// ListMaintenance Windows that quiet ordinary notifications
+	// (GET /maintenance)
+	ListMaintenance(ctx context.Context, request ListMaintenanceRequestObject) (ListMaintenanceResponseObject, error)
+	// CreateMaintenance Quiet ordinary notifications for at most 7 days
+	// (POST /maintenance)
+	CreateMaintenance(ctx context.Context, request CreateMaintenanceRequestObject) (CreateMaintenanceResponseObject, error)
+	// DeleteMaintenance Remove a maintenance window
+	// (DELETE /maintenance/{windowId})
+	DeleteMaintenance(ctx context.Context, request DeleteMaintenanceRequestObject) (DeleteMaintenanceResponseObject, error)
 	// GetMe The signed-in user and their current account
 	// (GET /me)
 	GetMe(ctx context.Context, request GetMeRequestObject) (GetMeResponseObject, error)
 	// SwitchAccount Change the account this browser session works in
 	// (PUT /me/account)
 	SwitchAccount(ctx context.Context, request SwitchAccountRequestObject) (SwitchAccountResponseObject, error)
+	// Offboarding Keys with this name from the files a current helper has read
+	// (GET /offboarding)
+	Offboarding(ctx context.Context, request OffboardingRequestObject) (OffboardingResponseObject, error)
 	// DeleteOrganization Delete the current organization with its servers, groups and history (owners only; not the personal space)
 	// (DELETE /org)
 	DeleteOrganization(ctx context.Context, request DeleteOrganizationRequestObject) (DeleteOrganizationResponseObject, error)
@@ -7345,6 +7715,9 @@ type StrictServerInterface interface {
 	// GetServerJobs Cron entries and systemd timers
 	// (GET /servers/{serverId}/jobs)
 	GetServerJobs(ctx context.Context, request GetServerJobsRequestObject) (GetServerJobsResponseObject, error)
+	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	// (POST /servers/{serverId}/key-baseline)
+	ApproveKeyBaseline(ctx context.Context, request ApproveKeyBaselineRequestObject) (ApproveKeyBaselineResponseObject, error)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(ctx context.Context, request GetServerLogsRequestObject) (GetServerLogsResponseObject, error)
@@ -8279,6 +8652,87 @@ func (sh *strictHandler) LabelKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListMaintenance operation middleware
+func (sh *strictHandler) ListMaintenance(w http.ResponseWriter, r *http.Request) {
+	var request ListMaintenanceRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMaintenance(ctx, request.(ListMaintenanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMaintenance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMaintenanceResponseObject); ok {
+		if err := validResponse.VisitListMaintenanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateMaintenance operation middleware
+func (sh *strictHandler) CreateMaintenance(w http.ResponseWriter, r *http.Request) {
+	var request CreateMaintenanceRequestObject
+
+	var body CreateMaintenanceJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateMaintenance(ctx, request.(CreateMaintenanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateMaintenance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateMaintenanceResponseObject); ok {
+		if err := validResponse.VisitCreateMaintenanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMaintenance operation middleware
+func (sh *strictHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId int64) {
+	var request DeleteMaintenanceRequestObject
+
+	request.WindowId = windowId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMaintenance(ctx, request.(DeleteMaintenanceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMaintenance")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMaintenanceResponseObject); ok {
+		if err := validResponse.VisitDeleteMaintenanceResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetMe operation middleware
 func (sh *strictHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 	var request GetMeRequestObject
@@ -8327,6 +8781,32 @@ func (sh *strictHandler) SwitchAccount(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SwitchAccountResponseObject); ok {
 		if err := validResponse.VisitSwitchAccountResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Offboarding operation middleware
+func (sh *strictHandler) Offboarding(w http.ResponseWriter, r *http.Request, params OffboardingParams) {
+	var request OffboardingRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Offboarding(ctx, request.(OffboardingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Offboarding")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OffboardingResponseObject); ok {
+		if err := validResponse.VisitOffboardingResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -9264,6 +9744,32 @@ func (sh *strictHandler) GetServerJobs(w http.ResponseWriter, r *http.Request, s
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerJobsResponseObject); ok {
 		if err := validResponse.VisitGetServerJobsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApproveKeyBaseline operation middleware
+func (sh *strictHandler) ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId int64) {
+	var request ApproveKeyBaselineRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApproveKeyBaseline(ctx, request.(ApproveKeyBaselineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApproveKeyBaseline")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApproveKeyBaselineResponseObject); ok {
+		if err := validResponse.VisitApproveKeyBaselineResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

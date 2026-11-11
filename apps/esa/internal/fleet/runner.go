@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -324,6 +325,13 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 	if len(o.Hold) > 0 {
 		args = append(args, "--hold", strings.Join(o.Hold, ","))
 	}
+	before, err := s.readHealth(ctx, ep)
+	if err != nil {
+		s.setRunServer(ctx, rs, "failed", "could not read status before the upgrade: "+err.Error(), nil, 0)
+		return false
+	}
+	s.db.WithContext(ctx).Model(rs).Update("detail", store.MustJSON(map[string]any{"healthBefore": before}))
+
 	cctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
 	err = s.pool.Call(cctx, ep, nil, "upgrade-start", args...)
 	cancel()
@@ -388,10 +396,76 @@ func (s *Service) followUpgrade(ctx context.Context, run store.Run, rs *store.Ru
 			detail["reboot"] = "rebooted"
 		}
 	}
+	if msg := s.healthRegressed(ctx, ep, healthBefore(rs)); msg != "" {
+		detail["health"] = msg
+		s.setRunServer(ctx, rs, "failed", "upgrade finished, "+msg, detail, 0)
+		_ = s.RefreshUpdates(ctx, rs.ServerID, false)
+		s.PollServer(ctx, rs.ServerID)
+		return false
+	}
 	s.setRunServer(ctx, rs, "succeeded", "", detail, 0)
 	_ = s.RefreshUpdates(ctx, rs.ServerID, false)
 	s.PollServer(ctx, rs.ServerID)
 	return true
+}
+
+// serviceHealth is the failed units and bad containers seen at one moment.
+type serviceHealth struct {
+	FailedUnits   []string `json:"failedUnits"`
+	BadContainers int      `json:"badContainers"`
+}
+
+func (s *Service) readHealth(ctx context.Context, ep remote.Endpoint) (serviceHealth, error) {
+	var snap proto.Status
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	if err := s.pool.Call(cctx, ep, &snap, "status"); err != nil {
+		return serviceHealth{}, err
+	}
+	h := serviceHealth{FailedUnits: append([]string(nil), snap.FailedUnits...)}
+	slices.Sort(h.FailedUnits)
+	if snap.Docker != nil {
+		h.BadContainers = snap.Docker.Unhealthy + snap.Docker.Restarting
+	}
+	return h, nil
+}
+
+func healthBefore(rs *store.RunServer) serviceHealth {
+	var saved struct {
+		HealthBefore serviceHealth `json:"healthBefore"`
+	}
+	_ = rs.Detail.Decode(&saved)
+	return saved.HealthBefore
+}
+
+// healthRegressed reports a failed unit or a rise in unhealthy containers
+// that was not already there. A status read that fails is itself a stop.
+func (s *Service) healthRegressed(ctx context.Context, ep remote.Endpoint, before serviceHealth) string {
+	after, err := s.readHealth(ctx, ep)
+	if err != nil {
+		return "status could not be read after the upgrade: " + err.Error()
+	}
+	return healthWorse(before, after)
+}
+
+func healthWorse(before, after serviceHealth) string {
+	had := map[string]bool{}
+	for _, u := range before.FailedUnits {
+		had[u] = true
+	}
+	var fresh []string
+	for _, u := range after.FailedUnits {
+		if !had[u] {
+			fresh = append(fresh, u)
+		}
+	}
+	if len(fresh) > 0 {
+		return "new failed units: " + strings.Join(fresh, ", ")
+	}
+	if after.BadContainers > before.BadContainers {
+		return fmt.Sprintf("unhealthy or restarting containers went from %d to %d", before.BadContainers, after.BadContainers)
+	}
+	return ""
 }
 
 // ---- Reboots ---------------------------------------------------------------------

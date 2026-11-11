@@ -34,6 +34,10 @@ type Message struct {
 	Severity string // info | warning | critical
 	Resolved bool
 	URL      string
+	// Kind and ServerID let a maintenance window skip ordinary notices.
+	// host_key and new_key are never skipped.
+	Kind     string
+	ServerID int64
 }
 
 // Deps are the service's collaborators.

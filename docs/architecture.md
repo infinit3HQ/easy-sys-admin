@@ -94,16 +94,16 @@ All packages are under `apps/esa/internal`.
 
 `startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts seven loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
 
-| Job      | Interval | First run after | What it does                                                                                                                                                                                      |
-| -------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                                                        |
+| Job      | Interval | First run after | What it does                                                                                                                                                                                                                                                                                                           |
+| -------- | -------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                                                                                                                                                                             |
 | Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample. When the exposure summary is older than an hour, it also calls `access` and `security`, at most 8 servers per cycle, then evaluates alerts. |
-| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                      |
-| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).     |
-| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                          |
-| Deliver  | 1 minute | 10 seconds      | `fleet.DrainDeliveries`: sends notifications stored in the database, retries a delivery left in sending, and returns expired snoozes to the review list. Five failures mark a delivery dead. |
-| Digest   | 1 hour   | 3 minutes       | `fleet.SendDigests`: on Monday after 08:00 UTC, sends one summary per space to its channels. Unreachable servers, security updates waiting 7 days, and new ports and keys from the past week. An empty week sends nothing. A control plane that is down on Monday skips that week. |
-| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                |
+| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                                                                                                                                           |
+| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).                                                                                                                          |
+| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                                                                                                                                               |
+| Deliver  | 1 minute | 10 seconds      | `fleet.DrainDeliveries`: sends notifications stored in the database, retries a delivery left in sending, and returns expired snoozes to the review list. Five failures mark a delivery dead.                                                                                                                           |
+| Digest   | 1 hour   | 3 minutes       | `fleet.SendDigests`: on Monday after 08:00 UTC, sends one summary per space to its channels. Unreachable servers, security updates waiting 7 days, and new ports and keys from the past week. An empty week sends nothing. A control plane that is down on Monday skips that week.                                     |
+| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                                                                                                                                     |
 
 Polling details from `apps/esa/internal/fleet/poll.go`:
 
@@ -136,20 +136,20 @@ A session works in one account at a time. An account can share a group, and the 
 
 Identity and access:
 
-| Table         | Holds                                                                                              |
-| ------------- | -------------------------------------------------------------------------------------------------- |
-| `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels. |
+| Table         | Holds                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels.                                                     |
 | `users`       | People. The first sign-in stores its issuer and subject. `user_identities` records later providers. The same verified email joins the existing user. |
-| `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                          |
-| `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                   |
-| `api_tokens`  | CLI and MCP tokens. Stores the SHA-256 of the token, its scopes, and its expiry.                   |
-| `audit_log`   | Who did what, in which account, from which source (`web`, `api`, `mcp`, `system`).                 |
+| `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                                                                            |
+| `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                                                                     |
+| `api_tokens`  | CLI and MCP tokens. Stores the SHA-256 of the token, its scopes, and its expiry.                                                                     |
+| `audit_log`   | Who did what, in which account, from which source (`web`, `api`, `mcp`, `system`).                                                                   |
 
 Teams and sharing:
 
-| Table          | Holds                                                                         |
-| -------------- | ----------------------------------------------------------------------------- |
-| `invites`      | One-time links that add a user to an organization. Token stored as SHA-256.            |
+| Table          | Holds                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------- |
+| `invites`      | One-time links that add a user to an organization. Token stored as SHA-256.           |
 | `share_links`  | One-time links that share a group with another organization. Token stored as SHA-256. |
 | `group_shares` | A group shared with a receiving account, with `view` or `operate` access.             |
 | `teams`        | Extra teams of an organization. They own no servers.                                  |
@@ -224,9 +224,11 @@ The run executes in the background. Each server is locked while it is worked on.
 For each server, in parallel with the rest of its batch, the runner:
 
 1. Calls `upgrade-precheck` (3 minute timeout). Problems fail the server.
-2. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
-3. Polls `upgrade-status` every 10 seconds for up to 2 hours. Connection errors are retried, because the upgrade does not depend on SSH. A host key mismatch fails the server at once.
-4. If the upgrade succeeded, the server needs a reboot, and the group has "reboot if required" on, it reboots and waits. A server marked as hosting the control plane is not rebooted here.
+2. Reads `status` and stores the failed units and unhealthy containers. A failed read fails the server before the upgrade starts.
+3. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
+4. Polls `upgrade-status` every 10 seconds for up to 2 hours. Connection errors are retried, because the upgrade does not depend on SSH. A host key mismatch fails the server at once.
+5. If the upgrade succeeded, the server needs a reboot, and the group has "reboot if required" on, it reboots and waits. A server marked as hosting the control plane is not rebooted here.
+6. Reads `status` again. A failed unit that was not already failed, or a rise in unhealthy or restarting containers, fails that server. A status read that fails also fails that server. A problem that was already there does not. The failure limit can then stop the rest of the batch.
 
 ### Reboots
 
@@ -242,26 +244,26 @@ At startup `ResumeRuns` looks for runs still marked `running`. Upgrades keep run
 
 Alert logic lives in `apps/esa/internal/fleet/alerts.go` and `alerts_manage.go`. Every account gets one rule per kind on first use:
 
-| Kind              | Condition                                                       | Default threshold | Default duration | Severity                         |
-| ----------------- | --------------------------------------------------------------- | ----------------- | ---------------- | -------------------------------- |
-| `disk`            | A filesystem is at or over the threshold                        | 85%               | 0                | critical at 95%, else warning    |
-| `inode`           | Inode use on a filesystem                                       | 85%               | 0                | critical at 95%, else warning    |
-| `memory`          | Memory use                                                      | 90%               | 10 minutes       | critical at 97%, else warning    |
-| `unreachable`     | The server is `unreachable`                                     |                   | 3 minutes        | critical                         |
-| `failed_unit`     | A systemd unit failed                                           |                   | 0                | warning                          |
-| `container`       | Containers are unhealthy or restarting                          |                   | 5 minutes        | warning                          |
-| `reboot_required` | The server needs a reboot                                       |                   | 7 days           | info                             |
-| `cert_expiry`     | A certificate expires within the threshold, or its check failed | 14 days           | 0                | critical at 3 days, else warning |
-| `run_failed`      | A run had a failed server                                       |                   | 0                | warning                          |
-| `host_key`        | The server presented a different host key                       |                   | 0                | critical                         |
-| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it. | | 0 | warning, or critical for empty passwords and extra uid 0 |
-| `new_port`        | A socket bound to every interface that was not in the previous exposure report. Reachability is not verified. The first report only sets the baseline. | | 0 | warning, one notice |
-| `new_key`         | An SSH key fingerprint that was not in the previous access report. The first report only sets the baseline. | | 0 | warning, one notice |
-| `security_update` | A security package has been pending for at least the threshold | 7 days | 0 | warning, critical at 30 days |
+| Kind              | Condition                                                                                                                                              | Default threshold | Default duration | Severity                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ---------------- | -------------------------------------------------------- |
+| `disk`            | A filesystem is at or over the threshold                                                                                                               | 85%               | 0                | critical at 95%, else warning                            |
+| `inode`           | Inode use on a filesystem                                                                                                                              | 85%               | 0                | critical at 95%, else warning                            |
+| `memory`          | Memory use                                                                                                                                             | 90%               | 10 minutes       | critical at 97%, else warning                            |
+| `unreachable`     | The server is `unreachable`                                                                                                                            |                   | 3 minutes        | critical                                                 |
+| `failed_unit`     | A systemd unit failed                                                                                                                                  |                   | 0                | warning                                                  |
+| `container`       | Containers are unhealthy or restarting                                                                                                                 |                   | 5 minutes        | warning                                                  |
+| `reboot_required` | The server needs a reboot                                                                                                                              |                   | 7 days           | info                                                     |
+| `cert_expiry`     | A certificate expires within the threshold, or its check failed                                                                                        | 14 days           | 0                | critical at 3 days, else warning                         |
+| `run_failed`      | A run had a failed server                                                                                                                              |                   | 0                | warning                                                  |
+| `host_key`        | The server presented a different host key                                                                                                              |                   | 0                | critical                                                 |
+| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it.           |                   | 0                | warning, or critical for empty passwords and extra uid 0 |
+| `new_port`        | A socket bound to every interface that was not in the previous exposure report. Reachability is not verified. The first report only sets the baseline. |                   | 0                | warning, one notice                                      |
+| `new_key`         | An SSH key fingerprint that was not in the previous access report. The first report only sets the baseline.                                            |                   | 0                | warning, one notice                                      |
+| `security_update` | A security package has been pending for at least the threshold                                                                                         | 7 days            | 0                | warning, critical at 30 days                             |
 
 After each poll, `evaluateAlerts` compares the server's current conditions with its open alerts. A new condition opens a pending alert. A pending alert fires once its condition has lasted the rule's duration; a duration of 0 fires at once. An alert whose condition is gone resolves. A host key mismatch or an unreachable server suppresses the other server alerts. Certificate alerts are evaluated by the certificate job and belong to the account rather than a server. A `run_failed` alert is a one-off: it is stored already resolved and only sends a notification.
 
-Firing and resolving (of an alert that had fired) both send a message to every enabled channel of the account. `enqueueNotify` puts each delivery on an in-memory queue of 1000 jobs served by 4 workers, so a slow channel never holds up polling. Each delivery has 20 seconds. When the queue is full the message is dropped with a warning in the log. The "test" button sends right away instead.
+Firing and resolving (of an alert that had fired) both send a message to every enabled channel of the account. `enqueueNotify` writes a delivery row first, then asks a worker to send it. A full worker queue leaves the row queued. `DrainDeliveries` sends queued rows, retries one left in sending, and marks a delivery dead after five failures. A maintenance window skips ordinary notices for that server, its group, or the whole space. Host key changes and new SSH keys are still sent. The "test" button sends right away instead.
 
 `apps/esa/internal/notify` supports these channel kinds:
 

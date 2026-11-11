@@ -294,9 +294,29 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 	if err := s.db.WithContext(ctx).Where("account_id = ? AND enabled", accountID).Find(&chans).Error; err != nil {
 		return
 	}
+	if s.silenced(ctx, accountID, msg.ServerID, msg.Kind) {
+		return
+	}
 	for _, ch := range chans {
 		s.enqueueNotify(ch, msg)
 	}
+}
+
+func (s *Service) silenced(ctx context.Context, accountID, serverID int64, kind string) bool {
+	if kind == string(AlertHostKey) || kind == string(AlertNewKey) {
+		return false
+	}
+	now := s.now()
+	var n int64
+	q := s.db.WithContext(ctx).Model(&store.MaintenanceWindow{}).
+		Where("account_id = ? AND starts_at <= ? AND ends_at > ?", accountID, now, now)
+	if serverID == 0 {
+		q = q.Where("server_id IS NULL AND group_id IS NULL")
+	} else {
+		q = q.Where("server_id = ? OR (server_id IS NULL AND (group_id IS NULL OR group_id = (SELECT group_id FROM servers WHERE id = ?)))", serverID, serverID)
+	}
+	q.Count(&n)
+	return n > 0
 }
 
 func (s *Service) sendOne(ctx context.Context, ch store.NotifyChannel, msg Message) error {

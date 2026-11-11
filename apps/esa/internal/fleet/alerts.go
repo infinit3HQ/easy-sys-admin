@@ -232,7 +232,7 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 			al.ResolvedAt = &now
 			s.db.WithContext(ctx).Model(al).Update("resolved_at", now)
 			if al.FiredAt != nil {
-				s.notify(ctx, accountID, Message{Title: "Resolved: " + al.Message, Body: al.Message, Severity: al.Severity, Resolved: true, URL: s.alertURL(al)})
+				s.notify(ctx, accountID, s.alertMessage(al, "Resolved: "+al.Message, true))
 			}
 			continue
 		}
@@ -242,7 +242,8 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 			updates["fired_at"] = now
 			updates["notified"] = true
 			al.Message, al.Severity = c.message, c.severity
-			s.notify(ctx, accountID, Message{Title: c.message, Body: c.message, Severity: c.severity, URL: s.alertURL(al)})
+			s.noteSecurityIncident(ctx, accountID, al)
+			s.notify(ctx, accountID, s.alertMessage(al, c.message, false))
 		}
 		s.db.WithContext(ctx).Model(al).Updates(updates)
 	}
@@ -262,8 +263,27 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 			continue
 		}
 		if al.FiredAt != nil {
-			s.notify(ctx, accountID, Message{Title: c.message, Body: c.message, Severity: c.severity, URL: s.alertURL(&al)})
+			s.noteSecurityIncident(ctx, accountID, &al)
+			s.notify(ctx, accountID, s.alertMessage(&al, c.message, false))
 		}
+	}
+}
+
+func (s *Service) alertMessage(al *store.Alert, title string, resolved bool) Message {
+	msg := Message{Title: title, Body: al.Message, Severity: al.Severity, Resolved: resolved, Kind: al.Kind, URL: s.alertURL(al)}
+	if al.ServerID != nil {
+		msg.ServerID = *al.ServerID
+	}
+	return msg
+}
+
+func (s *Service) noteSecurityIncident(ctx context.Context, accountID int64, al *store.Alert) {
+	if al.ServerID == nil {
+		return
+	}
+	switch AlertKind(al.Kind) {
+	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
+		s.openIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject, al.Message)
 	}
 }
 
@@ -294,5 +314,5 @@ func (s *Service) alertRunFailed(ctx context.Context, run store.Run) {
 	}
 	s.db.WithContext(ctx).Omit(clause.Associations).Create(&al)
 	s.notify(ctx, run.AccountID, Message{Title: al.Message, Body: al.Message, Severity: "warning",
-		URL: s.publicURL.JoinPath("/app/runs", strconv.FormatInt(run.ID, 10)).String()})
+		Kind: al.Kind, URL: s.publicURL.JoinPath("/app/runs", strconv.FormatInt(run.ID, 10)).String()})
 }

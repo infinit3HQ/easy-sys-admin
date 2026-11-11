@@ -33,6 +33,7 @@ type Exposure struct {
 	// ListeningOnAllInterfaces is the same list as PublicPorts. The old name
 	// stays so existing clients keep working. Neither list is a reachability check.
 	ListeningOnAllInterfaces []string  `json:"listeningOnAllInterfaces,omitempty"`
+	SpecificBinds            []string  `json:"specificBinds,omitempty"`
 	AttemptedAt              time.Time `json:"attemptedAt,omitempty"`
 	PasswordAuth             bool      `json:"passwordAuth"`
 	PermitRootLogin          string    `json:"permitRootLogin"`
@@ -64,7 +65,7 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	}
 	seen := map[string]bool{}
 	for _, l := range sec.Listening {
-		if l.Exposure != "all" {
+		if l.Exposure != "all" && l.Exposure != "other" {
 			continue
 		}
 		p := l.Proto
@@ -75,6 +76,10 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 			p = "udp"
 		}
 		key := strconv.Itoa(l.Port) + "/" + p
+		if l.Exposure == "other" {
+			ex.SpecificBinds = append(ex.SpecificBinds, l.Address+" "+key)
+			continue
+		}
 		if seen[key] {
 			continue
 		}
@@ -82,6 +87,7 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 		ex.PublicPorts = append(ex.PublicPorts, key)
 	}
 	slices.Sort(ex.PublicPorts)
+	slices.Sort(ex.SpecificBinds)
 	ex.ListeningOnAllInterfaces = ex.PublicPorts
 	ex.Gaps = mergeGaps(access.Gaps, sec.Gaps)
 	ex.PasswordAuth = access.PasswordAuth
@@ -398,7 +404,7 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 			return
 		}
 		s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg)
-		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al)})
+		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al), Kind: string(kind), ServerID: srv.ID})
 	}
 	for _, item := range send {
 		fire(item, fmt.Sprintf("%s: %s %s", srv.Name, noun, item))

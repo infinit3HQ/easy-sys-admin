@@ -119,6 +119,33 @@ type KeyLabel struct {
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// KeyBaseline is the approved set of keys on one server. Later scans do not
+// change it. Drift is reported, not applied.
+type KeyBaseline struct {
+	ServerID   int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	Items      JSON      `gorm:"type:jsonb;not null"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// MaintenanceWindow suppresses ordinary notifications. Collection still runs.
+// host_key and new_key notices are not suppressed.
+type MaintenanceWindow struct {
+	ID        int64 `gorm:"primaryKey"`
+	AccountID int64 `gorm:"not null;index"`
+	GroupID   *int64
+	ServerID  *int64
+	Reason    string    `gorm:"not null"`
+	StartsAt  time.Time `gorm:"not null"`
+	EndsAt    time.Time `gorm:"not null"`
+	CreatedBy int64     `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // ServerCredential is a login kept for a server, only when the user chose
 // "keep this login". Normal operation uses the account key.
 type ServerCredential struct {

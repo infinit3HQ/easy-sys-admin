@@ -43,12 +43,12 @@ These are stored only as a SHA-256 hash, so a copy of the database does not reve
 
 Sign-in methods are set with environment variables (`apps/esa/internal/config/config.go`). Any combination can be on, and at least one must be.
 
-| Method             | Settings                                                                                    | Notes                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Method             | Settings                                                                                    | Notes                                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Email and password | `ESA_AUTH_PASSWORD` (default `true`), `ESA_SIGNUP` (default `false`), optional `ESA_SMTP_*` | Passwords are 10 to 200 characters, hashed with argon2id (19 MiB, 2 iterations, 1 lane, 16-byte salt). With SMTP configured, a password account cannot sign in until it opens the confirmation link. Google sign-in does not send or require that link. |
-| OpenID Connect     | `ESA_OIDC_ISSUER`, `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`, `ESA_OIDC_PROVIDER_NAME` | Authorization code flow with PKCE (S256), with state and nonce checked. An email is stored only when the provider says `email_verified` is true.                    |
-| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`. The user is stored with the email marked confirmed.                                                       |
-| Dev mode           | `ESA_AUTH_MODE=dev`                                                                         | Signs everyone in as one local user. Refused unless `ESA_LISTEN` and `ESA_PUBLIC_URL` are loopback addresses, and `/auth/dev-login` only answers loopback requests. |
+| OpenID Connect     | `ESA_OIDC_ISSUER`, `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`, `ESA_OIDC_PROVIDER_NAME` | Authorization code flow with PKCE (S256), with state and nonce checked. An email is stored only when the provider says `email_verified` is true.                                                                                                        |
+| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`. The user is stored with the email marked confirmed.                                                                                                                                           |
+| Dev mode           | `ESA_AUTH_MODE=dev`                                                                         | Signs everyone in as one local user. Refused unless `ESA_LISTEN` and `ESA_PUBLIC_URL` are loopback addresses, and `/auth/dev-login` only answers loopback requests.                                                                                     |
 
 More rules:
 
@@ -145,13 +145,13 @@ The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `
 
 ### Rate limits
 
-| What                                                                                                                                             | Limit                                      | Source                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------- |
-| Password sign-in, per email and client address                                                                                                   | 5 failures per 15 minutes                  | `apps/esa/internal/auth/limiter.go`                      |
-| Password sign-in, per email                                                                                                                      | 100 failures per 15 minutes                | same                                                     |
-| Password sign-in, per client address                                                                                                             | 30 failures per 15 minutes                 | same                                                     |
-| Password sign-in, whole install                                                                                                                  | 1000 failures per 15 minutes               | same                                                     |
-| Password sign-up, per client address                                                                                                             | 10 attempts per hour, successful or not    | `apps/esa/internal/auth/handlers.go`                     |
+| What                                                                                                                                                                              | Limit                                      | Source                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------- |
+| Password sign-in, per email and client address                                                                                                                                    | 5 failures per 15 minutes                  | `apps/esa/internal/auth/limiter.go`                      |
+| Password sign-in, per email                                                                                                                                                       | 100 failures per 15 minutes                | same                                                     |
+| Password sign-in, per client address                                                                                                                                              | 30 failures per 15 minutes                 | same                                                     |
+| Password sign-in, whole install                                                                                                                                                   | 1000 failures per 15 minutes               | same                                                     |
+| Password sign-up, per client address                                                                                                                                              | 10 attempts per hour, successful or not    | `apps/esa/internal/auth/handlers.go`                     |
 | Probing a host key, adding a server, reinstalling a helper, adding a certificate, testing a channel, creating an organization, creating an extra team, an invite, or a share link | 20 per minute per account, for each action | `limitRate` in `apps/esa/internal/fleet/limits_state.go` |
 
 A successful sign-in clears the per-pair and per-email counters only. The per-client and global budgets stay, so signing in to your own account does not buy more guesses at others. Scheduled work done by the system is not rate limited.
@@ -163,18 +163,18 @@ Two more limits protect the servers and the control plane:
 
 ### Caps
 
-| Item                              | Cap                                                  | Source                  |
-| --------------------------------- | ---------------------------------------------------- | ----------------------- |
+| Item                              | Cap                                                                                   | Source                  |
+| --------------------------------- | ------------------------------------------------------------------------------------- | ----------------------- |
 | Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT`. 10 when `ESA_BETA_LIMITS` is on | `fleet/limits_state.go` |
-| Certificates per account          | 200                                                  | same                    |
-| Notification channels per account | 25                                                   | same                    |
-| Organizations a user may own      | 20, or 1 when `ESA_BETA_LIMITS` is on. The personal space is not counted | `fleet/teams.go`        |
-| Members per organization          | 100                                                  | same                    |
-| Pending invites per organization  | 50                                                   | same                    |
-| Extra teams per organization      | 100                                                  | `fleet/orgteams.go`     |
-| Groups per extra team             | 200                                                  | same                    |
-| Shares per group                  | 50                                                   | `fleet/sharing.go`      |
-| Pending share links per group     | 50                                                   | same                    |
+| Certificates per account          | 200                                                                                   | same                    |
+| Notification channels per account | 25                                                                                    | same                    |
+| Organizations a user may own      | 20, or 1 when `ESA_BETA_LIMITS` is on. The personal space is not counted              | `fleet/teams.go`        |
+| Members per organization          | 100                                                                                   | same                    |
+| Pending invites per organization  | 50                                                                                    | same                    |
+| Extra teams per organization      | 100                                                                                   | `fleet/orgteams.go`     |
+| Groups per extra team             | 200                                                                                   | same                    |
+| Shares per group                  | 50                                                                                    | `fleet/sharing.go`      |
+| Pending share links per group     | 50                                                                                    | same                    |
 
 ## Security headers
 
@@ -227,12 +227,12 @@ The `audit_log` table records who did what. Each entry has the account, the user
 
 Recorded actions include:
 
-| Area                 | Actions                                                                                                                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`, `org.create`, `org.rename`, `org.rename_team`, `org.delete`                                                                                                      |
-| Servers              | `server.probe`, `server.add`, `server.enroll_start`, `server.enroll_token`, `server.enroll_complete`, `server.update`, `server.delete`, `server.reinstall_helper`, `server.accept_host_key`, `server.host_key_mismatch`, `server.read_logs`, `server.exposure` |
-| Operations           | `run.start`, `service.<action>`, `container.<action>`, `container.update`                                                                                                                                                                   |
-| Settings             | `group.*`, `alert_rule.update`, `channel.*`, `cert.add`, `cert.delete`, `token.create`, `token.revoke`, `digest.sent`, `incident.acknowledge`, `incident.snooze`, `key.label`                                                                                                                        |
+| Area                 | Actions                                                                                                                                                                                                                                                                           |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`, `org.create`, `org.rename`, `org.rename_team`, `org.delete`                                                                                                                                           |
+| Servers              | `server.probe`, `server.add`, `server.enroll_start`, `server.enroll_token`, `server.enroll_complete`, `server.update`, `server.delete`, `server.reinstall_helper`, `server.accept_host_key`, `server.host_key_mismatch`, `server.read_logs`, `server.exposure`                    |
+| Operations           | `run.start`, `service.<action>`, `container.<action>`, `container.update`                                                                                                                                                                                                         |
+| Settings             | `group.*`, `alert_rule.update`, `channel.*`, `cert.add`, `cert.delete`, `token.create`, `token.revoke`, `digest.sent`, `incident.acknowledge`, `incident.snooze`, `key.label`, `key.baseline`, `maintenance.create`, `maintenance.delete`                                         |
 | Teams and sharing    | `team.create`, `team.update`, `team.delete`, `team.add_member`, `team.remove_member`, `member.role`, `member.remove`, `member.leave`, `invite.create`, `invite.revoke`, `invite.accept`, `share.link_create`, `share.link_revoke`, `share.accept`, `share.update`, `share.remove` |
 
 When someone acts on a server through a share, the entry goes to the owning account with `via_account_id`, and a copy goes to the caller's account with `owner_account_id`. Reading logs is recorded too, because logs can hold secrets.

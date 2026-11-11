@@ -102,7 +102,8 @@ func toServer(v fleet.ServerView) Server {
 		s.Exposure = &Exposure{
 			CheckedAt: ex.CheckedAt, AttemptedAt: ex.AttemptedAt, Ready: ex.Ready,
 			PublicPorts: nonNil(ex.PublicPorts), ListeningOnAllInterfaces: nonNil(ex.ListeningOnAllInterfaces),
-			PasswordAuth: ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
+			SpecificBinds: nonNil(ex.SpecificBinds),
+			PasswordAuth:  ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
 			PermitEmptyPasswords: ex.PermitEmptyPasswords, PubkeyAuth: ex.PubkeyAuth,
 			SshRead: ex.SSHRead, Firewall: ex.Firewall, ExtraRoot: ex.ExtraRoot, NoPasswordAll: ex.NoPasswordAll,
 			Uncovered: ex.Uncovered, Gaps: nonNil(ex.Gaps),

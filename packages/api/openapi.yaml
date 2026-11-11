@@ -992,6 +992,74 @@ paths:
           description: Saved
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/key-baseline:
+    parameters:
+      - { name: serverId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: approveKeyBaseline
+      summary: Approve the keys currently recorded on this server
+      tags: [fleet]
+      responses:
+        '204':
+          description: Saved. Later scans report drift. This does not change the server.
+        default: { $ref: '#/components/responses/Error' }
+
+  /offboarding:
+    get:
+      operationId: offboarding
+      summary: Keys with this name from the files a current helper has read
+      tags: [fleet]
+      parameters:
+        - { name: label, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Matches, plus what this check does not cover
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offboarding' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /maintenance:
+    get:
+      operationId: listMaintenance
+      summary: Windows that quiet ordinary notifications
+      tags: [alerts]
+      responses:
+        '200':
+          description: Windows that have not ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createMaintenance
+      summary: Quiet ordinary notifications for at most 7 days
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaintenanceRequest' }
+      responses:
+        '201':
+          description: The window
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceWindow' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /maintenance/{windowId}:
+    parameters:
+      - { name: windowId, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      operationId: deleteMaintenance
+      summary: Remove a maintenance window
+      tags: [alerts]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
   /incidents:
     get:
       operationId: listIncidents
@@ -1705,7 +1773,7 @@ components:
 
     Exposure:
       type: object
-      required: [checkedAt, attemptedAt, ready, publicPorts, listeningOnAllInterfaces, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered, gaps]
+      required: [checkedAt, attemptedAt, ready, publicPorts, listeningOnAllInterfaces, specificBinds, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered, gaps]
       properties:
         checkedAt: { type: string, format: date-time, description: When this summary was last collected successfully. }
         attemptedAt: { type: string, format: date-time, description: When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged. }
@@ -1718,6 +1786,10 @@ components:
           type: array
           items: { type: string }
           description: 'Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified.'
+        specificBinds:
+          type: array
+          items: { type: string }
+          description: 'Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot.'
         passwordAuth: { type: boolean }
         permitRootLogin: { type: string }
         permitEmptyPasswords: { type: boolean }
@@ -1758,6 +1830,40 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Key' } }
+
+    Offboarding:
+      type: object
+      required: [statement, items]
+      properties:
+        statement: { type: string, description: What this list does not prove. }
+        items: { type: array, items: { $ref: '#/components/schemas/Key' } }
+
+    MaintenanceWindow:
+      type: object
+      required: [id, reason, startsAt, endsAt]
+      properties:
+        id: { type: integer, format: int64 }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverId: { type: integer, format: int64, nullable: true }
+        reason: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+
+    MaintenanceList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MaintenanceWindow' } }
+
+    MaintenanceRequest:
+      type: object
+      required: [reason, startsAt, endsAt]
+      properties:
+        reason: { type: string, maxLength: 200 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverId: { type: integer, format: int64, nullable: true }
 
     KeyLabelRequest:
       type: object

@@ -883,6 +883,9 @@ type Exposure struct {
 	// Ready False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result.
 	Ready bool `json:"ready"`
 
+	// SpecificBinds Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot.
+	SpecificBinds []string `json:"specificBinds"`
+
 	// SshRead True when sshd -T was read. pubkeyAuth is meaningful only then.
 	SshRead bool `json:"sshRead"`
 
@@ -1106,6 +1109,30 @@ type Login struct {
 // LoginRecord defines model for LoginRecord.
 type LoginRecord = proto.Login
 
+// MaintenanceList defines model for MaintenanceList.
+type MaintenanceList struct {
+	Items []MaintenanceWindow `json:"items"`
+}
+
+// MaintenanceRequest defines model for MaintenanceRequest.
+type MaintenanceRequest struct {
+	EndsAt   time.Time `json:"endsAt"`
+	GroupId  *int64    `json:"groupId,omitempty"`
+	Reason   string    `json:"reason"`
+	ServerId *int64    `json:"serverId,omitempty"`
+	StartsAt time.Time `json:"startsAt"`
+}
+
+// MaintenanceWindow defines model for MaintenanceWindow.
+type MaintenanceWindow struct {
+	EndsAt   time.Time `json:"endsAt"`
+	GroupId  *int64    `json:"groupId,omitempty"`
+	Id       int64     `json:"id"`
+	Reason   string    `json:"reason"`
+	ServerId *int64    `json:"serverId,omitempty"`
+	StartsAt time.Time `json:"startsAt"`
+}
+
 // Me defines model for Me.
 type Me struct {
 	Account  AccountMembership   `json:"account"`
@@ -1159,6 +1186,14 @@ type MetricsResponse struct {
 
 // NetIf defines model for NetIf.
 type NetIf = proto.NetIf
+
+// Offboarding defines model for Offboarding.
+type Offboarding struct {
+	Items []Key `json:"items"`
+
+	// Statement What this list does not prove.
+	Statement string `json:"statement"`
+}
 
 // Organization defines model for Organization.
 type Organization struct {
@@ -1592,6 +1627,11 @@ type SnoozeIncidentJSONBody struct {
 	Until  time.Time `json:"until"`
 }
 
+// OffboardingParams defines parameters for Offboarding.
+type OffboardingParams struct {
+	Label string `form:"label" json:"label"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1661,6 +1701,9 @@ type SnoozeIncidentJSONRequestBody SnoozeIncidentJSONBody
 
 // LabelKeyJSONRequestBody defines body for LabelKey for application/json ContentType.
 type LabelKeyJSONRequestBody = KeyLabelRequest
+
+// CreateMaintenanceJSONRequestBody defines body for CreateMaintenance for application/json ContentType.
+type CreateMaintenanceJSONRequestBody = MaintenanceRequest
 
 // SwitchAccountJSONRequestBody defines body for SwitchAccount for application/json ContentType.
 type SwitchAccountJSONRequestBody = SwitchAccountRequest
@@ -2032,6 +2075,30 @@ type ClientInterface interface {
 	// Corresponds with PUT /keys (the `LabelKey` operationId).
 	LabelKey(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListMaintenance Windows that quiet ordinary notifications
+	//
+	// Corresponds with GET /maintenance (the `ListMaintenance` operationId).
+	ListMaintenance(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMaintenanceWithBody Quiet ordinary notifications for at most 7 days
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+	CreateMaintenanceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateMaintenance Quiet ordinary notifications for at most 7 days
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+	CreateMaintenance(ctx context.Context, body CreateMaintenanceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMaintenance Remove a maintenance window
+	//
+	// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
+	DeleteMaintenance(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetMe The signed-in user and their current account
 	//
 	// Corresponds with GET /me (the `GetMe` operationId).
@@ -2050,6 +2117,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /me/account (the `SwitchAccount` operationId).
 	SwitchAccount(ctx context.Context, body SwitchAccountJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Offboarding Keys with this name from the files a current helper has read
+	//
+	// Corresponds with GET /offboarding (the `Offboarding` operationId).
+	Offboarding(ctx context.Context, params *OffboardingParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteOrganization Delete the current organization with its servers, groups and history (owners only; not the personal space)
 	//
@@ -2349,6 +2421,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/jobs (the `GetServerJobs` operationId).
 	GetServerJobs(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	//
+	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+	ApproveKeyBaseline(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -3089,6 +3166,70 @@ func (c *Client) LabelKey(ctx context.Context, body LabelKeyJSONRequestBody, req
 	return c.Client.Do(req)
 }
 
+// ListMaintenance Windows that quiet ordinary notifications
+//
+// Corresponds with GET /maintenance (the `ListMaintenance` operationId).
+func (c *Client) ListMaintenance(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMaintenanceRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMaintenanceWithBody Quiet ordinary notifications for at most 7 days
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+func (c *Client) CreateMaintenanceWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMaintenanceRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateMaintenance Quiet ordinary notifications for at most 7 days
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+func (c *Client) CreateMaintenance(ctx context.Context, body CreateMaintenanceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateMaintenanceRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMaintenance Remove a maintenance window
+//
+// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
+func (c *Client) DeleteMaintenance(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMaintenanceRequest(c.Server, windowId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetMe The signed-in user and their current account
 //
 // Corresponds with GET /me (the `GetMe` operationId).
@@ -3128,6 +3269,21 @@ func (c *Client) SwitchAccountWithBody(ctx context.Context, contentType string, 
 // Corresponds with PUT /me/account (the `SwitchAccount` operationId).
 func (c *Client) SwitchAccount(ctx context.Context, body SwitchAccountJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSwitchAccountRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Offboarding Keys with this name from the files a current helper has read
+//
+// Corresponds with GET /offboarding (the `Offboarding` operationId).
+func (c *Client) Offboarding(ctx context.Context, params *OffboardingParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOffboardingRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3897,6 +4053,21 @@ func (c *Client) AcceptHostKey(ctx context.Context, serverId ServerId, body Acce
 // Corresponds with GET /servers/{serverId}/jobs (the `GetServerJobs` operationId).
 func (c *Client) GetServerJobs(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerJobsRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveKeyBaseline Approve the keys currently recorded on this server
+//
+// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveKeyBaselineRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
 	}
@@ -5319,6 +5490,107 @@ func NewLabelKeyRequestWithBody(server string, contentType string, body io.Reade
 	return req, nil
 }
 
+// NewListMaintenanceRequest constructs an http.Request for the ListMaintenance method
+func NewListMaintenanceRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/maintenance")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateMaintenanceRequest calls the generic CreateMaintenance builder with application/json body
+func NewCreateMaintenanceRequest(server string, body CreateMaintenanceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateMaintenanceRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateMaintenanceRequestWithBody constructs an http.Request for the CreateMaintenance method, with any body, and a specified content type
+func NewCreateMaintenanceRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/maintenance")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteMaintenanceRequest constructs an http.Request for the DeleteMaintenance method
+func NewDeleteMaintenanceRequest(server string, windowId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "windowId", windowId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/maintenance/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetMeRequest constructs an http.Request for the GetMe method
 func NewGetMeRequest(server string) (*http.Request, error) {
 	var err error
@@ -5382,6 +5654,56 @@ func NewSwitchAccountRequestWithBody(server string, contentType string, body io.
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewOffboardingRequest constructs an http.Request for the Offboarding method
+func NewOffboardingRequest(server string, params *OffboardingParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/offboarding")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "label", params.Label, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -6745,6 +7067,40 @@ func NewGetServerJobsRequest(server string, serverId ServerId) (*http.Request, e
 	return req, nil
 }
 
+// NewApproveKeyBaselineRequest constructs an http.Request for the ApproveKeyBaseline method
+func NewApproveKeyBaselineRequest(server string, serverId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/key-baseline", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetServerLogsRequest constructs an http.Request for the GetServerLogs method
 func NewGetServerLogsRequest(server string, serverId ServerId, params *GetServerLogsParams) (*http.Request, error) {
 	var err error
@@ -7639,6 +7995,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /keys (the `LabelKey` operationId).
 	LabelKeyWithResponse(ctx context.Context, body LabelKeyJSONRequestBody, reqEditors ...RequestEditorFn) (*LabelKeyResponse, error)
 
+	// ListMaintenanceWithResponse Windows that quiet ordinary notifications
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /maintenance (the `ListMaintenance` operationId).
+	ListMaintenanceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMaintenanceResponse, error)
+
+	// CreateMaintenanceWithBodyWithResponse Quiet ordinary notifications for at most 7 days
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+	CreateMaintenanceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMaintenanceResponse, error)
+
+	// CreateMaintenanceWithResponse Quiet ordinary notifications for at most 7 days
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+	CreateMaintenanceWithResponse(ctx context.Context, body CreateMaintenanceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMaintenanceResponse, error)
+
+	// DeleteMaintenanceWithResponse Remove a maintenance window
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
+	DeleteMaintenanceWithResponse(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error)
+
 	// GetMeWithResponse The signed-in user and their current account
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -7659,6 +8043,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /me/account (the `SwitchAccount` operationId).
 	SwitchAccountWithResponse(ctx context.Context, body SwitchAccountJSONRequestBody, reqEditors ...RequestEditorFn) (*SwitchAccountResponse, error)
+
+	// OffboardingWithResponse Keys with this name from the files a current helper has read
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /offboarding (the `Offboarding` operationId).
+	OffboardingWithResponse(ctx context.Context, params *OffboardingParams, reqEditors ...RequestEditorFn) (*OffboardingResponse, error)
 
 	// DeleteOrganizationWithResponse Delete the current organization with its servers, groups and history (owners only; not the personal space)
 	//
@@ -7996,6 +8387,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/jobs (the `GetServerJobs` operationId).
 	GetServerJobsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerJobsResponse, error)
+
+	// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+	ApproveKeyBaselineWithResponse(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
 
 	// GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -9549,6 +9947,143 @@ func (r LabelKeyResponse) ContentType() string {
 	return ""
 }
 
+type ListMaintenanceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MaintenanceList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMaintenanceResponse) GetJSON200() *MaintenanceList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListMaintenanceResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMaintenanceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMaintenanceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMaintenanceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMaintenanceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateMaintenanceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *MaintenanceWindow
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateMaintenanceResponse) GetJSON201() *MaintenanceWindow {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateMaintenanceResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateMaintenanceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateMaintenanceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateMaintenanceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateMaintenanceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteMaintenanceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteMaintenanceResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteMaintenanceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteMaintenanceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteMaintenanceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteMaintenanceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetMeResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9639,6 +10174,54 @@ func (r SwitchAccountResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SwitchAccountResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OffboardingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Offboarding
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OffboardingResponse) GetJSON200() *Offboarding {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r OffboardingResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OffboardingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OffboardingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OffboardingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OffboardingResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -11187,6 +11770,47 @@ func (r GetServerJobsResponse) ContentType() string {
 	return ""
 }
 
+type ApproveKeyBaselineResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ApproveKeyBaselineResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ApproveKeyBaselineResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ApproveKeyBaselineResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApproveKeyBaselineResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ApproveKeyBaselineResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerLogsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -12330,6 +12954,58 @@ func (c *ClientWithResponses) LabelKeyWithResponse(ctx context.Context, body Lab
 	return ParseLabelKeyResponse(rsp)
 }
 
+// ListMaintenanceWithResponse Windows that quiet ordinary notifications
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /maintenance (the `ListMaintenance` operationId).
+func (c *ClientWithResponses) ListMaintenanceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListMaintenanceResponse, error) {
+	rsp, err := c.ListMaintenance(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMaintenanceResponse(rsp)
+}
+
+// CreateMaintenanceWithBodyWithResponse Quiet ordinary notifications for at most 7 days
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+func (c *ClientWithResponses) CreateMaintenanceWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateMaintenanceResponse, error) {
+	rsp, err := c.CreateMaintenanceWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMaintenanceResponse(rsp)
+}
+
+// CreateMaintenanceWithResponse Quiet ordinary notifications for at most 7 days
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /maintenance (the `CreateMaintenance` operationId).
+func (c *ClientWithResponses) CreateMaintenanceWithResponse(ctx context.Context, body CreateMaintenanceJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateMaintenanceResponse, error) {
+	rsp, err := c.CreateMaintenance(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateMaintenanceResponse(rsp)
+}
+
+// DeleteMaintenanceWithResponse Remove a maintenance window
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
+func (c *ClientWithResponses) DeleteMaintenanceWithResponse(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error) {
+	rsp, err := c.DeleteMaintenance(ctx, windowId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMaintenanceResponse(rsp)
+}
+
 // GetMeWithResponse The signed-in user and their current account
 //
 // Returns a wrapper object for the known response body format(s).
@@ -12367,6 +13043,19 @@ func (c *ClientWithResponses) SwitchAccountWithResponse(ctx context.Context, bod
 		return nil, err
 	}
 	return ParseSwitchAccountResponse(rsp)
+}
+
+// OffboardingWithResponse Keys with this name from the files a current helper has read
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /offboarding (the `Offboarding` operationId).
+func (c *ClientWithResponses) OffboardingWithResponse(ctx context.Context, params *OffboardingParams, reqEditors ...RequestEditorFn) (*OffboardingResponse, error) {
+	rsp, err := c.Offboarding(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOffboardingResponse(rsp)
 }
 
 // DeleteOrganizationWithResponse Delete the current organization with its servers, groups and history (owners only; not the personal space)
@@ -12986,6 +13675,19 @@ func (c *ClientWithResponses) GetServerJobsWithResponse(ctx context.Context, ser
 		return nil, err
 	}
 	return ParseGetServerJobsResponse(rsp)
+}
+
+// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+func (c *ClientWithResponses) ApproveKeyBaselineWithResponse(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
+	rsp, err := c.ApproveKeyBaseline(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveKeyBaselineResponse(rsp)
 }
 
 // GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
@@ -14182,6 +14884,101 @@ func ParseLabelKeyResponse(rsp *http.Response) (*LabelKeyResponse, error) {
 	return response, nil
 }
 
+// ParseListMaintenanceResponse parses an HTTP response from a ListMaintenanceWithResponse call
+func ParseListMaintenanceResponse(rsp *http.Response) (*ListMaintenanceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMaintenanceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MaintenanceList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateMaintenanceResponse parses an HTTP response from a CreateMaintenanceWithResponse call
+func ParseCreateMaintenanceResponse(rsp *http.Response) (*CreateMaintenanceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateMaintenanceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MaintenanceWindow
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteMaintenanceResponse parses an HTTP response from a DeleteMaintenanceWithResponse call
+func ParseDeleteMaintenanceResponse(rsp *http.Response) (*DeleteMaintenanceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteMaintenanceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetMeResponse parses an HTTP response from a GetMeWithResponse call
 func ParseGetMeResponse(rsp *http.Response) (*GetMeResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -14231,6 +15028,39 @@ func ParseSwitchAccountResponse(rsp *http.Response) (*SwitchAccountResponse, err
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Me
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOffboardingResponse parses an HTTP response from a OffboardingWithResponse call
+func ParseOffboardingResponse(rsp *http.Response) (*OffboardingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OffboardingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Offboarding
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -15300,6 +16130,35 @@ func ParseGetServerJobsResponse(rsp *http.Response) (*GetServerJobsResponse, err
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseApproveKeyBaselineResponse parses an HTTP response from a ApproveKeyBaselineWithResponse call
+func ParseApproveKeyBaselineResponse(rsp *http.Response) (*ApproveKeyBaselineResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApproveKeyBaselineResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

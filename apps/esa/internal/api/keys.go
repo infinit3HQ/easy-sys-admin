@@ -32,6 +32,29 @@ func (h *Handlers) LabelKey(ctx context.Context, req LabelKeyRequestObject) (Lab
 	return LabelKey204Response{}, nil
 }
 
+func (h *Handlers) ApproveKeyBaseline(ctx context.Context, req ApproveKeyBaselineRequestObject) (ApproveKeyBaselineResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.fleet.ApproveKeyBaseline(ctx, a, req.ServerId); err != nil {
+		return nil, err
+	}
+	return ApproveKeyBaseline204Response{}, nil
+}
+
+func (h *Handlers) Offboarding(ctx context.Context, req OffboardingRequestObject) (OffboardingResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	statement, items, err := h.fleet.Offboarding(ctx, a, req.Params.Label)
+	if err != nil {
+		return nil, err
+	}
+	return Offboarding200JSONResponse{Statement: statement, Items: mapSlice(items, toKey)}, nil
+}
+
 func toKey(v fleet.KeyView) Key {
 	uses := make([]KeyOccurrence, 0, len(v.Uses))
 	for _, u := range v.Uses {

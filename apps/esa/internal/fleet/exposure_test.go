@@ -28,6 +28,7 @@ func TestSummarizeExposure(t *testing.T) {
 			{Proto: "tcp6", Port: 22, Exposure: "all"},
 			{Proto: "tcp", Port: 443, Exposure: "all"},
 			{Proto: "tcp", Port: 53, Exposure: "local"},
+			{Proto: "tcp", Port: 5432, Address: "10.0.0.5", Exposure: "other"},
 		},
 	}
 	ex := summarizeExposure(access, sec, at)
@@ -36,6 +37,9 @@ func TestSummarizeExposure(t *testing.T) {
 	}
 	if len(ex.PublicPorts) != 2 || ex.PublicPorts[0] != "22/tcp" || ex.PublicPorts[1] != "443/tcp" {
 		t.Fatalf("ports: %+v", ex.PublicPorts)
+	}
+	if len(ex.SpecificBinds) != 1 || ex.SpecificBinds[0] != "10.0.0.5 5432/tcp" {
+		t.Fatalf("specific binds: %+v", ex.SpecificBinds)
 	}
 	oldRev := summarizeExposure(proto.AccessReport{Revision: 1}, proto.SecurityReport{Revision: 1}, at)
 	if oldRev.Ready {

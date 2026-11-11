@@ -841,6 +841,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/key-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve the keys currently recorded on this server */
+        post: operations["approveKeyBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/offboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Keys with this name from the files a current helper has read */
+        get: operations["offboarding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Windows that quiet ordinary notifications */
+        get: operations["listMaintenance"];
+        put?: never;
+        /** Quiet ordinary notifications for at most 7 days */
+        post: operations["createMaintenance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance/{windowId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                windowId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a maintenance window */
+        delete: operations["deleteMaintenance"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incidents": {
         parameters: {
             query?: never;
@@ -1425,6 +1498,8 @@ export interface components {
             publicPorts: string[];
             /** @description Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified. */
             listeningOnAllInterfaces: string[];
+            /** @description Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot. */
+            specificBinds: string[];
             passwordAuth: boolean;
             permitRootLogin: string;
             permitEmptyPasswords: boolean;
@@ -1462,6 +1537,38 @@ export interface components {
         };
         KeyList: {
             items: components["schemas"]["Key"][];
+        };
+        Offboarding: {
+            /** @description What this list does not prove. */
+            statement: string;
+            items: components["schemas"]["Key"][];
+        };
+        MaintenanceWindow: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** Format: int64 */
+            serverId?: number | null;
+            reason: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+        };
+        MaintenanceList: {
+            items: components["schemas"]["MaintenanceWindow"][];
+        };
+        MaintenanceRequest: {
+            reason: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** Format: int64 */
+            serverId?: number | null;
         };
         KeyLabelRequest: {
             fingerprint: string;
@@ -3676,6 +3783,117 @@ export interface operations {
         };
         responses: {
             /** @description Saved */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveKeyBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saved. Later scans report drift. This does not change the server. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    offboarding: {
+        parameters: {
+            query: {
+                label: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matches, plus what this check does not cover */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Offboarding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Windows that have not ended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceRequest"];
+            };
+        };
+        responses: {
+            /** @description The window */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceWindow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                windowId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
             204: {
                 headers: {
                     [name: string]: unknown;

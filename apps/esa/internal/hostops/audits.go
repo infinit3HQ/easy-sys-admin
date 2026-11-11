@@ -537,7 +537,10 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 			}
 			rep.Listening = append(rep.Listening, row.Listener)
 		}
-		attachContainers(rep.Listening, h.publishedContainers(ctx))
+		published := h.publishedContainers(ctx)
+		attachContainers(rep.Listening, published)
+		rep.Listening = addMissingPublications(rep.Listening, published)
+		markDockerUnknown(rep.Listening, published)
 	}
 
 	switch {
@@ -732,6 +735,55 @@ func appendName(names []string, name string) []string {
 		}
 	}
 	return append(names, name)
+}
+
+// markDockerUnknown refuses to treat a ufw rule as protection for a port
+// Docker publishes. Published bridge traffic can skip ufw's input rules.
+func markDockerUnknown(ls []proto.Listener, published map[string]string) {
+	if len(published) == 0 {
+		return
+	}
+	for i := range ls {
+		p := ls[i].Proto
+		switch {
+		case strings.HasPrefix(p, "tcp"):
+			p = "tcp"
+		case strings.HasPrefix(p, "udp"):
+			p = "udp"
+		}
+		if _, ok := published[strconv.Itoa(ls[i].Port)+"/"+p]; ok {
+			ls[i].UFW = "unknown"
+		}
+	}
+}
+
+func addMissingPublications(ls []proto.Listener, published map[string]string) []proto.Listener {
+	have := map[string]bool{}
+	for _, l := range ls {
+		p := l.Proto
+		switch {
+		case strings.HasPrefix(p, "tcp"):
+			p = "tcp"
+		case strings.HasPrefix(p, "udp"):
+			p = "udp"
+		}
+		have[strconv.Itoa(l.Port)+"/"+p] = true
+	}
+	for key, name := range published {
+		if have[key] {
+			continue
+		}
+		portText, protoName, _ := strings.Cut(key, "/")
+		port, err := strconv.Atoi(portText)
+		if err != nil {
+			continue
+		}
+		ls = append(ls, proto.Listener{
+			Proto: protoName, Address: "0.0.0.0", Port: port, Process: "docker",
+			Container: name, Exposure: "all", UFW: "unknown",
+		})
+	}
+	return ls
 }
 
 func attachContainers(ls []proto.Listener, published map[string]string) {

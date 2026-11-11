@@ -141,6 +141,17 @@ export const q = {
       queryKey: ['keys'],
       queryFn: () => call(api().GET('/keys')),
     }),
+  offboarding: (label: string) =>
+    queryOptions({
+      queryKey: ['offboarding', label],
+      queryFn: () =>
+        call(api().GET('/offboarding', { params: { query: { label } } })),
+    }),
+  maintenance: () =>
+    queryOptions({
+      queryKey: ['maintenance'],
+      queryFn: () => call(api().GET('/maintenance')),
+    }),
   incidents: (includeAcknowledged = false) =>
     queryOptions({
       queryKey: ['incidents', includeAcknowledged],
