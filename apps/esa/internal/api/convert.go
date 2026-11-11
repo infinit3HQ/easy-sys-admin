@@ -186,6 +186,13 @@ func toAlert(a fleet.AlertView) Alert {
 	}
 }
 
+func toIncident(v fleet.IncidentView) Incident {
+	return Incident{
+		Id: v.ID, ServerId: v.ServerID, ServerName: v.ServerName, Kind: v.Kind, Subject: v.Subject,
+		State: IncidentState(v.State), Message: v.Message, FirstSeen: v.FirstSeen, LastSeen: v.LastSeen, AckedAt: v.AckedAt,
+	}
+}
+
 func toAlertRule(r fleet.AlertRuleView) AlertRule {
 	return AlertRule{Id: r.ID, Kind: AlertRuleKind(r.Kind), Enabled: r.Enabled, Threshold: r.Threshold, ForMinutes: r.ForMinutes}
 }

@@ -136,6 +136,16 @@ export const q = {
       refetchInterval: (query) =>
         query.state.data?.status === 'running' ? 3000 : false,
     }),
+  incidents: (includeAcknowledged = false) =>
+    queryOptions({
+      queryKey: ['incidents', includeAcknowledged],
+      queryFn: () =>
+        call(
+          api().GET('/incidents', {
+            params: { query: { includeAcknowledged } },
+          }),
+        ),
+    }),
   alerts: (all = false) =>
     queryOptions({
       queryKey: ['alerts', all],

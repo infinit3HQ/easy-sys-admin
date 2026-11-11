@@ -1,13 +1,65 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { SettingsIcon } from 'lucide-react'
+import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
 import { Empty, PageHeader, Severity, Toggle, cn } from '#/components/kit'
 import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
+import { useRole } from '../route'
 import { Card } from '#/components/ui/card'
+
+function NeedsReview() {
+  const qc = useQueryClient()
+  const { canAct } = useRole()
+  const incidents = useQuery(q.incidents(false))
+  const ack = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().POST('/incidents/{incidentId}/acknowledge', {
+          params: { path: { incidentId: id } },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
+  })
+  const items = incidents.data?.items ?? []
+  if (items.length === 0) return null
+  return (
+    <Card className="mb-6">
+      <div className="label px-4 pt-4">Needs review</div>
+      <ul className="divide-y divide-line">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="text-sm break-words text-ink">{item.message}</div>
+              <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
+                {item.kind} · {item.serverName} · <Ago iso={item.lastSeen} />
+              </div>
+            </div>
+            {canAct && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => ack.mutate(item.id)}
+                busy={ack.isPending}
+              >
+                Reviewed
+              </Button>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="px-4 pb-4 text-xs text-muted-foreground">
+        Marking a notice reviewed does not change the server.
+      </p>
+    </Card>
+  )
+}
 
 export const Route = createFileRoute('/app/alerts/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(q.alerts(false)),
@@ -21,6 +73,7 @@ function Alerts() {
   const items = alerts.data?.items ?? []
   return (
     <div>
+      <NeedsReview />
       <PageHeader kicker="Signals" title="Alerts">
         <div className="flex flex-wrap items-center gap-3">
           <Toggle checked={all} onChange={setAll} label="Include resolved" />

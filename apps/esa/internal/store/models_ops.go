@@ -80,6 +80,27 @@ type Alert struct {
 	Server  *Server   `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// SecurityIncident is one reviewable security notice. Acknowledgement means
+// a person has seen it. It does not mean the condition was fixed, and it
+// does not change the server.
+type SecurityIncident struct {
+	ID        int64  `gorm:"primaryKey"`
+	AccountID int64  `gorm:"not null;uniqueIndex:security_incidents_key,priority:1"`
+	ServerID  int64  `gorm:"not null;uniqueIndex:security_incidents_key,priority:2"`
+	Kind      string `gorm:"not null;size:40;uniqueIndex:security_incidents_key,priority:3"`
+	Subject   string `gorm:"not null;size:200;uniqueIndex:security_incidents_key,priority:4"`
+	// State is open or acknowledged.
+	State     string    `gorm:"not null;default:'open'"`
+	Message   string    `gorm:"not null"`
+	FirstSeen time.Time `gorm:"not null"`
+	LastSeen  time.Time `gorm:"not null"`
+	AckedBy   *int64
+	AckedAt   *time.Time
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // NotifyChannel is where alerts are sent. ConfigEnc holds the URL, token,
 // or SMTP settings, sealed with crypto.Box.
 type NotifyChannel struct {

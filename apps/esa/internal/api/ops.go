@@ -150,6 +150,30 @@ func (h *Handlers) GetRun(ctx context.Context, req GetRunRequestObject) (GetRunR
 
 // ---- Alerts ------------------------------------------------------------------------
 
+func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestObject) (ListIncidentsResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.fleet.ListIncidents(ctx, a, deref(req.Params.IncludeAcknowledged))
+	if err != nil {
+		return nil, err
+	}
+	return ListIncidents200JSONResponse{Items: mapSlice(items, toIncident)}, nil
+}
+
+func (h *Handlers) AcknowledgeIncident(ctx context.Context, req AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := h.fleet.AcknowledgeIncident(ctx, a, req.IncidentId)
+	if err != nil {
+		return nil, err
+	}
+	return AcknowledgeIncident200JSONResponse(toIncident(v)), nil
+}
+
 func (h *Handlers) ListAlerts(ctx context.Context, req ListAlertsRequestObject) (ListAlertsResponseObject, error) {
 	a, err := actor(ctx)
 	if err != nil {

@@ -220,6 +220,24 @@ func (e GroupAccess) Valid() bool {
 	}
 }
 
+// Defines values for IncidentState.
+const (
+	Acknowledged IncidentState = "acknowledged"
+	Open         IncidentState = "open"
+)
+
+// Valid indicates whether the value is a known member of the IncidentState enum.
+func (e IncidentState) Valid() bool {
+	switch e {
+	case Acknowledged:
+		return true
+	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin  Role = "admin"
@@ -965,6 +983,28 @@ type ImageCheckList struct {
 	Items []ImageCheck `json:"items"`
 }
 
+// Incident defines model for Incident.
+type Incident struct {
+	AckedAt    *time.Time    `json:"ackedAt,omitempty"`
+	FirstSeen  time.Time     `json:"firstSeen"`
+	Id         int64         `json:"id"`
+	Kind       string        `json:"kind"`
+	LastSeen   time.Time     `json:"lastSeen"`
+	Message    string        `json:"message"`
+	ServerId   int64         `json:"serverId"`
+	ServerName string        `json:"serverName"`
+	State      IncidentState `json:"state"`
+	Subject    string        `json:"subject"`
+}
+
+// IncidentState defines model for Incident.State.
+type IncidentState string
+
+// IncidentList defines model for IncidentList.
+type IncidentList struct {
+	Items []Incident `json:"items"`
+}
+
 // Invite defines model for Invite.
 type Invite struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -1500,6 +1540,11 @@ type ListAlertsParams struct {
 	Limit *int  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListIncidentsParams defines parameters for ListIncidents.
+type ListIncidentsParams struct {
+	IncludeAcknowledged *bool `form:"includeAcknowledged,omitempty" json:"includeAcknowledged,omitempty"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1880,6 +1925,16 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 	ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListIncidents Security notices that still need a person to look at them
+	//
+	// Corresponds with GET /incidents (the `ListIncidents` operationId).
+	ListIncidents(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
+	//
+	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
+	AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInvite What an invite link offers, for the signed-in user
 	//
@@ -2795,6 +2850,36 @@ func (c *Client) CreateShareLink(ctx context.Context, groupId GroupId, body Crea
 // Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 func (c *Client) ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListGroupSharesRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListIncidents Security notices that still need a person to look at them
+//
+// Corresponds with GET /incidents (the `ListIncidents` operationId).
+func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIncidentsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
+//
+// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
+func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAcknowledgeIncidentRequest(c.Server, incidentId)
 	if err != nil {
 		return nil, err
 	}
@@ -4788,6 +4873,94 @@ func NewListGroupSharesRequest(server string, groupId GroupId) (*http.Request, e
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListIncidentsRequest constructs an http.Request for the ListIncidents method
+func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/incidents")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IncludeAcknowledged != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "includeAcknowledged", *params.IncludeAcknowledged, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAcknowledgeIncidentRequest constructs an http.Request for the AcknowledgeIncident method
+func NewAcknowledgeIncidentRequest(server string, incidentId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "incidentId", incidentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/incidents/%s/acknowledge", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -7120,6 +7293,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 	ListGroupSharesWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListGroupSharesResponse, error)
 
+	// ListIncidentsWithResponse Security notices that still need a person to look at them
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /incidents (the `ListIncidents` operationId).
+	ListIncidentsWithResponse(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*ListIncidentsResponse, error)
+
+	// AcknowledgeIncidentWithResponse Record that a person has reviewed this notice. This does not change the server.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
+	AcknowledgeIncidentWithResponse(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error)
+
 	// GetInviteWithResponse What an invite link offers, for the signed-in user
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -8709,6 +8896,102 @@ func (r ListGroupSharesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListGroupSharesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListIncidentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IncidentList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListIncidentsResponse) GetJSON200() *IncidentList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListIncidentsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListIncidentsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIncidentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIncidentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListIncidentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AcknowledgeIncidentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Incident
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AcknowledgeIncidentResponse) GetJSON200() *Incident {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AcknowledgeIncidentResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AcknowledgeIncidentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AcknowledgeIncidentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AcknowledgeIncidentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AcknowledgeIncidentResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -11475,6 +11758,32 @@ func (c *ClientWithResponses) ListGroupSharesWithResponse(ctx context.Context, g
 	return ParseListGroupSharesResponse(rsp)
 }
 
+// ListIncidentsWithResponse Security notices that still need a person to look at them
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /incidents (the `ListIncidents` operationId).
+func (c *ClientWithResponses) ListIncidentsWithResponse(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*ListIncidentsResponse, error) {
+	rsp, err := c.ListIncidents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIncidentsResponse(rsp)
+}
+
+// AcknowledgeIncidentWithResponse Record that a person has reviewed this notice. This does not change the server.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
+func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error) {
+	rsp, err := c.AcknowledgeIncident(ctx, incidentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAcknowledgeIncidentResponse(rsp)
+}
+
 // GetInviteWithResponse What an invite link offers, for the signed-in user
 //
 // Returns a wrapper object for the known response body format(s).
@@ -13109,6 +13418,72 @@ func ParseListGroupSharesResponse(rsp *http.Response) (*ListGroupSharesResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest GroupShareList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListIncidentsResponse parses an HTTP response from a ListIncidentsWithResponse call
+func ParseListIncidentsResponse(rsp *http.Response) (*ListIncidentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIncidentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IncidentList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAcknowledgeIncidentResponse parses an HTTP response from a AcknowledgeIncidentWithResponse call
+func ParseAcknowledgeIncidentResponse(rsp *http.Response) (*AcknowledgeIncidentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AcknowledgeIncidentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Incident
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

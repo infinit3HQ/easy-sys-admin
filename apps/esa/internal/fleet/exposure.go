@@ -360,6 +360,7 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 			s.log.Error("open alert", "err", err)
 			return
 		}
+		s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg)
 		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al)})
 	}
 	for _, item := range send {

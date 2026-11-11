@@ -823,6 +823,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Security notices that still need a person to look at them */
+        get: operations["listIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that a person has reviewed this notice. This does not change the server. */
+        post: operations["acknowledgeIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alerts": {
         parameters: {
             query?: never;
@@ -1965,6 +2001,27 @@ export interface components {
         };
         AlertList: {
             items: components["schemas"]["Alert"][];
+        };
+        Incident: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            serverName: string;
+            kind: string;
+            subject: string;
+            /** @enum {string} */
+            state: "open" | "acknowledged";
+            message: string;
+            /** Format: date-time */
+            firstSeen: string;
+            /** Format: date-time */
+            lastSeen: string;
+            /** Format: date-time */
+            ackedAt?: string | null;
+        };
+        IncidentList: {
+            items: components["schemas"]["Incident"][];
         };
         AlertRule: {
             /** Format: int64 */
@@ -3512,6 +3569,52 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listIncidents: {
+        parameters: {
+            query?: {
+                includeAcknowledged?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incidents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acknowledgeIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
                 };
             };
             default: components["responses"]["Error"];

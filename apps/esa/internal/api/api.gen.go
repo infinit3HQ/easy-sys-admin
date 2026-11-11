@@ -220,6 +220,24 @@ func (e GroupAccess) Valid() bool {
 	}
 }
 
+// Defines values for IncidentState.
+const (
+	Acknowledged IncidentState = "acknowledged"
+	Open         IncidentState = "open"
+)
+
+// Valid indicates whether the value is a known member of the IncidentState enum.
+func (e IncidentState) Valid() bool {
+	switch e {
+	case Acknowledged:
+		return true
+	case Open:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin  Role = "admin"
@@ -965,6 +983,28 @@ type ImageCheckList struct {
 	Items []ImageCheck `json:"items"`
 }
 
+// Incident defines model for Incident.
+type Incident struct {
+	AckedAt    *time.Time    `json:"ackedAt,omitempty"`
+	FirstSeen  time.Time     `json:"firstSeen"`
+	Id         int64         `json:"id"`
+	Kind       string        `json:"kind"`
+	LastSeen   time.Time     `json:"lastSeen"`
+	Message    string        `json:"message"`
+	ServerId   int64         `json:"serverId"`
+	ServerName string        `json:"serverName"`
+	State      IncidentState `json:"state"`
+	Subject    string        `json:"subject"`
+}
+
+// IncidentState defines model for Incident.State.
+type IncidentState string
+
+// IncidentList defines model for IncidentList.
+type IncidentList struct {
+	Items []Incident `json:"items"`
+}
+
 // Invite defines model for Invite.
 type Invite struct {
 	CreatedAt time.Time `json:"createdAt"`
@@ -1500,6 +1540,11 @@ type ListAlertsParams struct {
 	Limit *int  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListIncidentsParams defines parameters for ListIncidents.
+type ListIncidentsParams struct {
+	IncludeAcknowledged *bool `form:"includeAcknowledged,omitempty" json:"includeAcknowledged,omitempty"`
+}
+
 // DeleteOrganizationParams defines parameters for DeleteOrganization.
 type DeleteOrganizationParams struct {
 	// Confirm The organization's exact name.
@@ -1689,6 +1734,12 @@ type ServerInterface interface {
 	// ListGroupShares Teams this group is shared with (admins of the owning team)
 	// (GET /groups/{groupId}/shares)
 	ListGroupShares(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// ListIncidents Security notices that still need a person to look at them
+	// (GET /incidents)
+	ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams)
+	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
+	// (POST /incidents/{incidentId}/acknowledge)
+	AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId int64)
 	// GetInvite What an invite link offers, for the signed-in user
 	// (GET /invites/{token})
 	GetInvite(w http.ResponseWriter, r *http.Request, token LinkToken)
@@ -2384,6 +2435,65 @@ func (siw *ServerInterfaceWrapper) ListGroupShares(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListGroupShares(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListIncidents operation middleware
+func (siw *ServerInterfaceWrapper) ListIncidents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListIncidentsParams
+
+	// ------------- Optional query parameter "includeAcknowledged" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "includeAcknowledged", r.URL.Query(), &params.IncludeAcknowledged, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "includeAcknowledged"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "includeAcknowledged", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIncidents(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcknowledgeIncident operation middleware
+func (siw *ServerInterfaceWrapper) AcknowledgeIncident(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "incidentId" -------------
+	var incidentId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "incidentId", r.PathValue("incidentId"), &incidentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "incidentId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcknowledgeIncident(w, r, incidentId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3887,6 +3997,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs", wrapper.ListRuns)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/runs", wrapper.StartRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents", wrapper.ListIncidents)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts", wrapper.ListAlerts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts/rules", wrapper.ListAlertRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/alerts/rules/{kind}", wrapper.UpdateAlertRule)
@@ -4803,6 +4915,84 @@ type ListGroupSharesdefaultJSONResponse struct {
 }
 
 func (response ListGroupSharesdefaultJSONResponse) VisitListGroupSharesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIncidentsRequestObject struct {
+	Params ListIncidentsParams
+}
+
+type ListIncidentsResponseObject interface {
+	VisitListIncidentsResponse(w http.ResponseWriter) error
+}
+
+type ListIncidents200JSONResponse IncidentList
+
+func (response ListIncidents200JSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIncidentsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListIncidentsdefaultJSONResponse) VisitListIncidentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcknowledgeIncidentRequestObject struct {
+	IncidentId int64 `json:"incidentId"`
+}
+
+type AcknowledgeIncidentResponseObject interface {
+	VisitAcknowledgeIncidentResponse(w http.ResponseWriter) error
+}
+
+type AcknowledgeIncident200JSONResponse Incident
+
+func (response AcknowledgeIncident200JSONResponse) VisitAcknowledgeIncidentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AcknowledgeIncidentdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AcknowledgeIncidentdefaultJSONResponse) VisitAcknowledgeIncidentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -6799,6 +6989,12 @@ type StrictServerInterface interface {
 	// ListGroupShares Teams this group is shared with (admins of the owning team)
 	// (GET /groups/{groupId}/shares)
 	ListGroupShares(ctx context.Context, request ListGroupSharesRequestObject) (ListGroupSharesResponseObject, error)
+	// ListIncidents Security notices that still need a person to look at them
+	// (GET /incidents)
+	ListIncidents(ctx context.Context, request ListIncidentsRequestObject) (ListIncidentsResponseObject, error)
+	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
+	// (POST /incidents/{incidentId}/acknowledge)
+	AcknowledgeIncident(ctx context.Context, request AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error)
 	// GetInvite What an invite link offers, for the signed-in user
 	// (GET /invites/{token})
 	GetInvite(ctx context.Context, request GetInviteRequestObject) (GetInviteResponseObject, error)
@@ -7645,6 +7841,58 @@ func (sh *strictHandler) ListGroupShares(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListGroupSharesResponseObject); ok {
 		if err := validResponse.VisitListGroupSharesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListIncidents operation middleware
+func (sh *strictHandler) ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams) {
+	var request ListIncidentsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListIncidents(ctx, request.(ListIncidentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListIncidents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListIncidentsResponseObject); ok {
+		if err := validResponse.VisitListIncidentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AcknowledgeIncident operation middleware
+func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId int64) {
+	var request AcknowledgeIncidentRequestObject
+
+	request.IncidentId = incidentId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AcknowledgeIncident(ctx, request.(AcknowledgeIncidentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AcknowledgeIncident")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AcknowledgeIncidentResponseObject); ok {
+		if err := validResponse.VisitAcknowledgeIncidentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
