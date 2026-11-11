@@ -159,6 +159,9 @@ func (s *Service) Access(ctx context.Context, a Actor, serverID int64) (proto.Ac
 	if out.SudoRules == nil {
 		out.SudoRules = []proto.SudoRule{}
 	}
+	if out.Gaps == nil {
+		out.Gaps = []string{}
+	}
 	for i := range out.Users {
 		if out.Users[i].AuthorizedKeys == nil {
 			out.Users[i].AuthorizedKeys = []proto.AuthorizedKey{}
@@ -187,6 +190,9 @@ func (s *Service) Security(ctx context.Context, a Actor, serverID int64) (proto.
 	}
 	if out.Fail2banJails == nil {
 		out.Fail2banJails = []proto.BanJail{}
+	}
+	if out.Gaps == nil {
+		out.Gaps = []string{}
 	}
 	return out, err
 }

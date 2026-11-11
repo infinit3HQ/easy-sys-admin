@@ -44,6 +44,9 @@ type Exposure struct {
 	NoPasswordAll            int       `json:"noPasswordAll"`
 	// Uncovered is how many sockets on every interface ufw does not mention.
 	Uncovered int `json:"uncovered"`
+	// Gaps names checks that did not run. An empty listener list is not clean
+	// when "listening sockets" is included.
+	Gaps []string `json:"gaps,omitempty"`
 	// Baseline* is the previous public ports and key fingerprints. The API
 	// does not copy these. The first ready report seeds them and does not alert.
 	BaselineSeeded bool     `json:"baselineSeeded,omitempty"`
@@ -80,6 +83,7 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	}
 	slices.Sort(ex.PublicPorts)
 	ex.ListeningOnAllInterfaces = ex.PublicPorts
+	ex.Gaps = mergeGaps(access.Gaps, sec.Gaps)
 	ex.PasswordAuth = access.PasswordAuth
 	ex.PermitRootLogin = access.PermitRootLogin
 	ex.PermitEmptyPasswords = access.PermitEmptyPasswords
@@ -181,11 +185,22 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 		})
 	}
 	if ex.Ready {
+		listenOK := !hasGap(ex.Gaps, "listening sockets")
+		ports := ex.PublicPorts
+		if !listenOK && prev.BaselineSeeded {
+			ex.PublicPorts = prev.PublicPorts
+			ex.ListeningOnAllInterfaces = prev.ListeningOnAllInterfaces
+			ports = prev.BaselinePorts
+		}
 		if prev.Ready && prev.BaselineSeeded {
-			s.noteAdditions(ctx, srv, prev.BaselinePorts, ex.PublicPorts, prev.BaselineKeys, keys)
+			s.noteAdditions(ctx, srv, prev.BaselinePorts, ports, prev.BaselineKeys, keys)
 		}
 		ex.BaselineSeeded = true
-		ex.BaselinePorts = ex.PublicPorts
+		if listenOK {
+			ex.BaselinePorts = ex.PublicPorts
+		} else {
+			ex.BaselinePorts = prev.BaselinePorts
+		}
 		ex.BaselineKeys = keyIDs(keys)
 	}
 	raw := store.MustJSON(ex)
@@ -235,6 +250,26 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 type keyUse struct {
 	Fingerprint string
 	User        string
+}
+
+func hasGap(gaps []string, name string) bool {
+	return slices.Contains(gaps, name)
+}
+
+func mergeGaps(parts ...[]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, part := range parts {
+		for _, g := range part {
+			if g == "" || seen[g] {
+				continue
+			}
+			seen[g] = true
+			out = append(out, g)
+		}
+	}
+	slices.Sort(out)
+	return out
 }
 
 func keyUses(access proto.AccessReport) []keyUse {

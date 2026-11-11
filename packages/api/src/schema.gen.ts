@@ -1365,6 +1365,8 @@ export interface components {
             noPasswordAll: number;
             /** @description Sockets on every interface that an active ufw does not mention. */
             uncovered: number;
+            /** @description Checks that did not run for this summary. Do not treat a missing list as a clean result. */
+            gaps: string[];
         };
         Server: {
             /** Format: int64 */
@@ -1706,6 +1708,8 @@ export interface components {
             sudoRules: components["schemas"]["SudoRule"][];
             /** @description True when a sudoers include outside /etc/sudoers.d was skipped, or a file could not be read. */
             sudoIncomplete: boolean;
+            /** @description Checks that did not run. An empty result is not clean when a gap is listed. */
+            gaps: string[];
         };
         SudoRule: {
             source: string;
@@ -1754,6 +1758,8 @@ export interface components {
             fail2ban: string;
             fail2banJails: components["schemas"]["BanJail"][];
             unattendedUpgrades: boolean;
+            /** @description Checks that did not run. An empty listener list is not clean when listening sockets is listed. */
+            gaps: string[];
         };
         BanJail: {
             name: string;

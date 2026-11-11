@@ -190,6 +190,7 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
   if (e.sshRead && !e.pubkeyAuth) bits.push('pubkey off')
   if (e.firewall === 'none') bits.push('no firewall')
   if (e.uncovered > 0) bits.push(`${e.uncovered} not in ufw`)
+  if (e.gaps.length) bits.push(`not collected: ${e.gaps.join(', ')}`)
   if (e.extraRoot > 0) bits.push('extra uid 0')
   if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
   const warn = bits.some((b) => !b.endsWith('listening on all interfaces'))

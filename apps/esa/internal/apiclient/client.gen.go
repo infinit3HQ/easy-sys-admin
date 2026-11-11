@@ -843,6 +843,9 @@ type Exposure struct {
 	ExtraRoot int    `json:"extraRoot"`
 	Firewall  string `json:"firewall"`
 
+	// Gaps Checks that did not run for this summary. Do not treat a missing list as a clean result.
+	Gaps []string `json:"gaps"`
+
 	// ListeningOnAllInterfaces Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified.
 	ListeningOnAllInterfaces []string `json:"listeningOnAllInterfaces"`
 

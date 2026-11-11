@@ -32,8 +32,12 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 	rep := proto.AccessReport{
 		Revision: proto.ReportRevision, Users: []proto.LocalUser{}, Groups: map[string][]string{},
 		Logins: []proto.Login{}, ListenPorts: []int{}, ListenAddresses: []string{}, SudoRules: []proto.SudoRule{},
+		Gaps: []string{},
 	}
 	passwords := h.passwordStates()
+	if passwords == nil {
+		rep.Gaps = append(rep.Gaps, "password state")
+	}
 
 	raw, err := h.readFile("/etc/passwd")
 	if err != nil {
@@ -88,7 +92,9 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 			}
 		}
 	}
-	if out, err := h.output(ctx, 10*time.Second, "sshd", "-T"); err == nil {
+	if out, err := h.output(ctx, 10*time.Second, "sshd", "-T"); err != nil {
+		rep.Gaps = append(rep.Gaps, "ssh settings")
+	} else {
 		rep.SSHRead = true
 		for _, l := range strings.Split(out, "\n") {
 			k, v, _ := strings.Cut(l, " ")
@@ -517,8 +523,11 @@ var ssProcRe = regexp.MustCompile(`\(\("([^"]+)"(?:,pid=(\d+))?`)
 func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 	rep := proto.SecurityReport{
 		Revision: proto.ReportRevision, Listening: []proto.Listener{}, FirewallRules: []string{}, Fail2banJails: []proto.BanJail{},
+		Gaps: []string{},
 	}
-	if out, err := h.output(ctx, 15*time.Second, "ss", "-H", "-tulpn"); err == nil {
+	if out, err := h.output(ctx, 15*time.Second, "ss", "-H", "-tulpn"); err != nil {
+		rep.Gaps = append(rep.Gaps, "listening sockets")
+	} else {
 		names := h.uidNames()
 		lookups := 0
 		for _, row := range parseSSRows(out) {
@@ -531,13 +540,30 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 		attachContainers(rep.Listening, h.publishedContainers(ctx))
 	}
 
-	rep.Firewall = "none"
-	if out, err := h.output(ctx, 10*time.Second, "ufw", "status"); err == nil && strings.Contains(out, "Status: active") {
-		rep.Firewall = "ufw active"
-		rep.FirewallRules = ufwRules(out)
-		applyUFW(rep.Listening, rep.FirewallRules)
-	} else if out, err := h.output(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && strings.Contains(out, "chain") {
-		rep.Firewall = "nftables rules"
+	switch {
+	case func() bool {
+		out, err := h.output(ctx, 10*time.Second, "ufw", "status")
+		if err == nil && strings.Contains(out, "Status: active") {
+			rep.Firewall = "ufw active"
+			rep.FirewallRules = ufwRules(out)
+			applyUFW(rep.Listening, rep.FirewallRules)
+			return true
+		}
+		if err == nil && strings.Contains(out, "Status: inactive") {
+			rep.Firewall = "none"
+			return true
+		}
+		return false
+	}():
+	default:
+		if out, err := h.output(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && strings.Contains(out, "chain") {
+			rep.Firewall = "nftables rules"
+		} else if err == nil {
+			rep.Firewall = "none"
+		} else {
+			rep.Firewall = "unknown"
+			rep.Gaps = append(rep.Gaps, "firewall")
+		}
 	}
 
 	rep.CrowdSec = h.serviceState(ctx, "crowdsec.service")

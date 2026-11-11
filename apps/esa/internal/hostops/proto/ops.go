@@ -171,6 +171,8 @@ type AccessReport struct {
 	SSHRead        bool       `json:"sshRead"`
 	SudoRules      []SudoRule `json:"sudoRules"`
 	SudoIncomplete bool       `json:"sudoIncomplete"`
+	// Gaps names checks that did not run. Missing ssh settings are not "off".
+	Gaps []string `json:"gaps"`
 }
 
 // SudoRule is one command spec from sudoers. Aliases are not expanded.
@@ -224,6 +226,9 @@ type SecurityReport struct {
 	Fail2ban           string     `json:"fail2ban"`
 	Fail2banJails      []BanJail  `json:"fail2banJails"`
 	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
+	// Gaps names checks that did not run. An empty listener list is not a
+	// clean result when "listening sockets" is listed here.
+	Gaps []string `json:"gaps"`
 }
 
 // BanJail is one fail2ban jail and how many addresses it currently bans.
