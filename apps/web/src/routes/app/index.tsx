@@ -177,6 +177,7 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
   if (e.permitEmptyPasswords) bits.push('empty passwords')
   if (e.sshRead && !e.pubkeyAuth) bits.push('pubkey off')
   if (e.firewall === 'none') bits.push('no firewall')
+  if (e.uncovered > 0) bits.push(`${e.uncovered} not in ufw`)
   if (e.extraRoot > 0) bits.push('extra uid 0')
   if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
   const warn = bits.some((b) => !b.endsWith('on all interfaces'))

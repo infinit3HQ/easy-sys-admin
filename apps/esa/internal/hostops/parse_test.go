@@ -155,6 +155,51 @@ func TestUFWRules(t *testing.T) {
 	}
 }
 
+func TestUFWFor(t *testing.T) {
+	rules := []string{
+		"22/tcp                     ALLOW       Anywhere",
+		"22/tcp (v6)                ALLOW       Anywhere (v6)",
+		"8080/tcp                   DENY        Anywhere",
+		"25/tcp                     DENY        Anywhere",
+		"25/tcp                     ALLOW       10.1.0.0/24",
+	}
+	if ufwFor(22, "tcp", rules) != "allow" || ufwFor(8080, "tcp", rules) != "deny" || ufwFor(443, "tcp", rules) != "unmentioned" {
+		t.Fatalf("22=%s 8080=%s 443=%s", ufwFor(22, "tcp", rules), ufwFor(8080, "tcp", rules), ufwFor(443, "tcp", rules))
+	}
+	if ufwFor(25, "tcp", rules) != "allow" {
+		t.Fatal("an allow must win over a deny for the same port")
+	}
+}
+
+func TestKeyRestrictions(t *testing.T) {
+	from, cmd := keyRestrictions([]string{`from="10.0.0.1,10.0.0.2"`, `command="/usr/bin/rrsync secret-token"`})
+	if from != "10.0.0.1,10.0.0.2" || !cmd {
+		t.Fatalf("got %q %v", from, cmd)
+	}
+	if strings.Contains(from, "secret") {
+		t.Fatal("from must not contain the forced command")
+	}
+}
+
+func TestFail2banAndDecisions(t *testing.T) {
+	list := "Status\n|- Number of jail:\t2\n`- Jail list:\tsshd, recidive\n"
+	names := parseFail2banList(list)
+	if len(names) != 2 || names[0] != "sshd" || names[1] != "recidive" {
+		t.Fatalf("jails: %#v", names)
+	}
+	if parseFail2banList("Jail list: bad name, ../x") != nil && len(parseFail2banList("Jail list: bad name, ../x")) != 0 {
+		t.Fatal("jail names with spaces or dots-dot must be dropped")
+	}
+	banned := parseBanned("|- Currently banned:\t4\n")
+	if banned != 4 {
+		t.Fatalf("banned %d", banned)
+	}
+	raw := `[{"origin":"cscli","value":"203.0.113.5"},{"origin":"crowdsec","value":"198.51.100.9"}]`
+	if n := countDecisions(raw); n != 2 {
+		t.Fatalf("decisions %d", n)
+	}
+}
+
 func TestJournalSize(t *testing.T) {
 	for s, ok := range map[string]bool{"200M": true, "1G": true, "49M": false, "10K": false, "200": false, "1T": false, "200M;rm": false} {
 		if got := validJournalSize(s); got != ok {

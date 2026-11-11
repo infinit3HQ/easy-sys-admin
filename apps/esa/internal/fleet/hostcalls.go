@@ -185,6 +185,9 @@ func (s *Service) Security(ctx context.Context, a Actor, serverID int64) (proto.
 	if out.FirewallRules == nil {
 		out.FirewallRules = []string{}
 	}
+	if out.Fail2banJails == nil {
+		out.Fail2banJails = []proto.BanJail{}
+	}
 	return out, err
 }
 

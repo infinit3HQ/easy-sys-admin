@@ -180,11 +180,15 @@ func (s *Service) pollServer(ctx context.Context, serverID int64, budgeted bool)
 		s.log.Warn("store metric sample", "server_id", serverID, "err", err)
 	}
 	s.maybeExposure(ctx, srv, &state, budgeted)
-	s.evaluateAlerts(ctx, srv, &state)
-
 	if state.UpdatesAt == nil || now.Sub(*state.UpdatesAt) > updatesEvery {
-		s.RefreshUpdates(ctx, serverID, false)
+		if s.RefreshUpdates(ctx, serverID, false) == nil {
+			var fresh store.ServerState
+			if s.db.WithContext(ctx).Select("updates", "security_seen").Where("server_id = ?", serverID).Take(&fresh).Error == nil {
+				state.Updates, state.SecuritySeen = fresh.Updates, fresh.SecuritySeen
+			}
+		}
 	}
+	s.evaluateAlerts(ctx, srv, &state)
 	return true
 }
 
@@ -250,8 +254,32 @@ func (s *Service) RefreshUpdates(ctx context.Context, serverID int64, refresh bo
 		return s.hostErr(ctx, srv, err)
 	}
 	now := s.now()
+	var state store.ServerState
+	_ = s.db.WithContext(ctx).Select("security_seen").Where("server_id = ?", serverID).Take(&state).Error
+	var prev map[string]time.Time
+	_ = state.SecuritySeen.Decode(&prev)
 	return s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", serverID).
-		Updates(map[string]any{"updates": store.MustJSON(upd), "updates_at": now}).Error
+		Updates(map[string]any{
+			"updates": store.MustJSON(upd), "updates_at": now,
+			"security_seen": store.MustJSON(mergeSecuritySeen(prev, upd, now)),
+		}).Error
+}
+
+// mergeSecuritySeen keeps the first time each pending security package was
+// seen and drops packages that are no longer pending security updates.
+func mergeSecuritySeen(prev map[string]time.Time, upd proto.PendingUpdates, now time.Time) map[string]time.Time {
+	next := map[string]time.Time{}
+	for _, p := range upd.Packages {
+		if !p.Security {
+			continue
+		}
+		if t, ok := prev[p.Name]; ok && !t.IsZero() {
+			next[p.Name] = t
+			continue
+		}
+		next[p.Name] = now
+	}
+	return next
 }
 
 // hostErr records a host key mismatch and converts helper errors into

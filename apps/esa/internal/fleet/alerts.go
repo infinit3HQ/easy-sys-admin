@@ -27,6 +27,9 @@ const (
 	AlertRunFailed      AlertKind = "run_failed"
 	AlertHostKey        AlertKind = "host_key"
 	AlertExposure       AlertKind = "exposure"
+	AlertNewPort        AlertKind = "new_port"
+	AlertNewKey         AlertKind = "new_key"
+	AlertSecurityUpdate AlertKind = "security_update"
 )
 
 // defaultRules are created for every account on first use.
@@ -42,6 +45,9 @@ var defaultRules = []store.AlertRule{
 	{Kind: string(AlertRunFailed)},
 	{Kind: string(AlertHostKey)},
 	{Kind: string(AlertExposure)},
+	{Kind: string(AlertNewPort)},
+	{Kind: string(AlertNewKey)},
+	{Kind: string(AlertSecurityUpdate), Threshold: 7},
 }
 
 func (s *Service) rules(ctx context.Context, accountID int64) (map[AlertKind]store.AlertRule, error) {
@@ -94,6 +100,14 @@ func (s *Service) evaluateAlerts(ctx context.Context, srv store.Server, state *s
 		state = &st
 	}
 	conds := serverConditions(srv, state, rules)
+	if !state.HostKeyMismatch && state.Status != string(StatusUnreachable) {
+		var seen map[string]time.Time
+		if state.SecuritySeen.Decode(&seen) == nil && rules[AlertSecurityUpdate].Enabled {
+			if c, ok := securityUpdateCondition(srv.Name, seen, s.now(), rules[AlertSecurityUpdate].Threshold); ok {
+				conds = append(conds, c)
+			}
+		}
+	}
 	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool { return k != AlertCertExpiry && k != AlertRunFailed })
 }
 
@@ -146,6 +160,37 @@ func serverConditions(srv store.Server, st *store.ServerState, rules map[AlertKi
 		}
 	}
 	return out
+}
+
+// securityUpdateCondition reports security packages that have been pending
+// for at least days. days 0 means any pending security update.
+func securityUpdateCondition(server string, seen map[string]time.Time, now time.Time, days float64) (condition, bool) {
+	limit := time.Duration(days * float64(24*time.Hour))
+	var oldestName string
+	var oldest time.Time
+	n := 0
+	for name, at := range seen {
+		if at.IsZero() || now.Sub(at) < limit {
+			continue
+		}
+		n++
+		if oldest.IsZero() || at.Before(oldest) {
+			oldest, oldestName = at, name
+		}
+	}
+	if n == 0 {
+		return condition{}, false
+	}
+	age := int(now.Sub(oldest).Hours() / 24)
+	sev := "warning"
+	if age >= 30 {
+		sev = "critical"
+	}
+	msg := fmt.Sprintf("%s: security update %s has been waiting %d days", server, oldestName, age)
+	if n > 1 {
+		msg = fmt.Sprintf("%s: %d security updates have been waiting, the oldest is %s for %d days", server, n, oldestName, age)
+	}
+	return condition{kind: AlertSecurityUpdate, subject: "", severity: sev, message: msg}, true
 }
 
 func severityFor(p, critical float64) string {

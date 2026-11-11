@@ -196,10 +196,14 @@ type LocalUser struct {
 }
 
 // AuthorizedKey is one line of an authorized_keys file.
+// From is the from= restriction. HasCommand is true when the line forces a
+// command. The command text is not returned, because it can hold a secret.
 type AuthorizedKey struct {
 	Type        string `json:"type"`
 	Fingerprint string `json:"fingerprint"`
 	Comment     string `json:"comment"`
+	From        string `json:"from"`
+	HasCommand  bool   `json:"hasCommand"`
 }
 
 // Login is one entry from `last`.
@@ -216,8 +220,17 @@ type SecurityReport struct {
 	Firewall           string     `json:"firewall"` // "ufw active", "nftables rules", "none"
 	FirewallRules      []string   `json:"firewallRules"`
 	CrowdSec           string     `json:"crowdsec"` // active | inactive | not installed
+	CrowdSecBans       int        `json:"crowdSecBans"`
 	Fail2ban           string     `json:"fail2ban"`
+	Fail2banJails      []BanJail  `json:"fail2banJails"`
 	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
+}
+
+// BanJail is one fail2ban jail and how many addresses it currently bans.
+// The addresses themselves are not collected.
+type BanJail struct {
+	Name   string `json:"name"`
+	Banned int    `json:"banned"`
 }
 
 // Listener is one listening socket.
@@ -231,6 +244,8 @@ type Listener struct {
 	User      string `json:"user"`
 	Exposure  string `json:"exposure"`
 	Container string `json:"container,omitempty"`
+	// UFW is allow, deny, or unmentioned when ufw is active. Empty otherwise.
+	UFW string `json:"ufw"`
 }
 
 // JobsReport answers `esa-helper jobs`.

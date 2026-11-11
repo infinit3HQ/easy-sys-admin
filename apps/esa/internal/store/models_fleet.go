@@ -135,7 +135,9 @@ type ServerState struct {
 	// It is not the user list. ExposureAt is when it was last attempted.
 	Exposure   JSON `gorm:"type:jsonb"`
 	ExposureAt *time.Time
-	UpdatedAt  time.Time
+	// SecuritySeen maps a pending security package to when it was first seen.
+	SecuritySeen JSON `gorm:"type:jsonb"`
+	UpdatedAt    time.Time
 
 	Server Server `gorm:"constraint:OnDelete:CASCADE"`
 }

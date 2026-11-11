@@ -252,7 +252,10 @@ Alert logic lives in `apps/esa/internal/fleet/alerts.go` and `alerts_manage.go`.
 | `cert_expiry`     | A certificate expires within the threshold, or its check failed | 14 days           | 0                | critical at 3 days, else warning |
 | `run_failed`      | A run had a failed server                                       |                   | 0                | warning                          |
 | `host_key`        | The server presented a different host key                       |                   | 0                | critical                         |
-| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it. Public ports are not an alert. | | 0 | warning, or critical for empty passwords and extra uid 0 |
+| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it. | | 0 | warning, or critical for empty passwords and extra uid 0 |
+| `new_port`        | A socket on every interface that was not in the previous exposure report. The first report only sets the baseline. | | 0 | warning, one notice |
+| `new_key`         | An SSH key fingerprint that was not in the previous access report. The first report only sets the baseline. | | 0 | warning, one notice |
+| `security_update` | A security package has been pending for at least the threshold | 7 days | 0 | warning, critical at 30 days |
 
 After each poll, `evaluateAlerts` compares the server's current conditions with its open alerts. A new condition opens a pending alert. A pending alert fires once its condition has lasted the rule's duration; a duration of 0 fires at once. An alert whose condition is gone resolves. A host key mismatch or an unreachable server suppresses the other server alerts. Certificate alerts are evaluated by the certificate job and belong to the account rather than a server. A `run_failed` alert is a one-off: it is stored already resolved and only sends a notification.
 

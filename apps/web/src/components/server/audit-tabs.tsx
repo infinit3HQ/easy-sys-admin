@@ -78,6 +78,17 @@ export function AccessTab({ serverId }: { serverId: number }) {
                         {k.fingerprint}
                       </span>
                       <span className="break-all text-faint">{k.comment}</span>
+                      {k.from && (
+                        <span className="break-all text-faint">
+                          from {k.from}
+                        </span>
+                      )}
+                      {k.hasCommand && (
+                        <span className="text-faint">forced command</span>
+                      )}
+                      {u.uid === 0 && !k.from && !k.hasCommand && (
+                        <span className="text-warn">no restriction</span>
+                      )}
                       {(fpCount.get(k.fingerprint) ?? 0) > 1 && (
                         <span className="text-warn">
                           same key on {fpCount.get(k.fingerprint)} users
@@ -207,6 +218,18 @@ export function AccessTab({ serverId }: { serverId: number }) {
   )
 }
 
+function banText(
+  state: string,
+  jails: ReadonlyArray<{ name: string; banned: number }>,
+) {
+  if (state !== 'active' || jails.length === 0) return state
+  const n = jails.reduce((sum, j) => sum + j.banned, 0)
+  const hot = jails.filter((j) => j.banned > 0).map((j) => j.name)
+  return hot.length
+    ? `${state}, ${n} banned (${hot.join(', ')})`
+    : `${state}, 0 banned`
+}
+
 export function SecurityTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.security(serverId))
   if (r.isLoading) return <Loading />
@@ -244,6 +267,12 @@ export function SecurityTab({ serverId }: { serverId: number }) {
                   {exposed(l.address)
                     ? `${l.address} (all interfaces)`
                     : l.address}
+                  {l.ufw === 'unmentioned' && exposed(l.address) && (
+                    <span className="text-warn"> not in ufw</span>
+                  )}
+                  {l.ufw === 'deny' && (
+                    <span className="text-warn"> denied by ufw</span>
+                  )}
                 </TableCell>
                 <TableCell className="py-2 text-ink">
                   {l.process}
@@ -266,12 +295,16 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           />
           <KeyValue
             k="CrowdSec"
-            v={d.crowdsec}
+            v={
+              d.crowdsec === 'active'
+                ? `${d.crowdsec}, ${d.crowdSecBans} bans`
+                : d.crowdsec
+            }
             tone={d.crowdsec === 'failed' ? 'warn' : undefined}
           />
           <KeyValue
             k="fail2ban"
-            v={d.fail2ban}
+            v={banText(d.fail2ban, d.fail2banJails)}
             tone={d.fail2ban === 'failed' ? 'warn' : undefined}
           />
           <KeyValue

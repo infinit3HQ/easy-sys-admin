@@ -63,13 +63,17 @@ The security report lists listening ports, the user that owns each socket, and w
 
 The board keeps a short summary of that picture, refreshed about once an hour: public ports, those SSH flags, the firewall name, extra uid 0 accounts, and `NOPASSWD ALL` rules. The user list and login addresses are not stored. A helper older than this summary says so, and its empty fields are not treated as a clean result. Reinstall the helper to collect it.
 
-An exposure alert is off until you turn it on under alert settings. It fires for password login, empty passwords, root password login, no firewall, an extra uid 0 account, or a `NOPASSWD ALL` rule. Public ports stay on the board and do not raise that alert.
+An exposure alert is off until you turn it on under alert settings. It fires for password login, empty passwords, root password login, no firewall, an extra uid 0 account, or a `NOPASSWD ALL` rule.
+
+Two more alerts are on by default. A new public port, and a new SSH key, each send one notice. The first report seeds the baseline and does not alert. A security update that is still pending after 7 days also alerts. The wait is the number of days in alert settings. The board already turns yellow as soon as a security update is pending.
+
+When ufw is active, each listening socket says whether ufw allows it, denies it, or does not mention it. Sockets on every interface that ufw does not mention are counted on the board. fail2ban shows how many addresses each jail currently bans. CrowdSec shows how many decisions are active. The addresses are not collected. An SSH key shows its `from=` restriction, and whether it forces a command. The command text is not shown. A uid 0 key with neither restriction is marked.
 
 Scheduled jobs lists cron entries and systemd timers. Cron command lines are hidden from a token that cannot read logs, because those lines often contain secrets.
 
 ## Alerts
 
-An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, and exposure. Exposure is off until you enable it.
+An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new public port, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once. A security update alerts after the number of days you set, 7 by default.
 
 Channels are ntfy, a generic webhook, Discord, Slack, and email. You can send a test message. Certificate checks are a list of TLS endpoints the control plane connects to.
 

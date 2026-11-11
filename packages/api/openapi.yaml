@@ -1624,7 +1624,7 @@ components:
 
     Exposure:
       type: object
-      required: [checkedAt, ready, publicPorts, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll]
+      required: [checkedAt, ready, publicPorts, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered]
       properties:
         checkedAt: { type: string, format: date-time }
         ready: { type: boolean, description: False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. }
@@ -1637,6 +1637,7 @@ components:
         firewall: { type: string }
         extraRoot: { type: integer, description: Login accounts other than root with uid 0. }
         noPasswordAll: { type: integer, description: Sudo rules that grant NOPASSWD and ALL. }
+        uncovered: { type: integer, description: Sockets on every interface that an active ufw does not mention. }
 
     Server:
       type: object
@@ -2084,11 +2085,13 @@ components:
       x-go-type: proto.AuthorizedKey
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [type, fingerprint, comment]
+      required: [type, fingerprint, comment, from, hasCommand]
       properties:
         type: { type: string }
         fingerprint: { type: string }
         comment: { type: string }
+        from: { type: string, description: The from= restriction. Empty when the key has none. }
+        hasCommand: { type: boolean, description: True when the key forces a command. The command text is not returned. }
 
     LoginRecord:
       x-go-type: proto.Login
@@ -2104,7 +2107,7 @@ components:
       x-go-type: proto.SecurityReport
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [revision, listening, firewall, firewallRules, crowdsec, fail2ban, unattendedUpgrades]
+      required: [revision, listening, firewall, firewallRules, crowdsec, crowdSecBans, fail2ban, fail2banJails, unattendedUpgrades]
       properties:
         revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         listening: { type: array, items: { $ref: '#/components/schemas/Listener' } }
@@ -2114,14 +2117,25 @@ components:
           description: Up to 40 lines from an active ufw. Empty for nftables, which is named only.
           items: { type: string }
         crowdsec: { type: string }
+        crowdSecBans: { type: integer, description: Current CrowdSec decisions. Addresses are not included. }
         fail2ban: { type: string }
+        fail2banJails: { type: array, items: { $ref: '#/components/schemas/BanJail' } }
         unattendedUpgrades: { type: boolean }
+
+    BanJail:
+      x-go-type: proto.BanJail
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [name, banned]
+      properties:
+        name: { type: string }
+        banned: { type: integer, description: Addresses currently banned. The addresses are not included. }
 
     Listener:
       x-go-type: proto.Listener
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [proto, address, port, process, user, exposure]
+      required: [proto, address, port, process, user, exposure, ufw]
       properties:
         proto: { type: string }
         address: { type: string }
@@ -2130,6 +2144,7 @@ components:
         user: { type: string }
         exposure: { type: string, enum: [all, local, other], description: all is every interface. local is loopback. }
         container: { type: string, description: Set when docker-proxy publishes this port for a container. }
+        ufw: { type: string, description: 'allow, deny, or unmentioned when ufw is active. Empty otherwise.' }
 
     JobsReport:
       x-go-type: proto.JobsReport
@@ -2346,7 +2361,7 @@ components:
       required: [id, kind, enabled, threshold, forMinutes]
       properties:
         id: { type: integer, format: int64 }
-        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key, exposure] }
+        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key, exposure, new_port, new_key, security_update] }
         enabled: { type: boolean }
         threshold: { type: number, format: double, description: 'Percent for disk, inode, and memory; days for cert_expiry; unused otherwise.' }
         forMinutes: { type: integer, description: How long the condition must hold before the alert fires. }

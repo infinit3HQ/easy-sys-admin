@@ -1353,6 +1353,8 @@ export interface components {
             extraRoot: number;
             /** @description Sudo rules that grant NOPASSWD and ALL. */
             noPasswordAll: number;
+            /** @description Sockets on every interface that an active ufw does not mention. */
+            uncovered: number;
         };
         Server: {
             /** Format: int64 */
@@ -1712,6 +1714,10 @@ export interface components {
             type: string;
             fingerprint: string;
             comment: string;
+            /** @description The from= restriction. Empty when the key has none. */
+            from: string;
+            /** @description True when the key forces a command. The command text is not returned. */
+            hasCommand: boolean;
         };
         LoginRecord: {
             user: string;
@@ -1727,8 +1733,16 @@ export interface components {
             /** @description Up to 40 lines from an active ufw. Empty for nftables, which is named only. */
             firewallRules: string[];
             crowdsec: string;
+            /** @description Current CrowdSec decisions. Addresses are not included. */
+            crowdSecBans: number;
             fail2ban: string;
+            fail2banJails: components["schemas"]["BanJail"][];
             unattendedUpgrades: boolean;
+        };
+        BanJail: {
+            name: string;
+            /** @description Addresses currently banned. The addresses are not included. */
+            banned: number;
         };
         Listener: {
             proto: string;
@@ -1743,6 +1757,8 @@ export interface components {
             exposure: "all" | "local" | "other";
             /** @description Set when docker-proxy publishes this port for a container. */
             container?: string;
+            /** @description allow, deny, or unmentioned when ufw is active. Empty otherwise. */
+            ufw: string;
         };
         JobsReport: {
             cron: components["schemas"]["CronEntry"][];
@@ -1932,7 +1948,7 @@ export interface components {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key" | "exposure";
+            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key" | "exposure" | "new_port" | "new_key" | "security_update";
             enabled: boolean;
             /**
              * Format: double

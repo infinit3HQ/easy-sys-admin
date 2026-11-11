@@ -104,6 +104,10 @@ func (s *Service) UpdateAlertRule(ctx context.Context, a Actor, kind string, ena
 		if threshold < 1 || threshold > 90 {
 			return AlertRuleView{}, invalid("threshold", "must be between 1 and 90 days")
 		}
+	case AlertSecurityUpdate:
+		if threshold < 0 || threshold > 90 {
+			return AlertRuleView{}, invalid("threshold", "must be between 0 and 90 days")
+		}
 	default:
 		threshold = r.Threshold
 	}

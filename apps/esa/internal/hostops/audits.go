@@ -447,13 +447,39 @@ func (h *Host) authorizedKeys(path string) []proto.AuthorizedKey {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		pub, comment, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
+		pub, comment, options, _, err := ssh.ParseAuthorizedKey([]byte(line))
 		if err != nil {
 			continue
 		}
-		out = append(out, proto.AuthorizedKey{Type: pub.Type(), Fingerprint: ssh.FingerprintSHA256(pub), Comment: comment})
+		from, hasCommand := keyRestrictions(options)
+		out = append(out, proto.AuthorizedKey{
+			Type: pub.Type(), Fingerprint: ssh.FingerprintSHA256(pub), Comment: comment,
+			From: from, HasCommand: hasCommand,
+		})
 	}
 	return out
+}
+
+// keyRestrictions reads from= and whether a command= is set. The command
+// text is dropped.
+func keyRestrictions(options []string) (from string, hasCommand bool) {
+	var froms []string
+	for _, o := range options {
+		switch {
+		case strings.HasPrefix(o, "from="):
+			v := strings.Trim(strings.TrimPrefix(o, "from="), `"`)
+			if v != "" {
+				froms = append(froms, v)
+			}
+		case strings.HasPrefix(o, "command="):
+			hasCommand = true
+		}
+	}
+	from = strings.Join(froms, ", ")
+	if len(from) > 120 {
+		from = from[:120]
+	}
+	return from, hasCommand
 }
 
 // "root     pts/0        47.129.244.24    2026-10-24T12:24:42+00:00 - ..."
@@ -489,7 +515,9 @@ var ssProcRe = regexp.MustCompile(`\(\("([^"]+)"(?:,pid=(\d+))?`)
 
 // Security reports listening sockets and protection services.
 func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
-	rep := proto.SecurityReport{Revision: proto.ReportRevision, Listening: []proto.Listener{}, FirewallRules: []string{}}
+	rep := proto.SecurityReport{
+		Revision: proto.ReportRevision, Listening: []proto.Listener{}, FirewallRules: []string{}, Fail2banJails: []proto.BanJail{},
+	}
 	if out, err := h.output(ctx, 15*time.Second, "ss", "-H", "-tulpn"); err == nil {
 		names := h.uidNames()
 		lookups := 0
@@ -507,12 +535,19 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 	if out, err := h.output(ctx, 10*time.Second, "ufw", "status"); err == nil && strings.Contains(out, "Status: active") {
 		rep.Firewall = "ufw active"
 		rep.FirewallRules = ufwRules(out)
+		applyUFW(rep.Listening, rep.FirewallRules)
 	} else if out, err := h.output(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && strings.Contains(out, "chain") {
 		rep.Firewall = "nftables rules"
 	}
 
 	rep.CrowdSec = h.serviceState(ctx, "crowdsec.service")
+	if rep.CrowdSec == "active" {
+		rep.CrowdSecBans = h.crowdSecBans(ctx)
+	}
 	rep.Fail2ban = h.serviceState(ctx, "fail2ban.service")
+	if rep.Fail2ban != "not installed" {
+		rep.Fail2banJails = h.fail2banJails(ctx)
+	}
 	if raw, err := h.readFile("/etc/apt/apt.conf.d/20auto-upgrades"); err == nil {
 		rep.UnattendedUpgrades = strings.Contains(strings.ReplaceAll(string(raw), " ", ""), `Unattended-Upgrade"1"`)
 	}
@@ -720,6 +755,141 @@ func ufwRules(out string) []string {
 		}
 	}
 	return rules
+}
+
+// applyUFW marks each listener allow, deny, or unmentioned from ufw rules.
+// An allow wins over a deny for the same port.
+func applyUFW(ls []proto.Listener, rules []string) {
+	for i := range ls {
+		ls[i].UFW = ufwFor(ls[i].Port, ls[i].Proto, rules)
+	}
+}
+
+func ufwFor(port int, proto string, rules []string) string {
+	p := proto
+	switch {
+	case strings.HasPrefix(p, "tcp"):
+		p = "tcp"
+	case strings.HasPrefix(p, "udp"):
+		p = "udp"
+	}
+	allow, deny := false, false
+	for _, line := range rules {
+		f := strings.Fields(line)
+		if len(f) < 2 || !ufwPortMatch(f[0], port, p) {
+			continue
+		}
+		action := ""
+		for _, field := range f[1:] {
+			switch strings.ToUpper(field) {
+			case "ALLOW", "LIMIT":
+				action = "allow"
+			case "DENY", "REJECT":
+				action = "deny"
+			}
+			if action != "" {
+				break
+			}
+		}
+		switch action {
+		case "allow":
+			allow = true
+		case "deny":
+			deny = true
+		}
+	}
+	if allow {
+		return "allow"
+	}
+	if deny {
+		return "deny"
+	}
+	return "unmentioned"
+}
+
+func ufwPortMatch(spec string, port int, proto string) bool {
+	spec = strings.TrimSuffix(spec, "(v6)")
+	left, right, ok := strings.Cut(spec, "/")
+	n, err := strconv.Atoi(left)
+	if err != nil || n != port {
+		return false
+	}
+	if !ok {
+		return true
+	}
+	return right == proto
+}
+
+var jailNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+
+func (h *Host) fail2banJails(ctx context.Context) []proto.BanJail {
+	out, err := h.output(ctx, 10*time.Second, "fail2ban-client", "status")
+	if err != nil {
+		return []proto.BanJail{}
+	}
+	names := parseFail2banList(out)
+	if len(names) > 20 {
+		names = names[:20]
+	}
+	jails := make([]proto.BanJail, 0, len(names))
+	for _, name := range names {
+		banned := 0
+		if st, err := h.output(ctx, 10*time.Second, "fail2ban-client", "status", name); err == nil {
+			banned = parseBanned(st)
+		}
+		jails = append(jails, proto.BanJail{Name: name, Banned: banned})
+	}
+	return jails
+}
+
+func parseFail2banList(out string) []string {
+	for _, line := range strings.Split(out, "\n") {
+		_, rest, ok := strings.Cut(line, "Jail list:")
+		if !ok {
+			continue
+		}
+		var names []string
+		for _, n := range strings.Split(rest, ",") {
+			n = strings.TrimSpace(n)
+			if jailNameRe.MatchString(n) {
+				names = append(names, n)
+			}
+		}
+		return names
+	}
+	return nil
+}
+
+func parseBanned(out string) int {
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "Currently banned:") {
+			continue
+		}
+		f := strings.Fields(line)
+		if len(f) == 0 {
+			return 0
+		}
+		n, _ := strconv.Atoi(f[len(f)-1])
+		return n
+	}
+	return 0
+}
+
+// crowdSecBans counts current decisions. Addresses in the command output
+// are not kept.
+func (h *Host) crowdSecBans(ctx context.Context) int {
+	out, err := h.output(ctx, 15*time.Second, "cscli", "decisions", "list", "-o", "json")
+	if err != nil {
+		return 0
+	}
+	return countDecisions(out)
+}
+
+func countDecisions(out string) int {
+	if len(out) > 256<<10 {
+		out = out[:256<<10]
+	}
+	return strings.Count(out, `"origin"`)
 }
 
 // readRegular reads a regular file and refuses symlinks, FIFOs, and devices.

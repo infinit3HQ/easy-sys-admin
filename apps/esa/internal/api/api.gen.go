@@ -74,8 +74,11 @@ const (
 	AlertRuleKindHostKey        AlertRuleKind = "host_key"
 	AlertRuleKindInode          AlertRuleKind = "inode"
 	AlertRuleKindMemory         AlertRuleKind = "memory"
+	AlertRuleKindNewKey         AlertRuleKind = "new_key"
+	AlertRuleKindNewPort        AlertRuleKind = "new_port"
 	AlertRuleKindRebootRequired AlertRuleKind = "reboot_required"
 	AlertRuleKindRunFailed      AlertRuleKind = "run_failed"
+	AlertRuleKindSecurityUpdate AlertRuleKind = "security_update"
 	AlertRuleKindUnreachable    AlertRuleKind = "unreachable"
 )
 
@@ -98,9 +101,15 @@ func (e AlertRuleKind) Valid() bool {
 		return true
 	case AlertRuleKindMemory:
 		return true
+	case AlertRuleKindNewKey:
+		return true
+	case AlertRuleKindNewPort:
+		return true
 	case AlertRuleKindRebootRequired:
 		return true
 	case AlertRuleKindRunFailed:
+		return true
+	case AlertRuleKindSecurityUpdate:
 		return true
 	case AlertRuleKindUnreachable:
 		return true
@@ -631,6 +640,9 @@ type AuthProvider struct {
 // AuthorizedKey defines model for AuthorizedKey.
 type AuthorizedKey = proto.AuthorizedKey
 
+// BanJail defines model for BanJail.
+type BanJail = proto.BanJail
+
 // Cert defines model for Cert.
 type Cert struct {
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
@@ -842,6 +854,9 @@ type Exposure struct {
 
 	// SshRead True when sshd -T was read. pubkeyAuth is meaningful only then.
 	SshRead bool `json:"sshRead"`
+
+	// Uncovered Sockets on every interface that an active ufw does not mention.
+	Uncovered int `json:"uncovered"`
 }
 
 // FleetOverview defines model for FleetOverview.

@@ -44,6 +44,27 @@ func TestSummarizeExposure(t *testing.T) {
 	if !exposureChanged(ex, Exposure{Ready: true, Firewall: "ufw active", PublicPorts: []string{}}) {
 		t.Fatal("a firewall and port change must be recorded")
 	}
+	if got := added([]string{"22/tcp"}, []string{"22/tcp", "8080/tcp"}); len(got) != 1 || got[0] != "8080/tcp" {
+		t.Fatalf("added ports: %#v", got)
+	}
+	if len(added(nil, []string{"22/tcp"})) != 1 {
+		t.Fatal("everything is new when there is no baseline")
+	}
+	oldSeen := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	seen := mergeSecuritySeen(map[string]time.Time{"openssl": oldSeen}, proto.PendingUpdates{Packages: []proto.PendingPackage{
+		{Name: "openssl", Security: true},
+		{Name: "bash", Security: false},
+		{Name: "libc6", Security: true},
+	}}, at)
+	if !seen["openssl"].Equal(oldSeen) || seen["libc6"].IsZero() || seen["bash"] != (time.Time{}) {
+		t.Fatalf("seen: %+v", seen)
+	}
+	if _, ok := securityUpdateCondition("web", seen, at, 7); !ok {
+		t.Fatal("openssl has been waiting since October")
+	}
+	if _, ok := securityUpdateCondition("web", map[string]time.Time{"openssl": at}, at, 7); ok {
+		t.Fatal("a package seen today must not alert at 7 days")
+	}
 	if exposureChanged(Exposure{}, ex) {
 		t.Fatal("the first summary is not a change")
 	}

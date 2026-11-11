@@ -96,6 +96,7 @@ These are enforced in `hostops` and pinned by `hostops/safety_test.go`. Do not w
 - `container-update` refuses containers not managed by docker compose.
 - `authorized_keys` reading skips FIFOs and symlinks.
 - `/etc/shadow` is read only to classify a password as locked, empty, or set. The hash is not returned, logged, or stored.
+- An authorized key's `command=` text is not returned. `from=` is. fail2ban jail names are checked before they are passed to `fail2ban-client`. CrowdSec decision addresses are counted and not returned.
 - Sudoers reads are regular files under `/etc/sudoers` and `/etc/sudoers.d` only. No symlink, no FIFO, size capped, and `#include` paths outside that directory are not followed.
 - A server whose host key changed gets no work until someone accepts the new key.
 - Reboot runs started by a schedule skip the server that hosts the control plane. The reboot after an update always skips it.

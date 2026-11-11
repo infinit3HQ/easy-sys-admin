@@ -104,6 +104,7 @@ func toServer(v fleet.ServerView) Server {
 			PasswordAuth: ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
 			PermitEmptyPasswords: ex.PermitEmptyPasswords, PubkeyAuth: ex.PubkeyAuth,
 			SshRead: ex.SSHRead, Firewall: ex.Firewall, ExtraRoot: ex.ExtraRoot, NoPasswordAll: ex.NoPasswordAll,
+			Uncovered: ex.Uncovered,
 		}
 	}
 	return s

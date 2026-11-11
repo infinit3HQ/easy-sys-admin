@@ -3,10 +3,13 @@ package fleet
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm/clause"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
@@ -35,6 +38,13 @@ type Exposure struct {
 	Firewall             string    `json:"firewall"`
 	ExtraRoot            int       `json:"extraRoot"`
 	NoPasswordAll        int       `json:"noPasswordAll"`
+	// Uncovered is how many sockets on every interface ufw does not mention.
+	Uncovered int `json:"uncovered"`
+	// Baseline* is the previous public ports and key fingerprints. The API
+	// does not copy these. The first ready report seeds them and does not alert.
+	BaselineSeeded bool     `json:"baselineSeeded,omitempty"`
+	BaselinePorts  []string `json:"baselinePorts,omitempty"`
+	BaselineKeys   []string `json:"baselineKeys,omitempty"`
 }
 
 func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at time.Time) Exposure {
@@ -71,6 +81,13 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	ex.PubkeyAuth = access.PubkeyAuth
 	ex.SSHRead = access.SSHRead
 	ex.Firewall = sec.Firewall
+	if sec.Firewall == "ufw active" {
+		for _, l := range sec.Listening {
+			if l.Exposure == "all" && l.UFW == "unmentioned" {
+				ex.Uncovered++
+			}
+		}
+	}
 	for _, u := range access.Users {
 		if u.UID == 0 && u.Name != "root" {
 			ex.ExtraRoot++
@@ -139,7 +156,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 	}
 	var prev Exposure
 	_ = state.Exposure.Decode(&prev)
-	ex, ok := s.collectExposure(ctx, srv)
+	ex, keys, ok := s.collectExposure(ctx, srv)
 	now := s.now()
 	if !ok {
 		// A cancelled poll cycle should try again next minute. Any other
@@ -157,6 +174,14 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 			"permitRootLogin": ex.PermitRootLogin, "permitEmptyPasswords": ex.PermitEmptyPasswords,
 			"firewall": ex.Firewall, "extraRoot": ex.ExtraRoot, "noPasswordAll": ex.NoPasswordAll,
 		})
+	}
+	if ex.Ready {
+		if prev.Ready && prev.BaselineSeeded {
+			s.noteAdditions(ctx, srv, prev.BaselinePorts, ex.PublicPorts, prev.BaselineKeys, keys)
+		}
+		ex.BaselineSeeded = true
+		ex.BaselinePorts = ex.PublicPorts
+		ex.BaselineKeys = keyIDs(keys)
 	}
 	raw := store.MustJSON(ex)
 	s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).
@@ -176,11 +201,11 @@ func (s *Service) takeExposureSlot() bool {
 	}
 }
 
-func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, bool) {
+func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, []keyUse, bool) {
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
 		s.log.Warn("exposure report", "server_id", srv.ID, "err", err)
-		return Exposure{}, false
+		return Exposure{}, nil, false
 	}
 	var access proto.AccessReport
 	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 45*time.Second)
@@ -188,7 +213,7 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, false
+		return Exposure{}, nil, false
 	}
 	var sec proto.SecurityReport
 	cctx, cancel = context.WithTimeout(s.netCtx(ctx), 30*time.Second)
@@ -196,9 +221,113 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, false
+		return Exposure{}, nil, false
 	}
-	return summarizeExposure(access, sec, s.now()), true
+	return summarizeExposure(access, sec, s.now()), keyUses(access), true
+}
+
+// keyUse is one authorized-key fingerprint and the login that holds it.
+type keyUse struct {
+	Fingerprint string
+	User        string
+}
+
+func keyUses(access proto.AccessReport) []keyUse {
+	var out []keyUse
+	seen := map[string]bool{}
+	for _, u := range access.Users {
+		for _, k := range u.AuthorizedKeys {
+			if k.Fingerprint == "" || seen[k.Fingerprint] {
+				continue
+			}
+			seen[k.Fingerprint] = true
+			out = append(out, keyUse{Fingerprint: k.Fingerprint, User: u.Name})
+		}
+	}
+	slices.SortFunc(out, func(a, b keyUse) int { return strings.Compare(a.Fingerprint, b.Fingerprint) })
+	return out
+}
+
+func keyIDs(keys []keyUse) []string {
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = k.Fingerprint
+	}
+	return out
+}
+
+func added(prev, cur []string) []string {
+	have := map[string]bool{}
+	for _, p := range prev {
+		have[p] = true
+	}
+	var out []string
+	for _, c := range cur {
+		if !have[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// noteAdditions sends one-shot alerts for public ports and SSH keys that
+// were not in the previous report. The alerts are stored already resolved
+// so the next hour does not send a "resolved" message.
+func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts, ports, prevKeys []string, keys []keyUse) {
+	rules, err := s.rules(ctx, srv.AccountID)
+	if err != nil {
+		return
+	}
+	if rules[AlertNewPort].Enabled {
+		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new public port")
+	}
+	if rules[AlertNewKey].Enabled {
+		var fresh []string
+		have := map[string]bool{}
+		for _, p := range prevKeys {
+			have[p] = true
+		}
+		for _, k := range keys {
+			if !have[k.Fingerprint] {
+				fresh = append(fresh, k.Fingerprint+" on "+k.User)
+			}
+		}
+		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, fresh, "new SSH key")
+	}
+}
+
+func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.AlertRule, kind AlertKind, items []string, noun string) {
+	if len(items) == 0 {
+		return
+	}
+	send := items
+	extra := 0
+	if len(send) > 8 {
+		extra = len(send) - 8
+		send = send[:8]
+	}
+	now := s.now()
+	fire := func(subject, msg string) {
+		if len(subject) > 200 {
+			subject = subject[:200]
+		}
+		al := store.Alert{
+			AccountID: srv.AccountID, RuleID: rule.ID, ServerID: &srv.ID, Kind: string(kind),
+			Subject: subject, Severity: "warning", Message: msg, PendingSince: now,
+			FiredAt: &now, ResolvedAt: &now, Notified: true,
+		}
+		if err := s.db.WithContext(ctx).Omit(clause.Associations).Create(&al).Error; err != nil {
+			s.log.Error("open alert", "err", err)
+			return
+		}
+		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al)})
+	}
+	for _, item := range send {
+		fire(item, fmt.Sprintf("%s: %s %s", srv.Name, noun, item))
+	}
+	if extra > 0 {
+		fire("more", fmt.Sprintf("%s: %d other %ss", srv.Name, extra, noun))
+	}
 }
 
 func (s *Service) noteExposureErr(ctx context.Context, srv store.Server, err error) {
