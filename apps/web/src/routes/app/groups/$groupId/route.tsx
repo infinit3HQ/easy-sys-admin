@@ -45,6 +45,7 @@ function GroupLayout() {
     'clean' | 'update'
   > | null>(null)
   const [canaries, setCanaries] = useState<number[]>([])
+  const [watch, setWatch] = useState(0)
   const fleet = useQuery(q.overview())
   const members = (fleet.data?.servers ?? []).filter(
     (s) => s.groupId === groupId,
@@ -59,6 +60,10 @@ function GroupLayout() {
             groupId,
             canaryServerIds:
               kind === 'update' && canaries.length > 0 ? canaries : undefined,
+            observeSeconds:
+              kind === 'update' && canaries.length > 0 && watch > 0
+                ? watch
+                : undefined,
           },
         }),
       ),
@@ -98,6 +103,7 @@ function GroupLayout() {
             <Button
               onClick={() => {
                 setCanaries([])
+                setWatch(0)
                 setConfirm('update')
               }}
               disabled={empty}
@@ -178,6 +184,24 @@ function GroupLayout() {
                     </label>
                   ))}
                 </fieldset>
+              )}
+              {canaries.length > 0 && g.checks.length > 0 && (
+                <label className="block text-xs text-muted-foreground">
+                  Watch the canaries for
+                  <input
+                    type="number"
+                    min={0}
+                    max={600}
+                    value={watch}
+                    className="mx-2 w-16 rounded border bg-transparent px-2 py-1 font-mono text-ink"
+                    onChange={(e) =>
+                      setWatch(
+                        Math.min(600, Math.max(0, Number(e.target.value) || 0)),
+                      )
+                    }
+                  />
+                  seconds. Checks repeat every 15 seconds. 0 checks once.
+                </label>
               )}
             </div>
           ) : (

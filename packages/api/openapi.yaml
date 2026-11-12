@@ -992,6 +992,21 @@ paths:
           description: Saved
         default: { $ref: '#/components/responses/Error' }
 
+  /runs/{runId}/report:
+    parameters:
+      - { name: runId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getPatchReport
+      summary: Package result and checks for one update run
+      tags: [runs]
+      responses:
+        '200':
+          description: What each server did. A skipped server stays in the list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatchReport' }
+        default: { $ref: '#/components/responses/Error' }
+
   /servers/{serverId}/key-baseline:
     parameters:
       - { name: serverId, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2557,6 +2572,11 @@ components:
           type: array
           items: { type: integer, format: int64 }
           description: These servers run first. One failure among them skips the rest, even when the failure limit is higher.
+        observeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: How long the canary checks repeat before the other servers start.
 
     StartRunRequest:
       type: object
@@ -2569,6 +2589,11 @@ components:
           type: array
           items: { type: integer, format: int64 }
           description: On an update, these servers run first. One failure among them skips the rest.
+        observeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once.
         options:
           type: object
           allOf: [{ $ref: '#/components/schemas/RunOptions' }]
@@ -2613,6 +2638,41 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Run' } }
+
+    PatchServer:
+      type: object
+      required: [serverId, name, status, error, canary, packages, health, checks]
+      properties:
+        serverId: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string }
+        error: { type: string }
+        canary: { type: boolean }
+        packages: { type: integer, description: Packages the helper recorded as upgraded. 0 when the detail has no package list. }
+        health: { type: string, description: Set when status got worse after the upgrade. }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, kind, phase, state, blocking]
+            properties:
+              name: { type: string }
+              kind: { type: string }
+              phase: { type: string }
+              state: { type: string }
+              detail: { type: string }
+              blocking: { type: boolean }
+
+    PatchReport:
+      type: object
+      required: [runId, status, summary, observeSeconds, canaries, servers]
+      properties:
+        runId: { type: integer, format: int64 }
+        status: { type: string }
+        summary: { type: string }
+        observeSeconds: { type: integer }
+        canaries: { type: array, items: { type: integer, format: int64 } }
+        servers: { type: array, items: { $ref: '#/components/schemas/PatchServer' } }
 
     # ---- Alerts, channels, certificates ---------------------------------------------
 

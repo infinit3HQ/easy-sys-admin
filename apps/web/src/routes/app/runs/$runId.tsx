@@ -1,8 +1,9 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import type { ReactNode } from 'react'
 import type { RunServer } from '@esa/api'
+import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { bytes } from '#/lib/format'
 import { When } from '#/components/time'
@@ -27,6 +28,13 @@ export const Route = createFileRoute('/app/runs/$runId')({
 function RunPage() {
   const { runId } = Route.useParams()
   const { data: r } = useSuspenseQuery(q.run(runId))
+  const report = useQuery({
+    queryKey: ['patch-report', runId],
+    queryFn: () =>
+      call(api().GET('/runs/{runId}/report', { params: { path: { runId } } })),
+    enabled: r.kind === 'update',
+    refetchInterval: r.status === 'running' ? 3000 : false,
+  })
   return (
     <div>
       <PageHeader
@@ -51,6 +59,27 @@ function RunPage() {
           <Fact k="Summary" v={r.summary || '…'} />
         </div>
       </Card>
+      {report.data && report.data.servers.length > 0 && (
+        <Card className="mb-6 p-4 text-sm">
+          <p className="text-xs text-muted-foreground">
+            {report.data.observeSeconds > 0
+              ? `Canaries were watched for ${report.data.observeSeconds} seconds. `
+              : ''}
+            A skipped server did not get the upgrade.
+          </p>
+          <ul className="mt-2 space-y-1 font-mono text-xs">
+            {report.data.servers.map((s) => (
+              <li key={s.serverId}>
+                {s.canary ? 'canary ' : ''}
+                {s.name}: {s.status}
+                {s.packages > 0 ? `, ${s.packages} packages` : ''}
+                {s.health ? `, ${s.health}` : ''}
+                {s.error ? `, ${s.error}` : ''}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
       <div className="space-y-4">
         {r.servers.map((s) => (
           <ServerResult key={s.serverId} s={s} kind={r.kind} />

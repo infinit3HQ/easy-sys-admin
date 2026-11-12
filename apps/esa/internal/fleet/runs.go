@@ -45,6 +45,9 @@ type RunOptions struct {
 	Checks []HealthCheck `json:"checks,omitempty"`
 	// CanaryServerIDs run first. One failure there skips the other servers.
 	CanaryServerIDs []int64 `json:"canaryServerIds,omitempty"`
+	// ObserveSeconds is how long to repeat the checks on the canaries
+	// before the other servers start. 0 runs the checks once.
+	ObserveSeconds int `json:"observeSeconds,omitempty"`
 }
 
 // Limits on a group's rolling update settings.
@@ -79,6 +82,8 @@ type RunRequest struct {
 	Options *RunOptions
 	// CanaryServerIDs run first on an update. One failure there skips the rest.
 	CanaryServerIDs []int64
+	// ObserveSeconds repeats the canary checks before the other servers start.
+	ObserveSeconds int
 }
 
 // RunView is a run as the front doors show it.
@@ -238,8 +243,21 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if err := validCanaries(opts.CanaryServerIDs, servers); err != nil {
 			return RunView{}, err
 		}
+		if req.ObserveSeconds > 0 {
+			opts.ObserveSeconds = req.ObserveSeconds
+		}
+		if opts.ObserveSeconds < 0 || opts.ObserveSeconds > 600 {
+			return RunView{}, invalid("observeSeconds", "must be from 0 to 600")
+		}
+		if opts.ObserveSeconds > 0 && len(opts.CanaryServerIDs) == 0 {
+			return RunView{}, invalid("observeSeconds", "pick a canary to watch")
+		}
+		if opts.ObserveSeconds > 0 && len(opts.Checks) == 0 {
+			return RunView{}, invalid("observeSeconds", "add a check to watch")
+		}
 	} else {
 		opts.Checks, opts.CanaryServerIDs = nil, nil
+		opts.ObserveSeconds = 0
 	}
 
 	trigger := TriggerManual

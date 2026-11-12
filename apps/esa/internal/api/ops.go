@@ -148,6 +148,9 @@ func (h *Handlers) StartRun(ctx context.Context, req StartRunRequestObject) (Sta
 	if b.CanaryServerIds != nil {
 		r.CanaryServerIDs = *b.CanaryServerIds
 	}
+	if b.ObserveSeconds != nil {
+		r.ObserveSeconds = *b.ObserveSeconds
+	}
 	run, err := h.fleet.StartRun(ctx, a, r)
 	if err != nil {
 		return nil, err
@@ -165,6 +168,57 @@ func (h *Handlers) GetRun(ctx context.Context, req GetRunRequestObject) (GetRunR
 		return nil, err
 	}
 	return GetRun200JSONResponse(toRun(run)), nil
+}
+
+func (h *Handlers) GetPatchReport(ctx context.Context, req GetPatchReportRequestObject) (GetPatchReportResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rep, err := h.fleet.PatchReport(ctx, a, req.RunId)
+	if err != nil {
+		return nil, err
+	}
+	return GetPatchReport200JSONResponse(toPatchReport(rep)), nil
+}
+
+func toPatchReport(v fleet.PatchReport) PatchReport {
+	out := PatchReport{
+		RunId: v.RunID, Status: v.Status, Summary: v.Summary,
+		ObserveSeconds: v.ObserveSeconds, Canaries: nonNil(v.Canaries),
+		Servers: make([]PatchServer, 0, len(v.Servers)),
+	}
+	for _, s := range v.Servers {
+		item := PatchServer{
+			ServerId: s.ServerID, Name: s.Name, Status: s.Status, Error: s.Error,
+			Canary: s.Canary, Packages: s.Packages, Health: s.Health,
+		}
+		item.Checks = make([]struct {
+			Blocking bool    `json:"blocking"`
+			Detail   *string `json:"detail,omitempty"`
+			Kind     string  `json:"kind"`
+			Name     string  `json:"name"`
+			Phase    string  `json:"phase"`
+			State    string  `json:"state"`
+		}, 0, len(s.Checks))
+		for _, c := range s.Checks {
+			var detail *string
+			if c.Detail != "" {
+				d := c.Detail
+				detail = &d
+			}
+			item.Checks = append(item.Checks, struct {
+				Blocking bool    `json:"blocking"`
+				Detail   *string `json:"detail,omitempty"`
+				Kind     string  `json:"kind"`
+				Name     string  `json:"name"`
+				Phase    string  `json:"phase"`
+				State    string  `json:"state"`
+			}{Blocking: c.Blocking, Detail: detail, Kind: c.Kind, Name: c.Name, Phase: c.Phase, State: c.State})
+		}
+		out.Servers = append(out.Servers, item)
+	}
+	return out
 }
 
 // ---- Alerts ------------------------------------------------------------------------

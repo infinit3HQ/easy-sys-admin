@@ -1288,6 +1288,39 @@ type OrganizationInput struct {
 	Name string `json:"name"`
 }
 
+// PatchReport defines model for PatchReport.
+type PatchReport struct {
+	Canaries       []int64       `json:"canaries"`
+	ObserveSeconds int           `json:"observeSeconds"`
+	RunId          int64         `json:"runId"`
+	Servers        []PatchServer `json:"servers"`
+	Status         string        `json:"status"`
+	Summary        string        `json:"summary"`
+}
+
+// PatchServer defines model for PatchServer.
+type PatchServer struct {
+	Canary bool `json:"canary"`
+	Checks []struct {
+		Blocking bool    `json:"blocking"`
+		Detail   *string `json:"detail,omitempty"`
+		Kind     string  `json:"kind"`
+		Name     string  `json:"name"`
+		Phase    string  `json:"phase"`
+		State    string  `json:"state"`
+	} `json:"checks"`
+	Error string `json:"error"`
+
+	// Health Set when status got worse after the upgrade.
+	Health string `json:"health"`
+	Name   string `json:"name"`
+
+	// Packages Packages the helper recorded as upgraded. 0 when the detail has no package list.
+	Packages int    `json:"packages"`
+	ServerId int64  `json:"serverId"`
+	Status   string `json:"status"`
+}
+
 // PendingPackage defines model for PendingPackage.
 type PendingPackage = proto.PendingPackage
 
@@ -1510,6 +1543,9 @@ type StartRunRequest struct {
 	CanaryServerIds *[]int64 `json:"canaryServerIds,omitempty"`
 	GroupId         *int64   `json:"groupId,omitempty"`
 	Kind            RunKind  `json:"kind"`
+
+	// ObserveSeconds Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once.
+	ObserveSeconds *int `json:"observeSeconds,omitempty"`
 
 	// Options Overrides the group's settings. Omit to use them.
 	Options   *RunOptions `json:"options,omitempty"`
@@ -2355,6 +2391,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 	GetRun(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPatchReport Package result and checks for one update run
+	//
+	// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
+	GetPatchReport(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AddServerWithBody Add a server with a one-time sudo login (installs esa-helper)
 	//
@@ -3777,6 +3818,21 @@ func (c *Client) StartRun(ctx context.Context, body StartRunJSONRequestBody, req
 // Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 func (c *Client) GetRun(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRunRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPatchReport Package result and checks for one update run
+//
+// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
+func (c *Client) GetPatchReport(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPatchReportRequest(c.Server, runId)
 	if err != nil {
 		return nil, err
 	}
@@ -6555,6 +6611,40 @@ func NewGetRunRequest(server string, runId int64) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetPatchReportRequest constructs an http.Request for the GetPatchReport method
+func NewGetPatchReportRequest(server string, runId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "runId", runId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runs/%s/report", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewAddServerRequest calls the generic AddServer builder with application/json body
 func NewAddServerRequest(server string, body AddServerJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -8307,6 +8397,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 	GetRunWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
+
+	// GetPatchReportWithResponse Package result and checks for one update run
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
+	GetPatchReportWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error)
 
 	// AddServerWithBodyWithResponse Add a server with a one-time sudo login (installs esa-helper)
 	//
@@ -11180,6 +11277,54 @@ func (r GetRunResponse) ContentType() string {
 	return ""
 }
 
+type GetPatchReportResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PatchReport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPatchReportResponse) GetJSON200() *PatchReport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetPatchReportResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPatchReportResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPatchReportResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPatchReportResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPatchReportResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type AddServerResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -13471,6 +13616,19 @@ func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId int6
 	return ParseGetRunResponse(rsp)
 }
 
+// GetPatchReportWithResponse Package result and checks for one update run
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
+func (c *ClientWithResponses) GetPatchReportWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error) {
+	rsp, err := c.GetPatchReport(ctx, runId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPatchReportResponse(rsp)
+}
+
 // AddServerWithBodyWithResponse Add a server with a one-time sudo login (installs esa-helper)
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -15743,6 +15901,39 @@ func ParseGetRunResponse(rsp *http.Response) (*GetRunResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Run
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPatchReportResponse parses an HTTP response from a GetPatchReportWithResponse call
+func ParseGetPatchReportResponse(rsp *http.Response) (*GetPatchReportResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPatchReportResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PatchReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

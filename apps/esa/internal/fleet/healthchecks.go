@@ -167,6 +167,64 @@ func partitionCanaries(items []store.RunServer, queued []int, canaryIDs []int64)
 
 // runHealthChecks dials or asks the helper. A blocking failure returns a
 // reason. Advisory failures stay in the results.
+// sampleUntil runs check immediately and again after each gap until the
+// window ends. The first failing check stops it.
+func sampleUntil(window, gap time.Duration, now func() time.Time, sleep func(time.Duration), check func() string) (int, string) {
+	if window <= 0 {
+		return 0, ""
+	}
+	if gap < time.Second {
+		gap = 15 * time.Second
+	}
+	deadline := now().Add(window)
+	n := 0
+	for {
+		n++
+		if reason := check(); reason != "" {
+			return n, reason
+		}
+		left := deadline.Sub(now())
+		if left <= 0 {
+			return n, ""
+		}
+		if left > gap {
+			left = gap
+		}
+		sleep(left)
+	}
+}
+
+// watchCanaries repeats the run's checks on the canaries before the other
+// servers start. It does not start apt again.
+func (s *Service) watchCanaries(ctx context.Context, items []store.RunServer, canary []int, o RunOptions) string {
+	_, reason := sampleUntil(time.Duration(o.ObserveSeconds)*time.Second, 15*time.Second, time.Now, func(d time.Duration) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(d):
+		}
+	}, func() string {
+		if ctx.Err() != nil {
+			return "the run was cancelled"
+		}
+		for _, i := range canary {
+			rs := &items[i]
+			if rs.Status != "succeeded" {
+				continue
+			}
+			ep, err := s.endpoint(ctx, rs.Server)
+			if err != nil {
+				return rs.Server.Name + ": " + err.Error()
+			}
+			_, block := s.runHealthChecks(ctx, rs.Server, ep, o.Checks, "watch")
+			if block != "" {
+				return rs.Server.Name + ": " + block
+			}
+		}
+		return ""
+	})
+	return reason
+}
+
 func (s *Service) runHealthChecks(ctx context.Context, srv store.Server, ep remote.Endpoint, checks []HealthCheck, phase string) ([]CheckResult, string) {
 	if len(checks) == 0 {
 		return nil, ""

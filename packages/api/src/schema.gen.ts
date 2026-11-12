@@ -841,6 +841,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{runId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        /** Package result and checks for one update run */
+        get: operations["getPatchReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/key-baseline": {
         parameters: {
             query?: never;
@@ -2126,6 +2145,8 @@ export interface components {
             checks?: components["schemas"]["HealthCheck"][];
             /** @description These servers run first. One failure among them skips the rest, even when the failure limit is higher. */
             canaryServerIds?: number[];
+            /** @description How long the canary checks repeat before the other servers start. */
+            observeSeconds?: number;
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];
@@ -2134,6 +2155,8 @@ export interface components {
             serverIds?: number[];
             /** @description On an update, these servers run first. One failure among them skips the rest. */
             canaryServerIds?: number[];
+            /** @description Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once. */
+            observeSeconds?: number;
             /** @description Overrides the group's settings. Omit to use them. */
             options?: components["schemas"]["RunOptions"] | null;
         };
@@ -2178,6 +2201,35 @@ export interface components {
         };
         RunList: {
             items: components["schemas"]["Run"][];
+        };
+        PatchServer: {
+            /** Format: int64 */
+            serverId: number;
+            name: string;
+            status: string;
+            error: string;
+            canary: boolean;
+            /** @description Packages the helper recorded as upgraded. 0 when the detail has no package list. */
+            packages: number;
+            /** @description Set when status got worse after the upgrade. */
+            health: string;
+            checks: {
+                name: string;
+                kind: string;
+                phase: string;
+                state: string;
+                detail?: string;
+                blocking: boolean;
+            }[];
+        };
+        PatchReport: {
+            /** Format: int64 */
+            runId: number;
+            status: string;
+            summary: string;
+            observeSeconds: number;
+            canaries: number[];
+            servers: components["schemas"]["PatchServer"][];
         };
         Alert: {
             /** Format: int64 */
@@ -3815,6 +3867,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPatchReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What each server did. A skipped server stays in the list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatchReport"];
+                };
             };
             default: components["responses"]["Error"];
         };

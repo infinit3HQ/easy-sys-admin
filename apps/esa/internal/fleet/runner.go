@@ -101,7 +101,11 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 		var started int
 		failed, started = runBatches(ctx, batches, maxFailures, failed, work)
 		if canaryFailed(items, canary, failed) || stopRun(len(failed), maxFailures) {
-			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary)
+			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary, "")
+			return
+		}
+		if reason := s.watchCanaries(ctx, items, canary, o); reason != "" {
+			s.skipRest(ctx, items, rest, failed, canary, "stopped after the watch: "+reason)
 			return
 		}
 	}
@@ -111,7 +115,7 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 	if !stopRun(len(failed), maxFailures) {
 		return
 	}
-	s.skipRest(ctx, items, unstarted(batches, started), failed, nil)
+	s.skipRest(ctx, items, unstarted(batches, started), failed, nil, "")
 }
 
 func unstarted(batches [][]int, started int) []int {
@@ -135,16 +139,19 @@ func canaryFailed(items []store.RunServer, canary, failed []int) bool {
 	return false
 }
 
-func (s *Service) skipRest(ctx context.Context, items []store.RunServer, idx, failed, canary []int) {
-	msg := stopMessage(items, failed)
-	isCanary := map[int]bool{}
-	for _, i := range canary {
-		isCanary[i] = true
-	}
-	for _, i := range failed {
-		if isCanary[i] && items[i].Status == "failed" {
-			msg = "stopped after canary " + items[i].Server.Name + " failed"
-			break
+func (s *Service) skipRest(ctx context.Context, items []store.RunServer, idx, failed, canary []int, reason string) {
+	msg := reason
+	if msg == "" {
+		msg = stopMessage(items, failed)
+		isCanary := map[int]bool{}
+		for _, i := range canary {
+			isCanary[i] = true
+		}
+		for _, i := range failed {
+			if isCanary[i] && items[i].Status == "failed" {
+				msg = "stopped after canary " + items[i].Server.Name + " failed"
+				break
+			}
 		}
 	}
 	for _, i := range idx {

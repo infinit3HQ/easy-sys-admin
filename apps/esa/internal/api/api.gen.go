@@ -1288,6 +1288,39 @@ type OrganizationInput struct {
 	Name string `json:"name"`
 }
 
+// PatchReport defines model for PatchReport.
+type PatchReport struct {
+	Canaries       []int64       `json:"canaries"`
+	ObserveSeconds int           `json:"observeSeconds"`
+	RunId          int64         `json:"runId"`
+	Servers        []PatchServer `json:"servers"`
+	Status         string        `json:"status"`
+	Summary        string        `json:"summary"`
+}
+
+// PatchServer defines model for PatchServer.
+type PatchServer struct {
+	Canary bool `json:"canary"`
+	Checks []struct {
+		Blocking bool    `json:"blocking"`
+		Detail   *string `json:"detail,omitempty"`
+		Kind     string  `json:"kind"`
+		Name     string  `json:"name"`
+		Phase    string  `json:"phase"`
+		State    string  `json:"state"`
+	} `json:"checks"`
+	Error string `json:"error"`
+
+	// Health Set when status got worse after the upgrade.
+	Health string `json:"health"`
+	Name   string `json:"name"`
+
+	// Packages Packages the helper recorded as upgraded. 0 when the detail has no package list.
+	Packages int    `json:"packages"`
+	ServerId int64  `json:"serverId"`
+	Status   string `json:"status"`
+}
+
 // PendingPackage defines model for PendingPackage.
 type PendingPackage = proto.PendingPackage
 
@@ -1510,6 +1543,9 @@ type StartRunRequest struct {
 	CanaryServerIds *[]int64 `json:"canaryServerIds,omitempty"`
 	GroupId         *int64   `json:"groupId,omitempty"`
 	Kind            RunKind  `json:"kind"`
+
+	// ObserveSeconds Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once.
+	ObserveSeconds *int `json:"observeSeconds,omitempty"`
 
 	// Options Overrides the group's settings. Omit to use them.
 	Options   *RunOptions `json:"options,omitempty"`
@@ -2001,6 +2037,9 @@ type ServerInterface interface {
 	// GetRun One run with each server's result
 	// (GET /runs/{runId})
 	GetRun(w http.ResponseWriter, r *http.Request, runId int64)
+	// GetPatchReport Package result and checks for one update run
+	// (GET /runs/{runId}/report)
+	GetPatchReport(w http.ResponseWriter, r *http.Request, runId int64)
 	// AddServer Add a server with a one-time sudo login (installs esa-helper)
 	// (POST /servers)
 	AddServer(w http.ResponseWriter, r *http.Request)
@@ -3389,6 +3428,32 @@ func (siw *ServerInterfaceWrapper) GetRun(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// GetPatchReport operation middleware
+func (siw *ServerInterfaceWrapper) GetPatchReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "runId" -------------
+	var runId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPatchReport(w, r, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AddServer operation middleware
 func (siw *ServerInterfaceWrapper) AddServer(w http.ResponseWriter, r *http.Request) {
 
@@ -4361,6 +4426,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/offboarding", wrapper.Offboarding)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/maintenance", wrapper.ListMaintenance)
@@ -6500,6 +6566,45 @@ func (response GetRundefaultJSONResponse) VisitGetRunResponse(w http.ResponseWri
 	return err
 }
 
+type GetPatchReportRequestObject struct {
+	RunId int64 `json:"runId"`
+}
+
+type GetPatchReportResponseObject interface {
+	VisitGetPatchReportResponse(w http.ResponseWriter) error
+}
+
+type GetPatchReport200JSONResponse PatchReport
+
+func (response GetPatchReport200JSONResponse) VisitGetPatchReportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPatchReportdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetPatchReportdefaultJSONResponse) VisitGetPatchReportResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AddServerRequestObject struct {
 	Body *AddServerJSONRequestBody
 }
@@ -7748,6 +7853,9 @@ type StrictServerInterface interface {
 	// GetRun One run with each server's result
 	// (GET /runs/{runId})
 	GetRun(ctx context.Context, request GetRunRequestObject) (GetRunResponseObject, error)
+	// GetPatchReport Package result and checks for one update run
+	// (GET /runs/{runId}/report)
+	GetPatchReport(ctx context.Context, request GetPatchReportRequestObject) (GetPatchReportResponseObject, error)
 	// AddServer Add a server with a one-time sudo login (installs esa-helper)
 	// (POST /servers)
 	AddServer(ctx context.Context, request AddServerRequestObject) (AddServerResponseObject, error)
@@ -9409,6 +9517,32 @@ func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId in
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetRunResponseObject); ok {
 		if err := validResponse.VisitGetRunResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPatchReport operation middleware
+func (sh *strictHandler) GetPatchReport(w http.ResponseWriter, r *http.Request, runId int64) {
+	var request GetPatchReportRequestObject
+
+	request.RunId = runId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPatchReport(ctx, request.(GetPatchReportRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPatchReport")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPatchReportResponseObject); ok {
+		if err := validResponse.VisitGetPatchReportResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
