@@ -53,11 +53,11 @@ func digestDue(now time.Time, last *time.Time) bool {
 type digestFacts struct {
 	Unreachable []string
 	Waiting     []string
-	Changes     []string
+	Review      []string
 }
 
 func digestText(now time.Time, f digestFacts) (title, body string, ok bool) {
-	if len(f.Unreachable) == 0 && len(f.Waiting) == 0 && len(f.Changes) == 0 {
+	if len(f.Unreachable) == 0 && len(f.Waiting) == 0 && len(f.Review) == 0 {
 		return "", "", false
 	}
 	title = "Week of " + now.UTC().Format("2 Jan")
@@ -72,9 +72,9 @@ func digestText(now time.Time, f digestFacts) (title, body string, ok bool) {
 		b.WriteString(joinCap(f.Waiting, 10))
 		b.WriteString("\n")
 	}
-	if len(f.Changes) > 0 {
-		b.WriteString("New sockets on all interfaces, and keys: ")
-		b.WriteString(joinCap(f.Changes, 10))
+	if len(f.Review) > 0 {
+		b.WriteString("Still to review: ")
+		b.WriteString(joinCap(f.Review, 10))
 		b.WriteString("\n")
 	}
 	return title, strings.TrimSpace(b.String()), true
@@ -121,15 +121,14 @@ func (s *Service) digest(ctx context.Context, accountID int64, now time.Time) (s
 			facts.Waiting = append(facts.Waiting, fmt.Sprintf("%s %s for %d days", r.Name, pkg, days))
 		}
 	}
-	var alerts []store.Alert
-	since := now.Add(-7 * 24 * time.Hour)
-	if err := s.db.WithContext(ctx).Where("account_id = ? AND kind IN ? AND fired_at >= ?", accountID, []string{string(AlertNewPort), string(AlertNewKey)}, since).
-		Order("fired_at desc").Limit(20).Find(&alerts).Error; err != nil {
-		s.log.Error("digest alerts", "account_id", accountID, "err", err)
+	var open []store.SecurityIncident
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND state = ?", accountID, "open").
+		Order("last_seen desc").Limit(20).Find(&open).Error; err != nil {
+		s.log.Error("digest incidents", "account_id", accountID, "err", err)
 		return "", "", false
 	}
-	for _, al := range alerts {
-		facts.Changes = append(facts.Changes, al.Message)
+	for _, in := range open {
+		facts.Review = append(facts.Review, in.Message)
 	}
 	return digestText(now, facts)
 }

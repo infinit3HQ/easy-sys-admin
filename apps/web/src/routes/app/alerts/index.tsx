@@ -50,20 +50,23 @@ function NeedsReview() {
           >
             <div className="min-w-0 flex-1">
               <div className="text-sm break-words text-ink">{item.message}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{item.nextStep}</div>
               <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
                 {item.kind} · {item.serverName} · <Ago iso={item.lastSeen} />
               </div>
             </div>
             {canAct && (
               <div className="flex gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => snooze.mutate(item.id)}
-                  busy={snooze.isPending}
-                >
-                  Tomorrow
-                </Button>
+                {item.kind !== 'host_key' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => snooze.mutate(item.id)}
+                    busy={snooze.isPending}
+                  >
+                    Tomorrow
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"

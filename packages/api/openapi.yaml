@@ -2920,7 +2920,7 @@ components:
 
     Incident:
       type: object
-      required: [id, serverId, serverName, kind, subject, state, message, firstSeen, lastSeen]
+      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen]
       properties:
         id: { type: integer, format: int64 }
         serverId: { type: integer, format: int64 }
@@ -2931,6 +2931,7 @@ components:
         snoozeUntil: { type: string, format: date-time, nullable: true }
         snoozeReason: { type: string }
         message: { type: string }
+        nextStep: { type: string, description: What a person can do next. It does not change the server. }
         firstSeen: { type: string, format: date-time }
         lastSeen: { type: string, format: date-time }
         ackedAt: { type: string, format: date-time, nullable: true }

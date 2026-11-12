@@ -394,6 +394,9 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 		if len(subject) > 200 {
 			subject = subject[:200]
 		}
+		if !s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg) {
+			return
+		}
 		al := store.Alert{
 			AccountID: srv.AccountID, RuleID: rule.ID, ServerID: &srv.ID, Kind: string(kind),
 			Subject: subject, Severity: "warning", Message: msg, PendingSince: now,
@@ -403,9 +406,7 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 			s.log.Error("open alert", "err", err)
 			return
 		}
-		if s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg) {
-			s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al), Kind: string(kind), ServerID: srv.ID})
-		}
+		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al), Kind: string(kind), ServerID: srv.ID})
 	}
 	for _, item := range send {
 		fire(item, fmt.Sprintf("%s: %s %s", srv.Name, noun, item))

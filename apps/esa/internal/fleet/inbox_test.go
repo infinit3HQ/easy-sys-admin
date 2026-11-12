@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
@@ -46,6 +47,20 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 	if deliveries != 2 {
 		t.Fatalf("notices = %d, want one per server", deliveries)
 	}
+	var alerts int64
+	if err := s.db.Model(&store.Alert{}).Where("account_id = ?", a.AccountID).Count(&alerts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alerts != 2 {
+		t.Fatalf("alert rows = %d, want one per server", alerts)
+	}
+	views, err := s.ListIncidents(ctx, a, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 2 || views[0].NextStep == "" || !strings.Contains(views[0].NextStep, "not a reachability result") {
+		t.Fatalf("next step missing: %+v", views)
+	}
 
 	if _, err := s.AcknowledgeIncident(ctx, a, incidents[0].ID); err != nil {
 		t.Fatal(err)
@@ -63,5 +78,11 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 	}
 	if deliveries != 2 {
 		t.Fatalf("notices after review = %d, want 2", deliveries)
+	}
+	if err := s.db.Model(&store.Alert{}).Where("account_id = ?", a.AccountID).Count(&alerts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if alerts != 2 {
+		t.Fatalf("alert rows after repeat = %d, want 2", alerts)
 	}
 }

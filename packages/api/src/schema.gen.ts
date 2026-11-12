@@ -2471,6 +2471,8 @@ export interface components {
             snoozeUntil?: string | null;
             snoozeReason?: string;
             message: string;
+            /** @description What a person can do next. It does not change the server. */
+            nextStep: string;
             /** Format: date-time */
             firstSeen: string;
             /** Format: date-time */

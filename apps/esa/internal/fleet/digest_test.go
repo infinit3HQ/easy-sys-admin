@@ -30,8 +30,8 @@ func TestDigestText(t *testing.T) {
 	if _, _, ok := digestText(now, digestFacts{}); ok {
 		t.Fatal("an empty week sends nothing")
 	}
-	title, body, ok := digestText(now, digestFacts{Unreachable: []string{"db-1"}, Waiting: []string{"web openssl for 12 days"}})
-	if !ok || title != "Week of 9 Nov" || !strings.Contains(body, "db-1") || !strings.Contains(body, "openssl") {
+	title, body, ok := digestText(now, digestFacts{Unreachable: []string{"db-1"}, Waiting: []string{"web openssl for 12 days"}, Review: []string{"mail: new socket on all interfaces 0.0.0.0:22"}})
+	if !ok || title != "Week of 9 Nov" || !strings.Contains(body, "db-1") || !strings.Contains(body, "openssl") || !strings.Contains(body, "Still to review") {
 		t.Fatalf("title %q body %q", title, body)
 	}
 }

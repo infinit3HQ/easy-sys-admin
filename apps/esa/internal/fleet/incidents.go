@@ -20,6 +20,7 @@ type IncidentView struct {
 	Subject    string
 	State      string
 	Message    string
+	NextStep   string
 	FirstSeen  time.Time
 	LastSeen   time.Time
 	AckedAt    *time.Time
@@ -79,6 +80,7 @@ func (s *Service) ListIncidents(ctx context.Context, a Actor, includeAcknowledge
 	for _, r := range rows {
 		v := IncidentView{ID: r.ID, ServerID: r.ServerID, Kind: r.Kind, Subject: r.Subject, State: r.State,
 			Message: r.Message, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen, AckedAt: r.AckedAt, ServerName: r.Server.Name}
+		v.NextStep = incidentNextStep(r.Kind)
 		out = append(out, v)
 	}
 	return out, nil
@@ -103,7 +105,7 @@ func (s *Service) AcknowledgeIncident(ctx context.Context, a Actor, id int64) (I
 	s.audit(ctx, nil, a, "incident.acknowledge", row.Server.Name, map[string]any{"kind": row.Kind, "subject": row.Subject})
 	row.State, row.AckedAt = "acknowledged", &now
 	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
-		State: row.State, Message: row.Message, FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, AckedAt: row.AckedAt}, nil
+		State: row.State, Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, AckedAt: row.AckedAt}, nil
 }
 
 // SnoozeIncident hides a notice until until, which must be within 7 days.
@@ -135,5 +137,23 @@ func (s *Service) SnoozeIncident(ctx context.Context, a Actor, id int64, until t
 	}
 	s.audit(ctx, nil, a, "incident.snooze", row.Server.Name, map[string]any{"kind": row.Kind, "until": until, "reason": reason})
 	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
-		State: "snoozed", Message: row.Message, FirstSeen: row.FirstSeen, LastSeen: row.LastSeen}, nil
+		State: "snoozed", Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen}, nil
+}
+
+// incidentNextStep is a hint for a person. It does not change the server.
+func incidentNextStep(kind string) string {
+	switch kind {
+	case string(AlertHostKey):
+		return "Compare this key with the server console. Accept it only when it matches, or remove the server."
+	case string(AlertNewKey):
+		return "Check who added the key. Approving the recorded keys does not remove access."
+	case string(AlertNewPort):
+		return "Check which process listens there. This is not a reachability result."
+	case string(AlertExposure):
+		return "Read the exposure report. A socket on all interfaces is not proof the port is reachable."
+	case string(AlertSecurityUpdate):
+		return "Read the package list, then start an update only after a person approves the plan."
+	default:
+		return "Read the notice. Mark it reviewed when you have seen it."
+	}
 }

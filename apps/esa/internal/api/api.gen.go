@@ -1118,12 +1118,15 @@ type ImageCheckList struct {
 
 // Incident defines model for Incident.
 type Incident struct {
-	AckedAt      *time.Time    `json:"ackedAt,omitempty"`
-	FirstSeen    time.Time     `json:"firstSeen"`
-	Id           int64         `json:"id"`
-	Kind         string        `json:"kind"`
-	LastSeen     time.Time     `json:"lastSeen"`
-	Message      string        `json:"message"`
+	AckedAt   *time.Time `json:"ackedAt,omitempty"`
+	FirstSeen time.Time  `json:"firstSeen"`
+	Id        int64      `json:"id"`
+	Kind      string     `json:"kind"`
+	LastSeen  time.Time  `json:"lastSeen"`
+	Message   string     `json:"message"`
+
+	// NextStep What a person can do next. It does not change the server.
+	NextStep     string        `json:"nextStep"`
 	ServerId     int64         `json:"serverId"`
 	ServerName   string        `json:"serverName"`
 	SnoozeReason *string       `json:"snoozeReason,omitempty"`
