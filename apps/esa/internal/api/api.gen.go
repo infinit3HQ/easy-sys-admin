@@ -1426,6 +1426,9 @@ type ProbeResult struct {
 	KeyType string `json:"keyType"`
 }
 
+// RecoveryReport defines model for RecoveryReport.
+type RecoveryReport = proto.RecoveryReport
+
 // ReinstallRequest defines model for ReinstallRequest.
 type ReinstallRequest struct {
 	// Login A one-time sudo-capable login. Used to install esa-helper, then discarded unless keepLogin is set.
@@ -2204,6 +2207,9 @@ type ServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerMetricsParams)
+	// GetServerRecovery Backup reports an operator wrote on the server
+	// (GET /servers/{serverId}/recovery)
+	GetServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -4223,6 +4229,32 @@ func (siw *ServerInterfaceWrapper) GetServerMetrics(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// GetServerRecovery operation middleware
+func (siw *ServerInterfaceWrapper) GetServerRecovery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetServerRecovery(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerSecurity operation middleware
 func (siw *ServerInterfaceWrapper) GetServerSecurity(w http.ResponseWriter, r *http.Request) {
 
@@ -4653,6 +4685,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/access", wrapper.GetServerAccess)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/security", wrapper.GetServerSecurity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/jobs", wrapper.GetServerJobs)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.GetServerRecovery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups", wrapper.ListGroups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups", wrapper.CreateGroup)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}", wrapper.DeleteGroup)
@@ -7750,6 +7783,45 @@ func (response GetServerMetricsdefaultJSONResponse) VisitGetServerMetricsRespons
 	return err
 }
 
+type GetServerRecoveryRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type GetServerRecoveryResponseObject interface {
+	VisitGetServerRecoveryResponse(w http.ResponseWriter) error
+}
+
+type GetServerRecovery200JSONResponse RecoveryReport
+
+func (response GetServerRecovery200JSONResponse) VisitGetServerRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetServerRecoverydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetServerRecoverydefaultJSONResponse) VisitGetServerRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerSecurityRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -8410,6 +8482,9 @@ type StrictServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(ctx context.Context, request GetServerMetricsRequestObject) (GetServerMetricsResponseObject, error)
+	// GetServerRecovery Backup reports an operator wrote on the server
+	// (GET /servers/{serverId}/recovery)
+	GetServerRecovery(ctx context.Context, request GetServerRecoveryRequestObject) (GetServerRecoveryResponseObject, error)
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(ctx context.Context, request GetServerSecurityRequestObject) (GetServerSecurityResponseObject, error)
@@ -10702,6 +10777,32 @@ func (sh *strictHandler) GetServerMetrics(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerMetricsResponseObject); ok {
 		if err := validResponse.VisitGetServerMetricsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetServerRecovery operation middleware
+func (sh *strictHandler) GetServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request GetServerRecoveryRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetServerRecovery(ctx, request.(GetServerRecoveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetServerRecovery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetServerRecoveryResponseObject); ok {
+		if err := validResponse.VisitGetServerRecoveryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

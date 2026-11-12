@@ -1426,6 +1426,9 @@ type ProbeResult struct {
 	KeyType string `json:"keyType"`
 }
 
+// RecoveryReport defines model for RecoveryReport.
+type RecoveryReport = proto.RecoveryReport
+
 // ReinstallRequest defines model for ReinstallRequest.
 type ReinstallRequest struct {
 	// Login A one-time sudo-capable login. Used to install esa-helper, then discarded unless keepLogin is set.
@@ -2695,6 +2698,11 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/metrics (the `GetServerMetrics` operationId).
 	GetServerMetrics(ctx context.Context, serverId ServerId, params *GetServerMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetServerRecovery Backup reports an operator wrote on the server
+	//
+	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
+	GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	//
@@ -4500,6 +4508,21 @@ func (c *Client) GetServerLogs(ctx context.Context, serverId ServerId, params *G
 // Corresponds with GET /servers/{serverId}/metrics (the `GetServerMetrics` operationId).
 func (c *Client) GetServerMetrics(ctx context.Context, serverId ServerId, params *GetServerMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerMetricsRequest(c.Server, serverId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetServerRecovery Backup reports an operator wrote on the server
+//
+// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
+func (c *Client) GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetServerRecoveryRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
 	}
@@ -7923,6 +7946,40 @@ func NewGetServerMetricsRequest(server string, serverId ServerId, params *GetSer
 	return req, nil
 }
 
+// NewGetServerRecoveryRequest constructs an http.Request for the GetServerRecovery method
+func NewGetServerRecoveryRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/recovery", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetServerSecurityRequest constructs an http.Request for the GetServerSecurity method
 func NewGetServerSecurityRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -9123,6 +9180,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/metrics (the `GetServerMetrics` operationId).
 	GetServerMetricsWithResponse(ctx context.Context, serverId ServerId, params *GetServerMetricsParams, reqEditors ...RequestEditorFn) (*GetServerMetricsResponse, error)
+
+	// GetServerRecoveryWithResponse Backup reports an operator wrote on the server
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
+	GetServerRecoveryWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerRecoveryResponse, error)
 
 	// GetServerSecurityWithResponse Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	//
@@ -12958,6 +13022,54 @@ func (r GetServerMetricsResponse) ContentType() string {
 	return ""
 }
 
+type GetServerRecoveryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *RecoveryReport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetServerRecoveryResponse) GetJSON200() *RecoveryReport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetServerRecoveryResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetServerRecoveryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetServerRecoveryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetServerRecoveryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetServerRecoveryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerSecurityResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -14882,6 +14994,19 @@ func (c *ClientWithResponses) GetServerMetricsWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseGetServerMetricsResponse(rsp)
+}
+
+// GetServerRecoveryWithResponse Backup reports an operator wrote on the server
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
+func (c *ClientWithResponses) GetServerRecoveryWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerRecoveryResponse, error) {
+	rsp, err := c.GetServerRecovery(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetServerRecoveryResponse(rsp)
 }
 
 // GetServerSecurityWithResponse Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
@@ -17620,6 +17745,39 @@ func ParseGetServerMetricsResponse(rsp *http.Response) (*GetServerMetricsRespons
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest MetricsResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetServerRecoveryResponse parses an HTTP response from a GetServerRecoveryWithResponse call
+func ParseGetServerRecoveryResponse(rsp *http.Response) (*GetServerRecoveryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetServerRecoveryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RecoveryReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -281,6 +281,7 @@ function banText(
 
 export function SecurityTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.security(serverId))
+  const recovery = useQuery(q.recovery(serverId))
   if (r.isLoading) return <Loading />
   if (r.error || !r.data) return <ErrorBanner error={r.error} />
   const d = r.data
@@ -293,6 +294,25 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           An empty list here is not a clean result.
         </Notice>
       )}
+      <Panel title="Recovery" className="xl:col-span-2">
+        <p className="text-xs text-muted-foreground">
+          {recovery.data?.statement ??
+            'Esa reads result files the operator wrote. It does not run a backup or a restore.'}
+        </p>
+        {recovery.data && recovery.data.gaps.length > 0 ? (
+          <p className="mt-2 font-mono text-xs text-warn">
+            {recovery.data.gaps.join(', ')}
+          </p>
+        ) : null}
+        <ul className="mt-2 space-y-1 font-mono text-xs">
+          {recovery.data?.sources.map((s) => (
+            <li key={`${s.tool}-${s.dataset}`}>
+              {s.tool} {s.dataset}: backup {s.backupState}, check {s.checkKind}{' '}
+              {s.checkState}, restore {s.restoreState}, smoke {s.smokeState}
+            </li>
+          ))}
+        </ul>
+      </Panel>
       <Panel title="Listening sockets" flush>
         <p className="px-4 pt-3 text-xs text-muted-foreground">
           A socket on 0.0.0.0 or :: listens on all interfaces. That does not

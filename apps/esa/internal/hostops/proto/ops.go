@@ -276,3 +276,27 @@ type Timer struct {
 	Result    string    `json:"result"`
 	Failed    bool      `json:"failed"`
 }
+
+// RecoveryReport is what an operator wrote under /var/lib/esa/recovery.
+// It is not a restore test run by esa.
+type RecoveryReport struct {
+	Revision  int              `json:"revision"`
+	Statement string           `json:"statement"`
+	Sources   []RecoverySource `json:"sources"`
+	Gaps      []string         `json:"gaps"`
+}
+
+// RecoverySource is one restic, Borg, or generic result file.
+type RecoverySource struct {
+	Tool         string     `json:"tool"`
+	ToolVersion  string     `json:"toolVersion"`
+	Dataset      string     `json:"dataset"`
+	Snapshot     string     `json:"snapshot"`
+	BackupState  string     `json:"backupState"`
+	BackupAt     *time.Time `json:"backupAt,omitempty"`
+	CheckKind    string     `json:"checkKind"`
+	CheckState   string     `json:"checkState"`
+	CheckAt      *time.Time `json:"checkAt,omitempty"`
+	RestoreState string     `json:"restoreState"`
+	SmokeState   string     `json:"smokeState"`
+}

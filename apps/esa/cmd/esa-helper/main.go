@@ -186,6 +186,8 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 		return h.Security(ctx)
 	case "jobs":
 		return h.Jobs(ctx)
+	case "recovery":
+		return h.Recovery(ctx)
 	case "reboot":
 		return map[string]bool{"scheduled": true}, h.Reboot(ctx)
 	case "uninstall":

@@ -629,6 +629,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Backup reports an operator wrote on the server */
+        get: operations["getServerRecovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -2106,6 +2125,26 @@ export interface components {
             cron: components["schemas"]["CronEntry"][];
             timers: components["schemas"]["Timer"][];
         };
+        RecoveryReport: {
+            revision: number;
+            statement: string;
+            sources: {
+                tool: string;
+                toolVersion: string;
+                dataset: string;
+                snapshot: string;
+                backupState: string;
+                /** Format: date-time */
+                backupAt?: string | null;
+                checkKind: string;
+                checkState: string;
+                /** Format: date-time */
+                checkAt?: string | null;
+                restoreState: string;
+                smokeState: string;
+            }[];
+            gaps: string[];
+        };
         CronEntry: {
             source: string;
             user: string;
@@ -3568,6 +3607,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobsReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recovery evidence. A success is not proof the data can be restored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryReport"];
                 };
             };
             default: components["responses"]["Error"];

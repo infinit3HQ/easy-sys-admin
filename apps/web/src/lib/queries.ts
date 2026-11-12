@@ -96,6 +96,16 @@ export const q = {
           }),
         ),
     }),
+  recovery: (id: number) =>
+    queryOptions({
+      queryKey: ['recovery', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/recovery', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
   jobs: (id: number) =>
     queryOptions({
       queryKey: ['jobs', id],

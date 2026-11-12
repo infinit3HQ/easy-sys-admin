@@ -130,3 +130,15 @@ func (h *Handlers) GetServerJobs(ctx context.Context, req GetServerJobsRequestOb
 	}
 	return GetServerJobs200JSONResponse(r), nil
 }
+
+func (h *Handlers) GetServerRecovery(ctx context.Context, req GetServerRecoveryRequestObject) (GetServerRecoveryResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, err := h.fleet.Recovery(ctx, a, req.ServerId)
+	if err != nil {
+		return nil, err
+	}
+	return GetServerRecovery200JSONResponse(r), nil
+}

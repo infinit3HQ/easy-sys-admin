@@ -718,6 +718,21 @@ paths:
               schema: { $ref: '#/components/schemas/JobsReport' }
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/recovery:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerRecovery
+      summary: Backup reports an operator wrote on the server
+      tags: [server-live]
+      responses:
+        '200':
+          description: Recovery evidence. A success is not proof the data can be restored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecoveryReport' }
+        default: { $ref: '#/components/responses/Error' }
+
   /groups:
     get:
       operationId: listGroups
@@ -2515,6 +2530,33 @@ components:
       properties:
         cron: { type: array, items: { $ref: '#/components/schemas/CronEntry' } }
         timers: { type: array, items: { $ref: '#/components/schemas/Timer' } }
+
+    RecoveryReport:
+      x-go-type: proto.RecoveryReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [revision, statement, sources, gaps]
+      properties:
+        revision: { type: integer }
+        statement: { type: string }
+        sources:
+          type: array
+          items:
+            type: object
+            required: [tool, toolVersion, dataset, snapshot, backupState, checkKind, checkState, restoreState, smokeState]
+            properties:
+              tool: { type: string }
+              toolVersion: { type: string }
+              dataset: { type: string }
+              snapshot: { type: string }
+              backupState: { type: string }
+              backupAt: { type: string, format: date-time, nullable: true }
+              checkKind: { type: string }
+              checkState: { type: string }
+              checkAt: { type: string, format: date-time, nullable: true }
+              restoreState: { type: string }
+              smokeState: { type: string }
+        gaps: { type: array, items: { type: string } }
 
     CronEntry:
       x-go-type: proto.CronEntry

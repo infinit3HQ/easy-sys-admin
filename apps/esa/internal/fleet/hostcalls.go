@@ -241,6 +241,24 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 	return out, err
 }
 
+// Recovery reads the operator's restic and Borg result files. It does not
+// run a backup or a restore.
+func (s *Service) Recovery(ctx context.Context, a Actor, serverID int64) (proto.RecoveryReport, error) {
+	if err := a.can(RoleViewer, ScopeRead); err != nil {
+		return proto.RecoveryReport{}, err
+	}
+	srv, _, err := s.loadVisibleServer(ctx, a, serverID)
+	if err != nil {
+		return proto.RecoveryReport{}, err
+	}
+	var out proto.RecoveryReport
+	err = s.callServer(ctx, srv, time.Minute, &out, "recovery")
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+		out.Gaps = append(out.Gaps, "helper")
+	}
+	return out, err
+}
+
 // CheckUpdates refreshes the package lists on a server and returns the
 // pending updates.
 func (s *Service) CheckUpdates(ctx context.Context, a Actor, serverID int64) (ServerView, error) {
