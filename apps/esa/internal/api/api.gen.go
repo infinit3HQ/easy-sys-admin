@@ -1380,14 +1380,17 @@ type PendingUpdates = proto.PendingUpdates
 
 // PlanBody defines model for PlanBody.
 type PlanBody struct {
-	BuildCache       *bool               `json:"buildCache,omitempty"`
-	CanaryServerIds  *[]int64            `json:"canaryServerIds,omitempty"`
-	GroupId          *int64              `json:"groupId,omitempty"`
-	Hold             *[]string           `json:"hold,omitempty"`
-	Journal          *bool               `json:"journal,omitempty"`
-	JournalSize      *string             `json:"journalSize,omitempty"`
-	Kind             PlanBodyKind        `json:"kind"`
-	ObserveSeconds   *int                `json:"observeSeconds,omitempty"`
+	BuildCache      *bool        `json:"buildCache,omitempty"`
+	CanaryServerIds *[]int64     `json:"canaryServerIds,omitempty"`
+	GroupId         *int64       `json:"groupId,omitempty"`
+	Hold            *[]string    `json:"hold,omitempty"`
+	Journal         *bool        `json:"journal,omitempty"`
+	JournalSize     *string      `json:"journalSize,omitempty"`
+	Kind            PlanBodyKind `json:"kind"`
+	ObserveSeconds  *int         `json:"observeSeconds,omitempty"`
+
+	// Packages Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
+	Packages         *[]string           `json:"packages,omitempty"`
 	RebootIfRequired *bool               `json:"rebootIfRequired,omitempty"`
 	ServerIds        *[]int64            `json:"serverIds,omitempty"`
 	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
@@ -1744,6 +1747,9 @@ type UpdatePolicy struct {
 	// MaxFailures Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
 	MaxFailures int              `json:"maxFailures"`
 	Mode        UpdatePolicyMode `json:"mode"`
+
+	// PlanRequired An interactive update or cleanup must be an approved plan. A schedule still runs.
+	PlanRequired bool `json:"planRequired"`
 
 	// RebootIfRequired Reboot each server after its update when the server asks for it. Never the control plane host.
 	RebootIfRequired bool `json:"rebootIfRequired"`

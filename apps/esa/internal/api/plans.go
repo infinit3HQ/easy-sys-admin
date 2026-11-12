@@ -58,6 +58,10 @@ func toPlan(v fleet.PlanView) FixPlan {
 		size := v.Body.JournalSize
 		body.JournalSize = &size
 	}
+	if len(v.Body.Packages) > 0 {
+		pkgs := append([]string(nil), v.Body.Packages...)
+		body.Packages = &pkgs
+	}
 	return FixPlan{
 		Id: v.ID, Status: v.Status, Fingerprint: v.Fingerprint, Body: body,
 		ExpiresAt: v.ExpiresAt, RunId: v.RunID, Reason: v.Reason, CreatedAt: v.CreatedAt,

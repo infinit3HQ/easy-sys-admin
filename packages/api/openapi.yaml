@@ -2560,7 +2560,7 @@ components:
 
     UpdatePolicy:
       type: object
-      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures]
+      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures, planRequired]
       properties:
         enabled: { type: boolean }
         mode: { type: string, enum: [security, all] }
@@ -2580,6 +2580,9 @@ components:
           maximum: 1000
           default: 1
           description: Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
+        planRequired:
+          type: boolean
+          description: An interactive update or cleanup must be an approved plan. A schedule still runs.
 
     HealthCheck:
       type: object
@@ -2777,6 +2780,10 @@ components:
         vscode: { type: boolean }
         journal: { type: boolean }
         journalSize: { type: string }
+        packages:
+          type: array
+          items: { type: string }
+          description: Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
 
     FixPlan:
       type: object

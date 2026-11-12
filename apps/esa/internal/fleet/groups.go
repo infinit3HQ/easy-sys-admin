@@ -32,8 +32,9 @@ type UpdatePolicy struct {
 	RebootIfRequired bool
 	// BatchSize servers are worked on at once (1 to 50). The run stops
 	// after MaxFailures servers fail (1 to 1000). 0 on input means 1.
-	BatchSize   int
-	MaxFailures int
+	BatchSize    int
+	MaxFailures  int
+	PlanRequired bool
 }
 
 // GroupInput creates or replaces a group.
@@ -79,6 +80,7 @@ func toGroupView(g store.Group) GroupView {
 			Enabled: g.UpdatesEnabled, Mode: proto.UpdateMode(g.UpdateMode), Days: splitDays(g.UpdateDays),
 			Time: g.UpdateTime, Hold: []string{}, RebootIfRequired: g.RebootIfRequired,
 			BatchSize: max(g.UpdateBatchSize, 1), MaxFailures: max(g.UpdateMaxFailures, 1),
+			PlanRequired: g.PlanRequired,
 		},
 		LastRuns: []RunView{}, Checks: []HealthCheck{},
 	}
@@ -157,6 +159,7 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	g.UpdatesEnabled, g.UpdateMode, g.UpdateDays, g.UpdateTime = in.Updates.Enabled, string(in.Updates.Mode), strings.Join(us.Days, ","), us.Time
 	g.HoldPackages, g.RebootIfRequired = store.MustJSON(hold), in.Updates.RebootIfRequired
 	g.UpdateBatchSize, g.UpdateMaxFailures = max(in.Updates.BatchSize, 1), max(in.Updates.MaxFailures, 1)
+	g.PlanRequired = in.Updates.PlanRequired
 	g.HealthChecks = store.MustJSON(checks)
 
 	// Mark the most recent slot as taken, so saving the form never starts a

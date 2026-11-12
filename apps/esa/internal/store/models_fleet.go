@@ -46,6 +46,9 @@ type Group struct {
 	// HealthChecks run before and after a package upgrade. A blocking
 	// failure stops that server. The list is frozen onto the run.
 	HealthChecks JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	// PlanRequired makes an interactive update or cleanup wait for an
+	// approved plan. A schedule still runs.
+	PlanRequired bool `gorm:"not null;default:false"`
 
 	// Last schedule slot each job claimed, so a slot runs once.
 	CleanSlotAt  *time.Time

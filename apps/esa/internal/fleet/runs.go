@@ -84,6 +84,9 @@ type RunRequest struct {
 	CanaryServerIDs []int64
 	// ObserveSeconds repeats the canary checks before the other servers start.
 	ObserveSeconds int
+	// FromPlan is set only by ExecutePlan. A group that requires a plan
+	// refuses every other interactive start. Schedules are still allowed.
+	FromPlan bool
 }
 
 // RunView is a run as the front doors show it.
@@ -175,6 +178,9 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	}
 	if len(servers) == 0 {
 		return RunView{}, invalid("groupId", "the group has no servers")
+	}
+	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && a.Source != SourceSystem && s.needsPlan(ctx, group, servers) {
+		return RunView{}, invalid("kind", "this group requires an approved plan")
 	}
 
 	opts := RunOptions{BuildCache: true, VSCode: true, JournalSize: "200M", UpdateMode: proto.UpdateSecurity, BatchSize: 1, MaxFailures: 1}

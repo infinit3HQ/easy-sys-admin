@@ -27,7 +27,7 @@ func toGroupInput(b *GroupInput) fleet.GroupInput {
 		Updates: fleet.UpdatePolicy{
 			Enabled: b.Updates.Enabled, Mode: proto.UpdateMode(b.Updates.Mode), Days: days(b.Updates.Days), Time: b.Updates.Time,
 			Hold: b.Updates.Hold, RebootIfRequired: b.Updates.RebootIfRequired,
-			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures,
+			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures, PlanRequired: b.Updates.PlanRequired,
 		},
 		Checks: toFleetChecks(b.Checks),
 	}

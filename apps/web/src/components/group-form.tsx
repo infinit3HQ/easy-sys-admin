@@ -41,6 +41,7 @@ export const defaultGroup: GroupInput = {
     rebootIfRequired: false,
     batchSize: 1,
     maxFailures: 1,
+    planRequired: false,
   },
   checks: [],
 }
@@ -298,6 +299,13 @@ export function GroupForm({
               disabled={disabled}
               label="Reboot after updates when a server asks for it"
               hint="Each server reboots after its own update, and its batch waits for it to come back. The server hosting esa is skipped."
+            />
+            <Toggle
+              checked={g.updates.planRequired}
+              onChange={(planRequired) => setUpd({ planRequired })}
+              disabled={disabled}
+              label="Require an approved plan"
+              hint="An update or cleanup started by a person or an agent must be an approved plan. The schedule still runs."
             />
           </div>
         </Panel>

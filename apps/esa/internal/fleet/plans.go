@@ -31,6 +31,9 @@ type PlanBody struct {
 	VSCode           bool     `json:"vscode,omitempty"`
 	Journal          bool     `json:"journal,omitempty"`
 	JournalSize      string   `json:"journalSize,omitempty"`
+	// Packages is the pending package list frozen when an update plan is
+	// proposed. A different list at execution invalidates the plan.
+	Packages []string `json:"packages,omitempty"`
 }
 
 // PlanView is a plan as the API shows it.
@@ -85,6 +88,13 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 	}
 	if body.GroupID != nil && len(body.ServerIDs) > 0 {
 		return PlanView{}, invalid("serverIds", "pick a group or servers, not both")
+	}
+	if body.Kind == RunUpdate {
+		names, err := s.recordedPackages(ctx, a.AccountID, body)
+		if err != nil {
+			return PlanView{}, err
+		}
+		body.Packages = names
 	}
 	fp, err := planFingerprint(body)
 	if err != nil {
@@ -203,6 +213,13 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 			_ = tx.Model(&row).Updates(map[string]any{"status": "invalidated", "reason": "fingerprint mismatch"})
 			return invalid("status", "the plan was invalidated")
 		}
+		if body.Kind == RunUpdate {
+			names, err := s.recordedPackages(ctx, a.AccountID, body)
+			if err != nil || !sameNames(names, body.Packages) {
+				_ = tx.Model(&row).Updates(map[string]any{"status": "invalidated", "reason": "package list changed"})
+				return invalid("status", "the package list changed, so this approval no longer applies")
+			}
+		}
 		res := tx.Model(&store.FixPlan{}).Where("id = ? AND status = ? AND run_id IS NULL", row.ID, "approved").Update("status", "executing")
 		if res.Error != nil {
 			return res.Error
@@ -215,7 +232,7 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 			ObserveSeconds: body.ObserveSeconds, CanaryServerIDs: body.CanaryServerIDs,
 			BuildCache: body.BuildCache, VSCode: body.VSCode, Journal: body.Journal, JournalSize: body.JournalSize,
 		}
-		run, err := s.StartRun(ctx, a, RunRequest{Kind: body.Kind, GroupID: body.GroupID, ServerIDs: body.ServerIDs, Options: &opts, CanaryServerIDs: body.CanaryServerIDs, ObserveSeconds: body.ObserveSeconds})
+		run, err := s.StartRun(ctx, a, RunRequest{Kind: body.Kind, GroupID: body.GroupID, ServerIDs: body.ServerIDs, Options: &opts, CanaryServerIDs: body.CanaryServerIDs, ObserveSeconds: body.ObserveSeconds, FromPlan: true})
 		if err != nil {
 			_ = tx.Model(&store.FixPlan{}).Where("id = ?", row.ID).Updates(map[string]any{"status": "failed", "reason": err.Error()})
 			return err
@@ -276,6 +293,72 @@ func (s *Service) invalidate(ctx context.Context, a Actor, row store.FixPlan, re
 	_ = s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"status": "invalidated", "reason": reason, "updated_at": s.now()})
 	s.audit(ctx, nil, a, "plan.invalidate", row.Fingerprint, map[string]any{"id": row.ID})
 	return invalid("status", "%s", reason)
+}
+
+func (s *Service) needsPlan(ctx context.Context, group *store.Group, servers []store.Server) bool {
+	if group != nil && group.PlanRequired {
+		return true
+	}
+	var ids []int64
+	for _, srv := range servers {
+		if srv.GroupID != nil {
+			ids = append(ids, *srv.GroupID)
+		}
+	}
+	if len(ids) == 0 {
+		return false
+	}
+	var n int64
+	if err := s.db.WithContext(ctx).Model(&store.Group{}).Where("id IN ? AND plan_required", ids).Count(&n).Error; err != nil {
+		return true
+	}
+	return n > 0
+}
+
+func (s *Service) recordedPackages(ctx context.Context, accountID int64, body PlanBody) ([]string, error) {
+	q := s.db.WithContext(ctx).Where("account_id = ?", accountID)
+	if body.GroupID != nil {
+		q = q.Where("group_id = ?", *body.GroupID)
+	} else {
+		q = q.Where("id IN ?", body.ServerIDs)
+	}
+	var servers []store.Server
+	if err := q.Find(&servers).Error; err != nil {
+		return nil, err
+	}
+	if len(servers) == 0 {
+		return nil, invalid("serverIds", "no servers")
+	}
+	mode := body.UpdateMode
+	if mode == "" {
+		mode = "security"
+	}
+	var names []string
+	for _, srv := range servers {
+		var state store.ServerState
+		if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Take(&state).Error; err != nil || len(state.Updates) == 0 {
+			return nil, invalid("packages", "the package list on %s is not known yet", srv.Name)
+		}
+		var upd proto.PendingUpdates
+		if err := state.Updates.Decode(&upd); err != nil {
+			return nil, invalid("packages", "the package list on %s is not known yet", srv.Name)
+		}
+		for _, p := range upd.Packages {
+			if mode == "all" || p.Security {
+				names = append(names, p.Name)
+			}
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names), nil
+}
+
+func sameNames(a, b []string) bool {
+	aa := append([]string(nil), a...)
+	bb := append([]string(nil), b...)
+	slices.Sort(aa)
+	slices.Sort(bb)
+	return slices.Equal(aa, bb)
 }
 
 func toPlan(row store.FixPlan, body PlanBody) PlanView {

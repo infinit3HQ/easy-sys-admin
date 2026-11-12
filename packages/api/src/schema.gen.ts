@@ -2163,6 +2163,8 @@ export interface components {
              * @default 1
              */
             maxFailures: number;
+            /** @description An interactive update or cleanup must be an approved plan. A schedule still runs. */
+            planRequired: boolean;
         };
         HealthCheck: {
             name: string;
@@ -2332,6 +2334,8 @@ export interface components {
             vscode?: boolean;
             journal?: boolean;
             journalSize?: string;
+            /** @description Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan. */
+            packages?: string[];
         };
         FixPlan: {
             /** Format: int64 */
