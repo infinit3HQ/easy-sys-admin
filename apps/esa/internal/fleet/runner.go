@@ -257,32 +257,68 @@ func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status,
 }
 
 // begin locks the server and resolves its endpoint. It returns false (and
-// records why) when the server cannot be worked on now.
+// records why) when the server cannot be worked on now. The database lock
+// is held on one connection so a second control plane process skips the
+// same server instead of starting a second run.
 func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoint, func(), bool) {
 	lock := s.serverLock(rs.ServerID)
 	if !lock.TryLock() {
 		s.setRunServer(ctx, rs, "skipped", "another run is working on this server", nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
+	unlockDB, ok := s.tryServerLock(ctx, rs.ServerID)
+	if !ok {
+		lock.Unlock()
+		s.setRunServer(ctx, rs, "skipped", "another control plane is working on this server", nil, 0)
+		return remote.Endpoint{}, nil, false
+	}
+	unlock := func() {
+		unlockDB()
+		lock.Unlock()
+	}
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", rs.ServerID).Take(&srv).Error; err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", "server no longer exists", nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	if err := s.blockedByHostKey(ctx, srv); err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	s.setRunServer(ctx, rs, "running", "", nil, 0)
-	return ep, lock.Unlock, true
+	return ep, unlock, true
+}
+
+// tryServerLock takes a PostgreSQL advisory lock for this server and holds
+// the connection until unlock. The in-process mutex does not cover a second
+// process.
+func (s *Service) tryServerLock(ctx context.Context, id int64) (func(), bool) {
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		return nil, false
+	}
+	conn, err := sqlDB.Conn(ctx)
+	if err != nil {
+		return nil, false
+	}
+	var got bool
+	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", id).Scan(&got)
+	if err != nil || !got {
+		_ = conn.Close()
+		return nil, false
+	}
+	return func() {
+		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", id)
+		_ = conn.Close()
+	}, true
 }
 
 func (s *Service) failHost(ctx context.Context, rs *store.RunServer, err error) {

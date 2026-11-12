@@ -172,7 +172,19 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T postgres \
 docker compose -f deploy/compose.yaml --env-file deploy/.env start esa web
 ```
 
-The restored data needs the `ESA_MASTER_KEY` that was in use when the dump was taken.
+The restored data needs the `ESA_MASTER_KEY` that was in use when the dump was taken. A dump taken before `esa reseal` still needs the old key.
+
+## Rotate the master key
+
+Change the key in Compose, not in the app. On the deploy host:
+
+1. Generate a new key with `openssl rand -base64 32`.
+2. Set `ESA_MASTER_KEY` in `deploy/.env` to `<new>,<old>`. On a GitHub Actions host, update the `production` secret of the same name and redeploy so the container receives it.
+3. Stop the `esa` service: `docker compose -f deploy/compose.yaml --env-file deploy/.env stop esa`.
+4. Run `docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm esa reseal`. Add `--dry-run` first if you want the counts only.
+5. When it says live rows are sealed with the current key, set `ESA_MASTER_KEY` to `<new>` only and start `esa` again.
+
+One re-seal covers every account on this install. A person signed in to the board cannot do this.
 
 ## Health check
 

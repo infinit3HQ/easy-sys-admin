@@ -218,7 +218,7 @@ The runner takes the run's servers in name order and cuts them into batches of t
 
 `StartRun` needs the admin role and the `actions` scope. A run targets a group or a list of servers. All its servers must belong to one owning account, which owns the run; a run that mixes own and shared servers is refused. Options come from the group (cleanups, journal size, update mode, held packages, reboot if required, batch size, failure limit) or from the request. Options in a request replace the group's, except that a batch size or failure limit left out keeps the group's. Without a group the defaults are build cache and VS Code cleanup on, journal off, journal size `200M`, update mode `security`, batch size 1, and failure limit 1. The trigger is `schedule`, `manual`, `api`, or `mcp`.
 
-The run executes in the background. Each server is locked while it is worked on. A server another run already holds is marked `skipped`; in an update run that does not count as a failure.
+The run executes in the background. Each server is locked while it is worked on, both in this process and with a PostgreSQL advisory lock held on one connection. A server another run or another control plane process already holds is marked `skipped`; in an update run that does not count as a failure.
 
 ### Updates
 
