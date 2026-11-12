@@ -36,7 +36,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted.
 - CLI commands for organizations, teams, and sharing. They are in the web app and the API only.
 - On a run shared with another organization, the overall status can reflect servers that organization cannot see.
 - A helper that speaks a protocol other than 1 is refused. Report revision 2 is required for a complete access or security report. An older helper is shown as not ready, and its last complete exposure summary is kept. SSH key fingerprints from a current helper are listed on the Keys page. The list is not every way to log in.
-- Rotating `ESA_MASTER_KEY` has no re-seal step, so old keys must stay in the list.
+- A self-hosted install can re-seal stored secrets with `esa reseal` after setting `ESA_MASTER_KEY` to `<new>,<old>`. Remove the old key only when the command says the live rows use the current key. Backups taken before that still need the old key.
 - The hosted audit log is not pruned. A self-hosted install can set `ESA_AUDIT_RETENTION`. A person in the app cannot shorten it.
 - A required reviewer on the GitHub `production` environment needs a paid plan while the repository is private.
 

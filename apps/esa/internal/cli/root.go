@@ -27,7 +27,7 @@ func Execute() int {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newServeCommand(), newHealthcheckCommand())
+	root.AddCommand(newServeCommand(), newHealthcheckCommand(), newResealCommand())
 	addClientCommands(root)
 
 	if err := root.ExecuteContext(ctx); err != nil {

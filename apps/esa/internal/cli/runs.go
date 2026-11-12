@@ -85,7 +85,7 @@ func runsCmd() *cobra.Command {
 		RunE: func(c *cobra.Command, args []string) error {
 			kind := apiclient.RunKind(args[0])
 			switch kind {
-			case apiclient.Measure, apiclient.Clean, apiclient.Update, apiclient.Reboot:
+			case apiclient.RunKindMeasure, apiclient.RunKindClean, apiclient.RunKindUpdate, apiclient.RunKindReboot:
 			default:
 				return errors.New("kind must be measure, clean, update, or reboot")
 			}
@@ -124,8 +124,8 @@ func runsCmd() *cobra.Command {
 				}
 				body.ServerIds = &ids
 			}
-			rolling := kind == apiclient.Update || kind == apiclient.Reboot
-			setMode := mode != "" && kind == apiclient.Update
+			rolling := kind == apiclient.RunKindUpdate || kind == apiclient.RunKindReboot
+			setMode := mode != "" && kind == apiclient.RunKindUpdate
 			if setMode || (rolling && (batchSet || maxSet)) {
 				// Options replace the group's settings for the run, so start
 				// from them and change only what the flags set.

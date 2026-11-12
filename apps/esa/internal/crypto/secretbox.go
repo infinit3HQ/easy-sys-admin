@@ -91,3 +91,37 @@ func (b *Box) Open(sealed, context string) ([]byte, error) {
 	}
 	return pt, nil
 }
+
+// Current is the id of the key that seals new secrets.
+func (b *Box) Current() string { return b.current }
+
+// KeyID returns the key id stored on a sealed value, without decrypting it.
+func KeyID(sealed string) (string, error) {
+	parts := strings.SplitN(sealed, ":", 3)
+	if len(parts) != 3 || parts[0] != "v1" || len(parts[1]) != keyIDLen {
+		return "", ErrDecrypt
+	}
+	return parts[1], nil
+}
+
+// Reseal opens a secret and seals it with the current key. changed is false
+// when it is already sealed with that key. A decrypt failure returns the
+// original error and does not produce a replacement.
+func (b *Box) Reseal(sealed, context string) (next string, changed bool, err error) {
+	id, err := KeyID(sealed)
+	if err != nil {
+		return "", false, err
+	}
+	if id == b.current {
+		return sealed, false, nil
+	}
+	pt, err := b.Open(sealed, context)
+	if err != nil {
+		return "", false, err
+	}
+	next, err = b.Seal(pt, context)
+	if err != nil {
+		return "", false, err
+	}
+	return next, true, nil
+}

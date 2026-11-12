@@ -23,9 +23,11 @@ A sealed value looks like `v1:<key id>:<base64 of nonce and ciphertext>`. The ke
 `ESA_MASTER_KEY` takes a comma-separated list. The first key seals new secrets. Every key in the list can open existing ones.
 
 1. Generate a new key.
-2. Set `ESA_MASTER_KEY=<new>,<old>` and restart the control plane.
+2. Set `ESA_MASTER_KEY=<new>,<old>` and stop the control plane.
+3. Run `esa reseal`. `--dry-run` counts rows and writes nothing.
+4. When the command says live rows are sealed with the current key, remove `<old>` from `ESA_MASTER_KEY` and start the control plane again.
 
-There is no command that re-seals existing secrets with the new key. A secret stays sealed with the key it was written with until the row is written again, and account SSH keys are never rewritten. Keep the old key in the list. If you remove a key that still seals a secret, opening that secret fails with "key <id> is not configured", and esa can no longer reach the servers of that account.
+A row that cannot be opened is left unchanged, and the command exits with an error so the old key stays until you fix that row. Running it again is safe. A database backup taken before the re-seal still needs the old key. This does not rotate the SSH key on a server, and it does not prove an old copy of the key was destroyed. It is not tied to one user, one organization, or a maintenance plan. There is no API or MCP call for it, because one re-seal rewrites sealed secrets for every account on this control plane.
 
 ### Hashed tokens
 

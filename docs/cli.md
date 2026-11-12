@@ -256,6 +256,17 @@ esa serve
 
 For local development, `pnpm --filter @esa/esa dev` builds the helpers and runs `go run ./cmd/esa serve` with the repo's `.env`.
 
+## esa reseal
+
+Re-seals stored secrets with the first key in `ESA_MASTER_KEY`. It reads the database directly. It is not an API call and it does not print key material.
+
+```sh
+esa reseal --dry-run
+esa reseal
+```
+
+Stop `esa serve` first so it is not writing secrets at the same time. The command covers account SSH keys, saved server logins, and notification channel settings. `--dry-run` writes nothing. See [security.md](security.md#rotating-the-master-key).
+
 ### esa healthcheck
 
 A hidden command for the container's `HEALTHCHECK`, since the image has no shell or curl. It calls `/healthz` on `ESA_LISTEN` (using `127.0.0.1` when the host is empty, `0.0.0.0`, or `::`) with a 3 second timeout and exits `0` on HTTP 200, `1` otherwise.
