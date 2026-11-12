@@ -26,8 +26,10 @@ type IncidentView struct {
 }
 
 // openIncident records a notice. Repeating the same server, kind, and
-// subject updates the last-seen time and does not undo an acknowledgement.
-func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, kind, subject, message string) {
+// subject updates the last-seen time. It does not send a second notice and
+// does not undo an acknowledgement or a snooze. created is true only the
+// first time.
+func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, kind, subject, message string) (created bool) {
 	if len(subject) > 200 {
 		subject = subject[:200]
 	}
@@ -41,24 +43,18 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 		}
 		if err := s.db.WithContext(ctx).Omit("Account", "Server").Create(&row).Error; err != nil {
 			s.log.Error("open incident", "err", err)
+			return false
 		}
-		return
+		return true
 	}
 	if err != nil {
 		s.log.Error("load incident", "err", err)
-		return
+		return false
 	}
-	updates := map[string]any{"last_seen": now, "message": message}
-	if row.State != "open" {
-		updates["state"] = "open"
-		updates["acked_by"] = nil
-		updates["acked_at"] = nil
-		updates["snooze_until"] = nil
-		updates["snooze_reason"] = ""
-	}
-	if err := s.db.WithContext(ctx).Model(&row).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"last_seen": now, "message": message}).Error; err != nil {
 		s.log.Error("update incident", "err", err)
 	}
+	return false
 }
 
 // ListIncidents returns notices the actor can see. includeAcknowledged adds
@@ -111,7 +107,8 @@ func (s *Service) AcknowledgeIncident(ctx context.Context, a Actor, id int64) (I
 }
 
 // SnoozeIncident hides a notice until until, which must be within 7 days.
-// A later event for the same subject opens it again.
+// Seeing the same subject again leaves the snooze in place. A different
+// subject is a separate notice.
 func (s *Service) SnoozeIncident(ctx context.Context, a Actor, id int64, until time.Time, reason string) (IncidentView, error) {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return IncidentView{}, err
