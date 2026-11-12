@@ -283,6 +283,45 @@ func (e IncidentState) Valid() bool {
 	}
 }
 
+// Defines values for PlanBodyKind.
+const (
+	PlanBodyKindClean   PlanBodyKind = "clean"
+	PlanBodyKindMeasure PlanBodyKind = "measure"
+	PlanBodyKindUpdate  PlanBodyKind = "update"
+)
+
+// Valid indicates whether the value is a known member of the PlanBodyKind enum.
+func (e PlanBodyKind) Valid() bool {
+	switch e {
+	case PlanBodyKindClean:
+		return true
+	case PlanBodyKindMeasure:
+		return true
+	case PlanBodyKindUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanBodyUpdateMode.
+const (
+	PlanBodyUpdateModeAll      PlanBodyUpdateMode = "all"
+	PlanBodyUpdateModeSecurity PlanBodyUpdateMode = "security"
+)
+
+// Valid indicates whether the value is a known member of the PlanBodyUpdateMode enum.
+func (e PlanBodyUpdateMode) Valid() bool {
+	switch e {
+	case PlanBodyUpdateModeAll:
+		return true
+	case PlanBodyUpdateModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin  Role = "admin"
@@ -360,22 +399,22 @@ func (e RunTrigger) Valid() bool {
 
 // Defines values for RunKind.
 const (
-	Clean   RunKind = "clean"
-	Measure RunKind = "measure"
-	Reboot  RunKind = "reboot"
-	Update  RunKind = "update"
+	RunKindClean   RunKind = "clean"
+	RunKindMeasure RunKind = "measure"
+	RunKindReboot  RunKind = "reboot"
+	RunKindUpdate  RunKind = "update"
 )
 
 // Valid indicates whether the value is a known member of the RunKind enum.
 func (e RunKind) Valid() bool {
 	switch e {
-	case Clean:
+	case RunKindClean:
 		return true
-	case Measure:
+	case RunKindMeasure:
 		return true
-	case Reboot:
+	case RunKindReboot:
 		return true
-	case Update:
+	case RunKindUpdate:
 		return true
 	default:
 		return false
@@ -498,16 +537,16 @@ func (e ShareAccess) Valid() bool {
 
 // Defines values for UpdatePolicyMode.
 const (
-	All      UpdatePolicyMode = "all"
-	Security UpdatePolicyMode = "security"
+	UpdatePolicyModeAll      UpdatePolicyMode = "all"
+	UpdatePolicyModeSecurity UpdatePolicyMode = "security"
 )
 
 // Valid indicates whether the value is a known member of the UpdatePolicyMode enum.
 func (e UpdatePolicyMode) Valid() bool {
 	switch e {
-	case All:
+	case UpdatePolicyModeAll:
 		return true
-	case Security:
+	case UpdatePolicyModeSecurity:
 		return true
 	default:
 		return false
@@ -935,6 +974,18 @@ type Exposure struct {
 	Uncovered int `json:"uncovered"`
 }
 
+// FixPlan defines model for FixPlan.
+type FixPlan struct {
+	Body        PlanBody   `json:"body"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	Fingerprint string     `json:"fingerprint"`
+	Id          int64      `json:"id"`
+	Reason      string     `json:"reason"`
+	RunId       *int64     `json:"runId,omitempty"`
+	Status      string     `json:"status"`
+}
+
 // FleetOverview defines model for FleetOverview.
 type FleetOverview struct {
 	Servers []Server    `json:"servers"`
@@ -1326,6 +1377,33 @@ type PendingPackage = proto.PendingPackage
 
 // PendingUpdates defines model for PendingUpdates.
 type PendingUpdates = proto.PendingUpdates
+
+// PlanBody defines model for PlanBody.
+type PlanBody struct {
+	BuildCache       *bool               `json:"buildCache,omitempty"`
+	CanaryServerIds  *[]int64            `json:"canaryServerIds,omitempty"`
+	GroupId          *int64              `json:"groupId,omitempty"`
+	Hold             *[]string           `json:"hold,omitempty"`
+	Journal          *bool               `json:"journal,omitempty"`
+	JournalSize      *string             `json:"journalSize,omitempty"`
+	Kind             PlanBodyKind        `json:"kind"`
+	ObserveSeconds   *int                `json:"observeSeconds,omitempty"`
+	RebootIfRequired *bool               `json:"rebootIfRequired,omitempty"`
+	ServerIds        *[]int64            `json:"serverIds,omitempty"`
+	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
+	Vscode           *bool               `json:"vscode,omitempty"`
+}
+
+// PlanBodyKind defines model for PlanBody.Kind.
+type PlanBodyKind string
+
+// PlanBodyUpdateMode defines model for PlanBody.UpdateMode.
+type PlanBodyUpdateMode string
+
+// PlanList defines model for PlanList.
+type PlanList struct {
+	Items []FixPlan `json:"items"`
+}
 
 // ProbeRequest defines model for ProbeRequest.
 type ProbeRequest struct {
@@ -1749,6 +1827,11 @@ type DeleteOrganizationParams struct {
 	Confirm string `form:"confirm" json:"confirm"`
 }
 
+// RejectPlanJSONBody defines parameters for RejectPlan.
+type RejectPlanJSONBody struct {
+	Reason string `json:"reason"`
+}
+
 // ListRunsParams defines parameters for ListRuns.
 type ListRunsParams struct {
 	GroupId  *int64   `form:"groupId,omitempty" json:"groupId,omitempty"`
@@ -1836,6 +1919,12 @@ type UpdateTeamJSONRequestBody = TeamInput
 
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = OrganizationInput
+
+// ProposePlanJSONRequestBody defines body for ProposePlan for application/json ContentType.
+type ProposePlanJSONRequestBody = PlanBody
+
+// RejectPlanJSONRequestBody defines body for RejectPlan for application/json ContentType.
+type RejectPlanJSONRequestBody RejectPlanJSONBody
 
 // StartRunJSONRequestBody defines body for StartRun for application/json ContentType.
 type StartRunJSONRequestBody = StartRunRequest
@@ -2028,6 +2117,24 @@ type ServerInterface interface {
 	// CreateOrganization Create an organization; the caller becomes its owner (browser sessions only)
 	// (POST /orgs)
 	CreateOrganization(w http.ResponseWriter, r *http.Request)
+	// ListPlans Typed maintenance plans waiting for a person
+	// (GET /plans)
+	ListPlans(w http.ResponseWriter, r *http.Request)
+	// ProposePlan Store a typed plan. This does not change a server.
+	// (POST /plans)
+	ProposePlan(w http.ResponseWriter, r *http.Request)
+	// GetPlan One typed plan
+	// (GET /plans/{planId})
+	GetPlan(w http.ResponseWriter, r *http.Request, planId int64)
+	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
+	// (POST /plans/{planId}/approve)
+	ApprovePlan(w http.ResponseWriter, r *http.Request, planId int64)
+	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
+	// (POST /plans/{planId}/execute)
+	ExecutePlan(w http.ResponseWriter, r *http.Request, planId int64)
+	// RejectPlan Reject a plan from a browser session. A token cannot reject.
+	// (POST /plans/{planId}/reject)
+	RejectPlan(w http.ResponseWriter, r *http.Request, planId int64)
 	// ListRuns Maintenance runs, newest first
 	// (GET /runs)
 	ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams)
@@ -3303,6 +3410,138 @@ func (siw *ServerInterfaceWrapper) CreateOrganization(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ListPlans operation middleware
+func (siw *ServerInterfaceWrapper) ListPlans(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPlans(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProposePlan operation middleware
+func (siw *ServerInterfaceWrapper) ProposePlan(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProposePlan(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetPlan operation middleware
+func (siw *ServerInterfaceWrapper) GetPlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "planId" -------------
+	var planId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPlan(w, r, planId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApprovePlan operation middleware
+func (siw *ServerInterfaceWrapper) ApprovePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "planId" -------------
+	var planId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApprovePlan(w, r, planId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExecutePlan operation middleware
+func (siw *ServerInterfaceWrapper) ExecutePlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "planId" -------------
+	var planId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExecutePlan(w, r, planId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectPlan operation middleware
+func (siw *ServerInterfaceWrapper) RejectPlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "planId" -------------
+	var planId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectPlan(w, r, planId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListRuns operation middleware
 func (siw *ServerInterfaceWrapper) ListRuns(w http.ResponseWriter, r *http.Request) {
 
@@ -4426,6 +4665,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans", wrapper.ListPlans)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans", wrapper.ProposePlan)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans/{planId}", wrapper.GetPlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/approve", wrapper.ApprovePlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/reject", wrapper.RejectPlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/execute", wrapper.ExecutePlan)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/offboarding", wrapper.Offboarding)
@@ -6449,6 +6694,240 @@ func (response CreateOrganizationdefaultJSONResponse) VisitCreateOrganizationRes
 	return err
 }
 
+type ListPlansRequestObject struct {
+}
+
+type ListPlansResponseObject interface {
+	VisitListPlansResponse(w http.ResponseWriter) error
+}
+
+type ListPlans200JSONResponse PlanList
+
+func (response ListPlans200JSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPlansdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListPlansdefaultJSONResponse) VisitListPlansResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProposePlanRequestObject struct {
+	Body *ProposePlanJSONRequestBody
+}
+
+type ProposePlanResponseObject interface {
+	VisitProposePlanResponse(w http.ResponseWriter) error
+}
+
+type ProposePlan201JSONResponse FixPlan
+
+func (response ProposePlan201JSONResponse) VisitProposePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ProposePlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ProposePlandefaultJSONResponse) VisitProposePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlanRequestObject struct {
+	PlanId int64 `json:"planId"`
+}
+
+type GetPlanResponseObject interface {
+	VisitGetPlanResponse(w http.ResponseWriter) error
+}
+
+type GetPlan200JSONResponse FixPlan
+
+func (response GetPlan200JSONResponse) VisitGetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetPlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetPlandefaultJSONResponse) VisitGetPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApprovePlanRequestObject struct {
+	PlanId int64 `json:"planId"`
+}
+
+type ApprovePlanResponseObject interface {
+	VisitApprovePlanResponse(w http.ResponseWriter) error
+}
+
+type ApprovePlan200JSONResponse FixPlan
+
+func (response ApprovePlan200JSONResponse) VisitApprovePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ApprovePlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ApprovePlandefaultJSONResponse) VisitApprovePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExecutePlanRequestObject struct {
+	PlanId int64 `json:"planId"`
+}
+
+type ExecutePlanResponseObject interface {
+	VisitExecutePlanResponse(w http.ResponseWriter) error
+}
+
+type ExecutePlan202JSONResponse Run
+
+func (response ExecutePlan202JSONResponse) VisitExecutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ExecutePlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ExecutePlandefaultJSONResponse) VisitExecutePlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectPlanRequestObject struct {
+	PlanId int64 `json:"planId"`
+	Body   *RejectPlanJSONRequestBody
+}
+
+type RejectPlanResponseObject interface {
+	VisitRejectPlanResponse(w http.ResponseWriter) error
+}
+
+type RejectPlan200JSONResponse FixPlan
+
+func (response RejectPlan200JSONResponse) VisitRejectPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RejectPlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RejectPlandefaultJSONResponse) VisitRejectPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListRunsRequestObject struct {
 	Params ListRunsParams
 }
@@ -7844,6 +8323,24 @@ type StrictServerInterface interface {
 	// CreateOrganization Create an organization; the caller becomes its owner (browser sessions only)
 	// (POST /orgs)
 	CreateOrganization(ctx context.Context, request CreateOrganizationRequestObject) (CreateOrganizationResponseObject, error)
+	// ListPlans Typed maintenance plans waiting for a person
+	// (GET /plans)
+	ListPlans(ctx context.Context, request ListPlansRequestObject) (ListPlansResponseObject, error)
+	// ProposePlan Store a typed plan. This does not change a server.
+	// (POST /plans)
+	ProposePlan(ctx context.Context, request ProposePlanRequestObject) (ProposePlanResponseObject, error)
+	// GetPlan One typed plan
+	// (GET /plans/{planId})
+	GetPlan(ctx context.Context, request GetPlanRequestObject) (GetPlanResponseObject, error)
+	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
+	// (POST /plans/{planId}/approve)
+	ApprovePlan(ctx context.Context, request ApprovePlanRequestObject) (ApprovePlanResponseObject, error)
+	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
+	// (POST /plans/{planId}/execute)
+	ExecutePlan(ctx context.Context, request ExecutePlanRequestObject) (ExecutePlanResponseObject, error)
+	// RejectPlan Reject a plan from a browser session. A token cannot reject.
+	// (POST /plans/{planId}/reject)
+	RejectPlan(ctx context.Context, request RejectPlanRequestObject) (RejectPlanResponseObject, error)
 	// ListRuns Maintenance runs, newest first
 	// (GET /runs)
 	ListRuns(ctx context.Context, request ListRunsRequestObject) (ListRunsResponseObject, error)
@@ -9434,6 +9931,172 @@ func (sh *strictHandler) CreateOrganization(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CreateOrganizationResponseObject); ok {
 		if err := validResponse.VisitCreateOrganizationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPlans operation middleware
+func (sh *strictHandler) ListPlans(w http.ResponseWriter, r *http.Request) {
+	var request ListPlansRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPlans(ctx, request.(ListPlansRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPlans")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPlansResponseObject); ok {
+		if err := validResponse.VisitListPlansResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProposePlan operation middleware
+func (sh *strictHandler) ProposePlan(w http.ResponseWriter, r *http.Request) {
+	var request ProposePlanRequestObject
+
+	var body ProposePlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProposePlan(ctx, request.(ProposePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProposePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProposePlanResponseObject); ok {
+		if err := validResponse.VisitProposePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetPlan operation middleware
+func (sh *strictHandler) GetPlan(w http.ResponseWriter, r *http.Request, planId int64) {
+	var request GetPlanRequestObject
+
+	request.PlanId = planId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetPlan(ctx, request.(GetPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetPlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetPlanResponseObject); ok {
+		if err := validResponse.VisitGetPlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApprovePlan operation middleware
+func (sh *strictHandler) ApprovePlan(w http.ResponseWriter, r *http.Request, planId int64) {
+	var request ApprovePlanRequestObject
+
+	request.PlanId = planId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApprovePlan(ctx, request.(ApprovePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApprovePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApprovePlanResponseObject); ok {
+		if err := validResponse.VisitApprovePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ExecutePlan operation middleware
+func (sh *strictHandler) ExecutePlan(w http.ResponseWriter, r *http.Request, planId int64) {
+	var request ExecutePlanRequestObject
+
+	request.PlanId = planId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ExecutePlan(ctx, request.(ExecutePlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ExecutePlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ExecutePlanResponseObject); ok {
+		if err := validResponse.VisitExecutePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RejectPlan operation middleware
+func (sh *strictHandler) RejectPlan(w http.ResponseWriter, r *http.Request, planId int64) {
+	var request RejectPlanRequestObject
+
+	request.PlanId = planId
+
+	var body RejectPlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RejectPlan(ctx, request.(RejectPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RejectPlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RejectPlanResponseObject); ok {
+		if err := validResponse.VisitRejectPlanResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

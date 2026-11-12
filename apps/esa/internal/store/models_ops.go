@@ -158,6 +158,27 @@ type CertTarget struct {
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// FixPlan is a typed maintenance request. A token can propose or execute it.
+// Only a browser session can approve it. The body is the authority; prose is not stored.
+type FixPlan struct {
+	ID              int64  `gorm:"primaryKey"`
+	AccountID       int64  `gorm:"not null;index"`
+	Status          string `gorm:"not null"`
+	Fingerprint     string `gorm:"not null;size:64"`
+	Body            JSON   `gorm:"type:jsonb;not null"`
+	ExpiresAt       *time.Time
+	CreatedBy       int64 `gorm:"not null"`
+	ProposerTokenID int64 `gorm:"not null;default:0"`
+	ApprovedBy      *int64
+	ApprovedAt      *time.Time
+	Reason          string `gorm:"not null;default:''"`
+	RunID           *int64
+	CreatedAt       time.Time `gorm:"not null"`
+	UpdatedAt       time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // APIToken authenticates the CLI and MCP clients. Only the SHA-256 of the
 // token is stored; Prefix is the first characters, shown in the UI.
 type APIToken struct {

@@ -24,6 +24,7 @@ import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppActivityRouteImport } from './routes/app/activity'
 import { Route as AppKeysRouteImport } from './routes/app/keys'
 import { Route as AppOrgRouteImport } from './routes/app/org'
+import { Route as AppPlansRouteImport } from './routes/app/plans'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
@@ -117,6 +118,11 @@ const AppKeysRoute = AppKeysRouteImport.update({
 const AppOrgRoute = AppOrgRouteImport.update({
   id: '/org',
   path: '/org',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppPlansRoute = AppPlansRouteImport.update({
+  id: '/plans',
+  path: '/plans',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -231,6 +237,7 @@ export interface FileRoutesByFullPath {
   '/app/activity': typeof AppActivityRoute
   '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -266,6 +273,7 @@ export interface FileRoutesByTo {
   '/app/activity': typeof AppActivityRoute
   '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -302,6 +310,7 @@ export interface FileRoutesById {
   '/app/activity': typeof AppActivityRoute
   '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -340,6 +349,7 @@ export interface FileRouteTypes {
     | '/app/activity'
     | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -375,6 +385,7 @@ export interface FileRouteTypes {
     | '/app/activity'
     | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -410,6 +421,7 @@ export interface FileRouteTypes {
     | '/app/activity'
     | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -557,6 +569,13 @@ declare module '@tanstack/react-router' {
       path: '/org'
       fullPath: '/app/org'
       preLoaderRoute: typeof AppOrgRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/plans': {
+      id: '/app/plans'
+      path: '/plans'
+      fullPath: '/app/plans'
+      preLoaderRoute: typeof AppPlansRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/settings': {
@@ -716,6 +735,7 @@ interface AppRouteRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
   AppKeysRoute: typeof AppKeysRoute
   AppOrgRoute: typeof AppOrgRoute
+  AppPlansRoute: typeof AppPlansRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppGroupsGroupIdRouteRoute: typeof AppGroupsGroupIdRouteRouteWithChildren
@@ -733,6 +753,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppActivityRoute: AppActivityRoute,
   AppKeysRoute: AppKeysRoute,
   AppOrgRoute: AppOrgRoute,
+  AppPlansRoute: AppPlansRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppGroupsGroupIdRouteRoute: AppGroupsGroupIdRouteRouteWithChildren,

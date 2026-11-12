@@ -136,6 +136,11 @@ export const q = {
       refetchInterval: (query) =>
         query.state.data?.status === 'running' ? 3000 : false,
     }),
+  plans: () =>
+    queryOptions({
+      queryKey: ['plans'],
+      queryFn: () => call(api().GET('/plans')),
+    }),
   keys: () =>
     queryOptions({
       queryKey: ['keys'],

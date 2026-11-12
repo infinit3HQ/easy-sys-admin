@@ -992,6 +992,104 @@ paths:
           description: Saved
         default: { $ref: '#/components/responses/Error' }
 
+  /plans:
+    get:
+      operationId: listPlans
+      summary: Typed maintenance plans waiting for a person
+      tags: [runs]
+      responses:
+        '200':
+          description: Plans in this space
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: proposePlan
+      summary: Store a typed plan. This does not change a server.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanBody' }
+      responses:
+        '201':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}:
+    parameters:
+      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+    get:
+      operationId: getPlan
+      summary: One typed plan
+      tags: [runs]
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/approve:
+    parameters:
+      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: approvePlan
+      summary: Approve a plan from a browser session. A token cannot approve.
+      tags: [runs]
+      responses:
+        '200':
+          description: The approved plan. It expires after 30 minutes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/reject:
+    parameters:
+      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: rejectPlan
+      summary: Reject a plan from a browser session. A token cannot reject.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/execute:
+    parameters:
+      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+    post:
+      operationId: executePlan
+      summary: Run an approved plan once. A token that can read logs cannot execute.
+      tags: [runs]
+      responses:
+        '202':
+          description: The run. A repeat returns the same run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
   /runs/{runId}/report:
     parameters:
       - { name: runId, in: path, required: true, schema: { type: integer, format: int64 } }
@@ -2662,6 +2760,42 @@ components:
               state: { type: string }
               detail: { type: string }
               blocking: { type: boolean }
+
+    PlanBody:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [measure, clean, update] }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverIds: { type: array, items: { type: integer, format: int64 } }
+        updateMode: { type: string, enum: [security, all] }
+        hold: { type: array, items: { type: string } }
+        rebootIfRequired: { type: boolean }
+        observeSeconds: { type: integer, minimum: 0, maximum: 600 }
+        canaryServerIds: { type: array, items: { type: integer, format: int64 } }
+        buildCache: { type: boolean }
+        vscode: { type: boolean }
+        journal: { type: boolean }
+        journalSize: { type: string }
+
+    FixPlan:
+      type: object
+      required: [id, status, fingerprint, body, reason, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        status: { type: string }
+        fingerprint: { type: string }
+        body: { $ref: '#/components/schemas/PlanBody' }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        runId: { type: integer, format: int64, nullable: true }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    PlanList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/FixPlan' } }
 
     PatchReport:
       type: object

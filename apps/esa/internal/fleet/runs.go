@@ -363,8 +363,8 @@ func (s *Service) ListRuns(ctx context.Context, a Actor, f RunFilter) ([]RunView
 
 // GetRun returns one run with every server's result.
 func (s *Service) GetRun(ctx context.Context, a Actor, id int64) (RunView, error) {
-	if err := a.can(RoleViewer, ScopeRead); err != nil {
-		return RunView{}, err
+	if err := a.can(RoleViewer, ScopeRead); err != nil && !(a.Role.AtLeast(RoleViewer) && a.hasScope(ScopeActions)) {
+		return RunView{}, ErrForbidden
 	}
 	var r store.Run
 	err := s.visibleRuns(ctx, a).Preload("Group").Preload("Servers", func(db *gormDB) *gormDB { return db.Order("id") }).

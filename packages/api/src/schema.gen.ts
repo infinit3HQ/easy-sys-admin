@@ -841,6 +841,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Typed maintenance plans waiting for a person */
+        get: operations["listPlans"];
+        put?: never;
+        /** Store a typed plan. This does not change a server. */
+        post: operations["proposePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        /** One typed plan */
+        get: operations["getPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a plan from a browser session. A token cannot approve. */
+        post: operations["approvePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a plan from a browser session. A token cannot reject. */
+        post: operations["rejectPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an approved plan once. A token that can read logs cannot execute. */
+        post: operations["executePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{runId}/report": {
         parameters: {
             query?: never;
@@ -2221,6 +2315,40 @@ export interface components {
                 detail?: string;
                 blocking: boolean;
             }[];
+        };
+        PlanBody: {
+            /** @enum {string} */
+            kind: "measure" | "clean" | "update";
+            /** Format: int64 */
+            groupId?: number | null;
+            serverIds?: number[];
+            /** @enum {string} */
+            updateMode?: "security" | "all";
+            hold?: string[];
+            rebootIfRequired?: boolean;
+            observeSeconds?: number;
+            canaryServerIds?: number[];
+            buildCache?: boolean;
+            vscode?: boolean;
+            journal?: boolean;
+            journalSize?: string;
+        };
+        FixPlan: {
+            /** Format: int64 */
+            id: number;
+            status: string;
+            fingerprint: string;
+            body: components["schemas"]["PlanBody"];
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: int64 */
+            runId?: number | null;
+            reason: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PlanList: {
+            items: components["schemas"]["FixPlan"][];
         };
         PatchReport: {
             /** Format: int64 */
@@ -3867,6 +3995,150 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plans in this space */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    proposePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanBody"];
+            };
+        };
+        responses: {
+            /** @description The plan */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approvePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The approved plan. It expires after 30 minutes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    rejectPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    executePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. A repeat returns the same run. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
             };
             default: components["responses"]["Error"];
         };

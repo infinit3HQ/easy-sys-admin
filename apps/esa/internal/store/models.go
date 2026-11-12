@@ -22,6 +22,7 @@ func Models() []any {
 		&MetricHourly{},
 		&Run{},
 		&RunServer{},
+		&FixPlan{},
 		&AlertRule{},
 		&Alert{},
 		&SecurityIncident{},

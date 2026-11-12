@@ -86,9 +86,13 @@ Reading logs needs admin rights on the server's group, and `operate` access when
 
 ### Registered with `actions` and without `logs:read`
 
-| Tool        | Arguments                                                                                             | Returns                                                    |
-| ----------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `start_run` | `kind` (`measure`, `clean`, or `update`), and exactly one of `group` (name or numeric id) or `server` | `{ runId, status, hint }`. Follow progress with `get_run`. |
+| Tool                        | Arguments                                                                                             | Returns                                                                                                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `start_run`                 | `kind` (`measure`, `clean`, or `update`), and exactly one of `group` (name or numeric id) or `server` | `{ runId, status, hint }`. Follow progress with `get_run`.                                                                                                           |
+| `propose_fix_plan`          | `kind`, and `groupId` or `serverIds`                                                                  | The stored plan. It does not change a server.                                                                                                                        |
+| `list_fix_plans`            |                                                                                                       | Plans in this space.                                                                                                                                                 |
+| `get_fix_plan`              | `planId`                                                                                              | One plan.                                                                                                                                                            |
+| `execute_approved_fix_plan` | `planId`                                                                                              | `{ runId, status }` for a plan a person approved in the browser. A repeat returns the same run. Not offered to a token that can read logs. There is no approve tool. |
 
 - `measure` reports reclaimable space and changes nothing.
 - `clean` prunes idle build cache and old VS Code copies, with the group's settings when started on a group.

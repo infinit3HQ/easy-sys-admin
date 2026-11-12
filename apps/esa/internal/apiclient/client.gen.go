@@ -283,6 +283,45 @@ func (e IncidentState) Valid() bool {
 	}
 }
 
+// Defines values for PlanBodyKind.
+const (
+	PlanBodyKindClean   PlanBodyKind = "clean"
+	PlanBodyKindMeasure PlanBodyKind = "measure"
+	PlanBodyKindUpdate  PlanBodyKind = "update"
+)
+
+// Valid indicates whether the value is a known member of the PlanBodyKind enum.
+func (e PlanBodyKind) Valid() bool {
+	switch e {
+	case PlanBodyKindClean:
+		return true
+	case PlanBodyKindMeasure:
+		return true
+	case PlanBodyKindUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanBodyUpdateMode.
+const (
+	PlanBodyUpdateModeAll      PlanBodyUpdateMode = "all"
+	PlanBodyUpdateModeSecurity PlanBodyUpdateMode = "security"
+)
+
+// Valid indicates whether the value is a known member of the PlanBodyUpdateMode enum.
+func (e PlanBodyUpdateMode) Valid() bool {
+	switch e {
+	case PlanBodyUpdateModeAll:
+		return true
+	case PlanBodyUpdateModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Role.
 const (
 	RoleAdmin  Role = "admin"
@@ -360,22 +399,22 @@ func (e RunTrigger) Valid() bool {
 
 // Defines values for RunKind.
 const (
-	Clean   RunKind = "clean"
-	Measure RunKind = "measure"
-	Reboot  RunKind = "reboot"
-	Update  RunKind = "update"
+	RunKindClean   RunKind = "clean"
+	RunKindMeasure RunKind = "measure"
+	RunKindReboot  RunKind = "reboot"
+	RunKindUpdate  RunKind = "update"
 )
 
 // Valid indicates whether the value is a known member of the RunKind enum.
 func (e RunKind) Valid() bool {
 	switch e {
-	case Clean:
+	case RunKindClean:
 		return true
-	case Measure:
+	case RunKindMeasure:
 		return true
-	case Reboot:
+	case RunKindReboot:
 		return true
-	case Update:
+	case RunKindUpdate:
 		return true
 	default:
 		return false
@@ -498,16 +537,16 @@ func (e ShareAccess) Valid() bool {
 
 // Defines values for UpdatePolicyMode.
 const (
-	All      UpdatePolicyMode = "all"
-	Security UpdatePolicyMode = "security"
+	UpdatePolicyModeAll      UpdatePolicyMode = "all"
+	UpdatePolicyModeSecurity UpdatePolicyMode = "security"
 )
 
 // Valid indicates whether the value is a known member of the UpdatePolicyMode enum.
 func (e UpdatePolicyMode) Valid() bool {
 	switch e {
-	case All:
+	case UpdatePolicyModeAll:
 		return true
-	case Security:
+	case UpdatePolicyModeSecurity:
 		return true
 	default:
 		return false
@@ -935,6 +974,18 @@ type Exposure struct {
 	Uncovered int `json:"uncovered"`
 }
 
+// FixPlan defines model for FixPlan.
+type FixPlan struct {
+	Body        PlanBody   `json:"body"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
+	Fingerprint string     `json:"fingerprint"`
+	Id          int64      `json:"id"`
+	Reason      string     `json:"reason"`
+	RunId       *int64     `json:"runId,omitempty"`
+	Status      string     `json:"status"`
+}
+
 // FleetOverview defines model for FleetOverview.
 type FleetOverview struct {
 	Servers []Server    `json:"servers"`
@@ -1326,6 +1377,33 @@ type PendingPackage = proto.PendingPackage
 
 // PendingUpdates defines model for PendingUpdates.
 type PendingUpdates = proto.PendingUpdates
+
+// PlanBody defines model for PlanBody.
+type PlanBody struct {
+	BuildCache       *bool               `json:"buildCache,omitempty"`
+	CanaryServerIds  *[]int64            `json:"canaryServerIds,omitempty"`
+	GroupId          *int64              `json:"groupId,omitempty"`
+	Hold             *[]string           `json:"hold,omitempty"`
+	Journal          *bool               `json:"journal,omitempty"`
+	JournalSize      *string             `json:"journalSize,omitempty"`
+	Kind             PlanBodyKind        `json:"kind"`
+	ObserveSeconds   *int                `json:"observeSeconds,omitempty"`
+	RebootIfRequired *bool               `json:"rebootIfRequired,omitempty"`
+	ServerIds        *[]int64            `json:"serverIds,omitempty"`
+	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
+	Vscode           *bool               `json:"vscode,omitempty"`
+}
+
+// PlanBodyKind defines model for PlanBody.Kind.
+type PlanBodyKind string
+
+// PlanBodyUpdateMode defines model for PlanBody.UpdateMode.
+type PlanBodyUpdateMode string
+
+// PlanList defines model for PlanList.
+type PlanList struct {
+	Items []FixPlan `json:"items"`
+}
 
 // ProbeRequest defines model for ProbeRequest.
 type ProbeRequest struct {
@@ -1749,6 +1827,11 @@ type DeleteOrganizationParams struct {
 	Confirm string `form:"confirm" json:"confirm"`
 }
 
+// RejectPlanJSONBody defines parameters for RejectPlan.
+type RejectPlanJSONBody struct {
+	Reason string `json:"reason"`
+}
+
 // ListRunsParams defines parameters for ListRuns.
 type ListRunsParams struct {
 	GroupId  *int64   `form:"groupId,omitempty" json:"groupId,omitempty"`
@@ -1836,6 +1919,12 @@ type UpdateTeamJSONRequestBody = TeamInput
 
 // CreateOrganizationJSONRequestBody defines body for CreateOrganization for application/json ContentType.
 type CreateOrganizationJSONRequestBody = OrganizationInput
+
+// ProposePlanJSONRequestBody defines body for ProposePlan for application/json ContentType.
+type ProposePlanJSONRequestBody = PlanBody
+
+// RejectPlanJSONRequestBody defines body for RejectPlan for application/json ContentType.
+type RejectPlanJSONRequestBody RejectPlanJSONBody
 
 // StartRunJSONRequestBody defines body for StartRun for application/json ContentType.
 type StartRunJSONRequestBody = StartRunRequest
@@ -2367,6 +2456,54 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /orgs (the `CreateOrganization` operationId).
 	CreateOrganization(ctx context.Context, body CreateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListPlans Typed maintenance plans waiting for a person
+	//
+	// Corresponds with GET /plans (the `ListPlans` operationId).
+	ListPlans(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProposePlanWithBody Store a typed plan. This does not change a server.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /plans (the `ProposePlan` operationId).
+	ProposePlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProposePlan Store a typed plan. This does not change a server.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /plans (the `ProposePlan` operationId).
+	ProposePlan(ctx context.Context, body ProposePlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetPlan One typed plan
+	//
+	// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
+	GetPlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
+	//
+	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
+	ApprovePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
+	//
+	// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
+	ExecutePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RejectPlanWithBody Reject a plan from a browser session. A token cannot reject.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+	RejectPlanWithBody(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RejectPlan Reject a plan from a browser session. A token cannot reject.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+	RejectPlan(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRuns Maintenance runs, newest first
 	//
@@ -3754,6 +3891,134 @@ func (c *Client) CreateOrganizationWithBody(ctx context.Context, contentType str
 // Corresponds with POST /orgs (the `CreateOrganization` operationId).
 func (c *Client) CreateOrganization(ctx context.Context, body CreateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateOrganizationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListPlans Typed maintenance plans waiting for a person
+//
+// Corresponds with GET /plans (the `ListPlans` operationId).
+func (c *Client) ListPlans(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListPlansRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProposePlanWithBody Store a typed plan. This does not change a server.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /plans (the `ProposePlan` operationId).
+func (c *Client) ProposePlanWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProposePlanRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ProposePlan Store a typed plan. This does not change a server.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /plans (the `ProposePlan` operationId).
+func (c *Client) ProposePlan(ctx context.Context, body ProposePlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProposePlanRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetPlan One typed plan
+//
+// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
+func (c *Client) GetPlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetPlanRequest(c.Server, planId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApprovePlan Approve a plan from a browser session. A token cannot approve.
+//
+// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
+func (c *Client) ApprovePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApprovePlanRequest(c.Server, planId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
+//
+// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
+func (c *Client) ExecutePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExecutePlanRequest(c.Server, planId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RejectPlanWithBody Reject a plan from a browser session. A token cannot reject.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+func (c *Client) RejectPlanWithBody(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRejectPlanRequestWithBody(c.Server, planId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RejectPlan Reject a plan from a browser session. A token cannot reject.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+func (c *Client) RejectPlan(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRejectPlanRequest(c.Server, planId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6435,6 +6700,222 @@ func NewCreateOrganizationRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
+// NewListPlansRequest constructs an http.Request for the ListPlans method
+func NewListPlansRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProposePlanRequest calls the generic ProposePlan builder with application/json body
+func NewProposePlanRequest(server string, body ProposePlanJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProposePlanRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewProposePlanRequestWithBody constructs an http.Request for the ProposePlan method, with any body, and a specified content type
+func NewProposePlanRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetPlanRequest constructs an http.Request for the GetPlan method
+func NewGetPlanRequest(server string, planId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "planId", planId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewApprovePlanRequest constructs an http.Request for the ApprovePlan method
+func NewApprovePlanRequest(server string, planId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "planId", planId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans/%s/approve", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewExecutePlanRequest constructs an http.Request for the ExecutePlan method
+func NewExecutePlanRequest(server string, planId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "planId", planId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans/%s/execute", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRejectPlanRequest calls the generic RejectPlan builder with application/json body
+func NewRejectPlanRequest(server string, planId int64, body RejectPlanJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRejectPlanRequestWithBody(server, planId, "application/json", bodyReader)
+}
+
+// NewRejectPlanRequestWithBody constructs an http.Request for the RejectPlan method, with any body, and a specified content type
+func NewRejectPlanRequestWithBody(server string, planId int64, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "planId", planId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans/%s/reject", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListRunsRequest constructs an http.Request for the ListRuns method
 func NewListRunsRequest(server string, params *ListRunsParams) (*http.Request, error) {
 	var err error
@@ -8369,6 +8850,62 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /orgs (the `CreateOrganization` operationId).
 	CreateOrganizationWithResponse(ctx context.Context, body CreateOrganizationJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateOrganizationResponse, error)
+
+	// ListPlansWithResponse Typed maintenance plans waiting for a person
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /plans (the `ListPlans` operationId).
+	ListPlansWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlansResponse, error)
+
+	// ProposePlanWithBodyWithResponse Store a typed plan. This does not change a server.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans (the `ProposePlan` operationId).
+	ProposePlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProposePlanResponse, error)
+
+	// ProposePlanWithResponse Store a typed plan. This does not change a server.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans (the `ProposePlan` operationId).
+	ProposePlanWithResponse(ctx context.Context, body ProposePlanJSONRequestBody, reqEditors ...RequestEditorFn) (*ProposePlanResponse, error)
+
+	// GetPlanWithResponse One typed plan
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
+	GetPlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*GetPlanResponse, error)
+
+	// ApprovePlanWithResponse Approve a plan from a browser session. A token cannot approve.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
+	ApprovePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error)
+
+	// ExecutePlanWithResponse Run an approved plan once. A token that can read logs cannot execute.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
+	ExecutePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error)
+
+	// RejectPlanWithBodyWithResponse Reject a plan from a browser session. A token cannot reject.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+	RejectPlanWithBodyWithResponse(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
+
+	// RejectPlanWithResponse Reject a plan from a browser session. A token cannot reject.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+	RejectPlanWithResponse(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
 
 	// ListRunsWithResponse Maintenance runs, newest first
 	//
@@ -11133,6 +11670,294 @@ func (r CreateOrganizationResponse) ContentType() string {
 	return ""
 }
 
+type ListPlansResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PlanList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListPlansResponse) GetJSON200() *PlanList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListPlansResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListPlansResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListPlansResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListPlansResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListPlansResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ProposePlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *FixPlan
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r ProposePlanResponse) GetJSON201() *FixPlan {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ProposePlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ProposePlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ProposePlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProposePlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ProposePlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetPlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FixPlan
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetPlanResponse) GetJSON200() *FixPlan {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetPlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetPlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetPlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetPlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetPlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ApprovePlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FixPlan
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ApprovePlanResponse) GetJSON200() *FixPlan {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ApprovePlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ApprovePlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ApprovePlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApprovePlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ApprovePlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ExecutePlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *Run
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r ExecutePlanResponse) GetJSON202() *Run {
+	return r.JSON202
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ExecutePlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ExecutePlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ExecutePlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ExecutePlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ExecutePlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RejectPlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FixPlan
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RejectPlanResponse) GetJSON200() *FixPlan {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RejectPlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RejectPlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RejectPlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RejectPlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RejectPlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListRunsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -13564,6 +14389,110 @@ func (c *ClientWithResponses) CreateOrganizationWithResponse(ctx context.Context
 	return ParseCreateOrganizationResponse(rsp)
 }
 
+// ListPlansWithResponse Typed maintenance plans waiting for a person
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /plans (the `ListPlans` operationId).
+func (c *ClientWithResponses) ListPlansWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListPlansResponse, error) {
+	rsp, err := c.ListPlans(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListPlansResponse(rsp)
+}
+
+// ProposePlanWithBodyWithResponse Store a typed plan. This does not change a server.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans (the `ProposePlan` operationId).
+func (c *ClientWithResponses) ProposePlanWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProposePlanResponse, error) {
+	rsp, err := c.ProposePlanWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProposePlanResponse(rsp)
+}
+
+// ProposePlanWithResponse Store a typed plan. This does not change a server.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans (the `ProposePlan` operationId).
+func (c *ClientWithResponses) ProposePlanWithResponse(ctx context.Context, body ProposePlanJSONRequestBody, reqEditors ...RequestEditorFn) (*ProposePlanResponse, error) {
+	rsp, err := c.ProposePlan(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProposePlanResponse(rsp)
+}
+
+// GetPlanWithResponse One typed plan
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
+func (c *ClientWithResponses) GetPlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*GetPlanResponse, error) {
+	rsp, err := c.GetPlan(ctx, planId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetPlanResponse(rsp)
+}
+
+// ApprovePlanWithResponse Approve a plan from a browser session. A token cannot approve.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
+func (c *ClientWithResponses) ApprovePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error) {
+	rsp, err := c.ApprovePlan(ctx, planId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApprovePlanResponse(rsp)
+}
+
+// ExecutePlanWithResponse Run an approved plan once. A token that can read logs cannot execute.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
+func (c *ClientWithResponses) ExecutePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error) {
+	rsp, err := c.ExecutePlan(ctx, planId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExecutePlanResponse(rsp)
+}
+
+// RejectPlanWithBodyWithResponse Reject a plan from a browser session. A token cannot reject.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+func (c *ClientWithResponses) RejectPlanWithBodyWithResponse(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
+	rsp, err := c.RejectPlanWithBody(ctx, planId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRejectPlanResponse(rsp)
+}
+
+// RejectPlanWithResponse Reject a plan from a browser session. A token cannot reject.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
+func (c *ClientWithResponses) RejectPlanWithResponse(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
+	rsp, err := c.RejectPlan(ctx, planId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRejectPlanResponse(rsp)
+}
+
 // ListRunsWithResponse Maintenance runs, newest first
 //
 // Returns a wrapper object for the known response body format(s).
@@ -15806,6 +16735,204 @@ func ParseCreateOrganizationResponse(rsp *http.Response) (*CreateOrganizationRes
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListPlansResponse parses an HTTP response from a ListPlansWithResponse call
+func ParseListPlansResponse(rsp *http.Response) (*ListPlansResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListPlansResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PlanList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProposePlanResponse parses an HTTP response from a ProposePlanWithResponse call
+func ParseProposePlanResponse(rsp *http.Response) (*ProposePlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProposePlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest FixPlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetPlanResponse parses an HTTP response from a GetPlanWithResponse call
+func ParseGetPlanResponse(rsp *http.Response) (*GetPlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetPlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FixPlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseApprovePlanResponse parses an HTTP response from a ApprovePlanWithResponse call
+func ParseApprovePlanResponse(rsp *http.Response) (*ApprovePlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApprovePlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FixPlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseExecutePlanResponse parses an HTTP response from a ExecutePlanWithResponse call
+func ParseExecutePlanResponse(rsp *http.Response) (*ExecutePlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ExecutePlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Run
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRejectPlanResponse parses an HTTP response from a RejectPlanWithResponse call
+func ParseRejectPlanResponse(rsp *http.Response) (*RejectPlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RejectPlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FixPlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

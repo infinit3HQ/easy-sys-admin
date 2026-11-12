@@ -74,6 +74,7 @@ const nav: ReadonlyArray<{
     | '/app/groups'
     | '/app/keys'
     | '/app/runs'
+    | '/app/plans'
     | '/app/alerts'
     | '/app/activity'
     | '/app/org'
@@ -86,6 +87,7 @@ const nav: ReadonlyArray<{
   { to: '/app/groups', label: 'Groups', icon: LayersIcon },
   { to: '/app/keys', label: 'Keys', icon: KeyRoundIcon },
   { to: '/app/runs', label: 'Runs', icon: HistoryIcon },
+  { to: '/app/plans', label: 'Plans', icon: CheckIcon },
   { to: '/app/alerts', label: 'Alerts', icon: BellIcon },
   { to: '/app/activity', label: 'Activity', icon: ActivityIcon },
   { to: '/app/org', label: 'Organization', icon: UsersIcon },
