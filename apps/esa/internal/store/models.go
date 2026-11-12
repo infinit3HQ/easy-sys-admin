@@ -12,6 +12,7 @@ func Models() []any {
 		&Membership{},
 		&Session{},
 		&AuditEntry{},
+		&RetentionRun{},
 		&AccountKey{},
 		&Group{},
 		&Server{},
@@ -159,6 +160,17 @@ type AuditEntry struct {
 
 // TableName keeps the table name singular, as "audit_log" reads better than "audit_entries".
 func (AuditEntry) TableName() string { return "audit_log" }
+
+// RetentionRun records one install-wide prune. It is not an audit row, so the
+// same run cannot delete its own ledger entry.
+type RetentionRun struct {
+	ID        int64     `gorm:"primaryKey"`
+	Kind      string    `gorm:"not null"`
+	Cutoff    time.Time `gorm:"not null"`
+	Eligible  int64     `gorm:"not null"`
+	Deleted   int64     `gorm:"not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
 
 // OptionalID turns 0 into NULL for optional foreign keys.
 func OptionalID(id int64) *int64 {

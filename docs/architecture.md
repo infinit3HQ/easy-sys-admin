@@ -92,7 +92,7 @@ All packages are under `apps/esa/internal`.
 
 ## Background jobs
 
-`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts seven loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
+`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts the loops below. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
 
 | Job      | Interval | First run after | What it does                                                                                                                                                                                                                                                                                                           |
 | -------- | -------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -104,6 +104,7 @@ All packages are under `apps/esa/internal`.
 | Deliver  | 1 minute | 10 seconds      | `fleet.DrainDeliveries`: sends notifications stored in the database, retries a delivery left in sending, and returns expired snoozes to the review list. Five failures mark a delivery dead.                                                                                                                           |
 | Digest   | 1 hour   | 3 minutes       | `fleet.SendDigests`: on Monday after 08:00 UTC, sends one summary per space to its channels. Unreachable servers, security updates waiting 7 days, and new ports and keys from the past week. An empty week sends nothing. A control plane that is down on Monday skips that week.                                     |
 | Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                                                                                                                                     |
+| Audit    | 1 hour   | 4 minutes       | `fleet.PruneAudit`: deletes audit rows older than `ESA_AUDIT_RETENTION`. Unset does nothing. The ledger and the prune entry are written after the delete.                                                                                                                                                            |
 
 Polling details from `apps/esa/internal/fleet/poll.go`:
 

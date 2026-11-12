@@ -70,6 +70,9 @@ type Deps struct {
 	// AdvisoryFeed is a local JSON file of exact affected package versions.
 	// Empty means matching is off. The control plane never downloads it.
 	AdvisoryFeed string
+	// AuditRetention is how long audit rows are kept. Zero keeps them until
+	// the account is deleted. A space admin cannot set this.
+	AuditRetention time.Duration
 	// MetricsRawRetention and MetricsHourlyRetention say how long metric
 	// samples and hourly averages are kept. Zero uses 48 hours and 90 days.
 	MetricsRawRetention    time.Duration
@@ -117,6 +120,7 @@ type Service struct {
 	// exposureBudget is how many exposure reports this poll cycle may start.
 	exposureBudget atomic.Int32
 	advisoryFeed   string
+	auditRetention time.Duration
 }
 
 // New returns a Service.
@@ -137,6 +141,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
 		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
 		advisoryFeed:    d.AdvisoryFeed,
+		auditRetention:  d.AuditRetention,
 		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),
 		hourlyRetention: orDefault(d.MetricsHourlyRetention, defaultHourlyRetention),

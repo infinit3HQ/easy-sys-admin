@@ -58,6 +58,9 @@ type Config struct {
 	Metrics bool
 	// AdvisoryFeed is ESA_ADVISORY_FEED, a local file. Empty leaves matching off.
 	AdvisoryFeed string
+	// AuditRetention is ESA_AUDIT_RETENTION. Zero keeps the audit log until
+	// the account is deleted. Hosted installs leave it zero.
+	AuditRetention time.Duration
 
 	Auth AuthConfig
 	// SMTP sends confirmation and password-reset mail. Zero value means
@@ -254,6 +257,11 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 		return fmt.Errorf("ESA_METRICS: %w", err)
 	}
 	cfg.AdvisoryFeed = get("ESA_ADVISORY_FEED", "")
+	if s := get("ESA_AUDIT_RETENTION", ""); s != "" {
+		if cfg.AuditRetention, err = parseDuration(s, 24*time.Hour, 0); err != nil {
+			return fmt.Errorf("ESA_AUDIT_RETENTION: %w", err)
+		}
+	}
 	return nil
 }
 

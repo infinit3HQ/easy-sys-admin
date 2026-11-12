@@ -66,6 +66,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		MaxServersPerAccount: cfg.MaxServersPerAccount,
 		MaxOrgsPerUser:       cfg.MaxOrgsPerUser,
 		AdvisoryFeed:         cfg.AdvisoryFeed,
+		AuditRetention:       cfg.AuditRetention,
 		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
