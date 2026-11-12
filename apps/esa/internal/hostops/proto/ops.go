@@ -300,3 +300,18 @@ type RecoverySource struct {
 	RestoreState string     `json:"restoreState"`
 	SmokeState   string     `json:"smokeState"`
 }
+
+// PackageInventory is the deb packages dpkg reports. It is not a vulnerability scan.
+type PackageInventory struct {
+	Distro   string             `json:"distro"`
+	Release  string             `json:"release"`
+	Packages []InstalledPackage `json:"packages"`
+	Gaps     []string           `json:"gaps"`
+}
+
+// InstalledPackage is one installed deb.
+type InstalledPackage struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Arch    string `json:"arch"`
+}

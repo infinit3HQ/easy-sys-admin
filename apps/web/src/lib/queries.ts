@@ -106,6 +106,16 @@ export const q = {
           }),
         ),
     }),
+  advisories: (id: number) =>
+    queryOptions({
+      queryKey: ['advisories', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/advisories', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
   jobs: (id: number) =>
     queryOptions({
       queryKey: ['jobs', id],

@@ -662,6 +662,9 @@ type AddServerRequest struct {
 	Port  *int   `json:"port,omitempty"`
 }
 
+// AdvisoryReport defines model for AdvisoryReport.
+type AdvisoryReport = fleet.AdvisoryReport
+
 // Alert defines model for Alert.
 type Alert struct {
 	FiredAt      *time.Time    `json:"firedAt,omitempty"`
@@ -2177,6 +2180,9 @@ type ServerInterface interface {
 	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// GetServerAdvisories Exact affected versions from an imported local feed
+	// (GET /servers/{serverId}/advisories)
+	GetServerAdvisories(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// ListContainers Docker containers on the server
 	// (GET /servers/{serverId}/containers)
 	ListContainers(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -3867,6 +3873,32 @@ func (siw *ServerInterfaceWrapper) GetServerAccess(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// GetServerAdvisories operation middleware
+func (siw *ServerInterfaceWrapper) GetServerAdvisories(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetServerAdvisories(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListContainers operation middleware
 func (siw *ServerInterfaceWrapper) ListContainers(w http.ResponseWriter, r *http.Request) {
 
@@ -4686,6 +4718,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/security", wrapper.GetServerSecurity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/jobs", wrapper.GetServerJobs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.GetServerRecovery)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/advisories", wrapper.GetServerAdvisories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups", wrapper.ListGroups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups", wrapper.CreateGroup)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/groups/{groupId}", wrapper.DeleteGroup)
@@ -7392,6 +7425,45 @@ func (response GetServerAccessdefaultJSONResponse) VisitGetServerAccessResponse(
 	return err
 }
 
+type GetServerAdvisoriesRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type GetServerAdvisoriesResponseObject interface {
+	VisitGetServerAdvisoriesResponse(w http.ResponseWriter) error
+}
+
+type GetServerAdvisories200JSONResponse AdvisoryReport
+
+func (response GetServerAdvisories200JSONResponse) VisitGetServerAdvisoriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetServerAdvisoriesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetServerAdvisoriesdefaultJSONResponse) VisitGetServerAdvisoriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListContainersRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -8452,6 +8524,9 @@ type StrictServerInterface interface {
 	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(ctx context.Context, request GetServerAccessRequestObject) (GetServerAccessResponseObject, error)
+	// GetServerAdvisories Exact affected versions from an imported local feed
+	// (GET /servers/{serverId}/advisories)
+	GetServerAdvisories(ctx context.Context, request GetServerAdvisoriesRequestObject) (GetServerAdvisoriesResponseObject, error)
 	// ListContainers Docker containers on the server
 	// (GET /servers/{serverId}/containers)
 	ListContainers(ctx context.Context, request ListContainersRequestObject) (ListContainersResponseObject, error)
@@ -10492,6 +10567,32 @@ func (sh *strictHandler) GetServerAccess(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerAccessResponseObject); ok {
 		if err := validResponse.VisitGetServerAccessResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetServerAdvisories operation middleware
+func (sh *strictHandler) GetServerAdvisories(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request GetServerAdvisoriesRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetServerAdvisories(ctx, request.(GetServerAdvisoriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetServerAdvisories")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetServerAdvisoriesResponseObject); ok {
+		if err := validResponse.VisitGetServerAdvisoriesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

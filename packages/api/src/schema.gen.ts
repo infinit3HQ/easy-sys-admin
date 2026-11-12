@@ -648,6 +648,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/advisories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Exact affected versions from an imported local feed */
+        get: operations["getServerAdvisories"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/groups": {
         parameters: {
             query?: never;
@@ -2145,6 +2164,21 @@ export interface components {
             }[];
             gaps: string[];
         };
+        AdvisoryReport: {
+            coverage: string;
+            distro: string;
+            release: string;
+            packages: number;
+            /** @enum {string} */
+            feed: "not imported" | "imported" | "unreadable";
+            matches: {
+                id: string;
+                package: string;
+                version: string;
+                fixed: string;
+                severity: string;
+            }[];
+        };
         CronEntry: {
             source: string;
             user: string;
@@ -3630,6 +3664,29 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecoveryReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerAdvisories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matches and coverage. A package that is absent is not certified safe. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdvisoryReport"];
                 };
             };
             default: components["responses"]["Error"];

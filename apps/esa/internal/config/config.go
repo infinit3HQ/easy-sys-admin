@@ -56,6 +56,8 @@ type Config struct {
 	MetricsHourlyRetention time.Duration
 	// Metrics serves GET /metrics in the Prometheus text format.
 	Metrics bool
+	// AdvisoryFeed is ESA_ADVISORY_FEED, a local file. Empty leaves matching off.
+	AdvisoryFeed string
 
 	Auth AuthConfig
 	// SMTP sends confirmation and password-reset mail. Zero value means
@@ -251,6 +253,7 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 	if cfg.Metrics, err = parseBool(get("ESA_METRICS", "true")); err != nil {
 		return fmt.Errorf("ESA_METRICS: %w", err)
 	}
+	cfg.AdvisoryFeed = get("ESA_ADVISORY_FEED", "")
 	return nil
 }
 

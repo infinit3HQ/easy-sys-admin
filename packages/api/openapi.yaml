@@ -733,6 +733,21 @@ paths:
               schema: { $ref: '#/components/schemas/RecoveryReport' }
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/advisories:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerAdvisories
+      summary: Exact affected versions from an imported local feed
+      tags: [server-live]
+      responses:
+        '200':
+          description: Matches and coverage. A package that is absent is not certified safe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdvisoryReport' }
+        default: { $ref: '#/components/responses/Error' }
+
   /groups:
     get:
       operationId: listGroups
@@ -2557,6 +2572,29 @@ components:
               restoreState: { type: string }
               smokeState: { type: string }
         gaps: { type: array, items: { type: string } }
+
+    AdvisoryReport:
+      x-go-type: fleet.AdvisoryReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet }
+      type: object
+      required: [coverage, distro, release, packages, feed, matches]
+      properties:
+        coverage: { type: string }
+        distro: { type: string }
+        release: { type: string }
+        packages: { type: integer }
+        feed: { type: string, enum: [not imported, imported, unreadable] }
+        matches:
+          type: array
+          items:
+            type: object
+            required: [id, package, version, fixed, severity]
+            properties:
+              id: { type: string }
+              package: { type: string }
+              version: { type: string }
+              fixed: { type: string }
+              severity: { type: string }
 
     CronEntry:
       x-go-type: proto.CronEntry

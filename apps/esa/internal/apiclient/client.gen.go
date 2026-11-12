@@ -662,6 +662,9 @@ type AddServerRequest struct {
 	Port  *int   `json:"port,omitempty"`
 }
 
+// AdvisoryReport defines model for AdvisoryReport.
+type AdvisoryReport = fleet.AdvisoryReport
+
 // Alert defines model for Alert.
 type Alert struct {
 	FiredAt      *time.Time    `json:"firedAt,omitempty"`
@@ -2618,6 +2621,11 @@ type ClientInterface interface {
 	// Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 	GetServerAccess(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetServerAdvisories Exact affected versions from an imported local feed
+	//
+	// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
+	GetServerAdvisories(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListContainers Docker containers on the server
 	//
 	// Corresponds with GET /servers/{serverId}/containers (the `ListContainers` operationId).
@@ -4297,6 +4305,21 @@ func (c *Client) UpdateServer(ctx context.Context, serverId ServerId, body Updat
 // Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 func (c *Client) GetServerAccess(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerAccessRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetServerAdvisories Exact affected versions from an imported local feed
+//
+// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
+func (c *Client) GetServerAdvisories(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetServerAdvisoriesRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
 	}
@@ -7451,6 +7474,40 @@ func NewGetServerAccessRequest(server string, serverId ServerId) (*http.Request,
 	return req, nil
 }
 
+// NewGetServerAdvisoriesRequest constructs an http.Request for the GetServerAdvisories method
+func NewGetServerAdvisoriesRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/advisories", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListContainersRequest constructs an http.Request for the ListContainers method
 func NewListContainersRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -9085,6 +9142,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 	GetServerAccessWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerAccessResponse, error)
+
+	// GetServerAdvisoriesWithResponse Exact affected versions from an imported local feed
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
+	GetServerAdvisoriesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerAdvisoriesResponse, error)
 
 	// ListContainersWithResponse Docker containers on the server
 	//
@@ -12549,6 +12613,54 @@ func (r GetServerAccessResponse) ContentType() string {
 	return ""
 }
 
+type GetServerAdvisoriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AdvisoryReport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetServerAdvisoriesResponse) GetJSON200() *AdvisoryReport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetServerAdvisoriesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetServerAdvisoriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetServerAdvisoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetServerAdvisoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetServerAdvisoriesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListContainersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -14821,6 +14933,19 @@ func (c *ClientWithResponses) GetServerAccessWithResponse(ctx context.Context, s
 		return nil, err
 	}
 	return ParseGetServerAccessResponse(rsp)
+}
+
+// GetServerAdvisoriesWithResponse Exact affected versions from an imported local feed
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
+func (c *ClientWithResponses) GetServerAdvisoriesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerAdvisoriesResponse, error) {
+	rsp, err := c.GetServerAdvisories(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetServerAdvisoriesResponse(rsp)
 }
 
 // ListContainersWithResponse Docker containers on the server
@@ -17419,6 +17544,39 @@ func ParseGetServerAccessResponse(rsp *http.Response) (*GetServerAccessResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest AccessReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetServerAdvisoriesResponse parses an HTTP response from a GetServerAdvisoriesWithResponse call
+func ParseGetServerAdvisoriesResponse(rsp *http.Response) (*GetServerAdvisoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetServerAdvisoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AdvisoryReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

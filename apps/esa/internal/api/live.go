@@ -142,3 +142,15 @@ func (h *Handlers) GetServerRecovery(ctx context.Context, req GetServerRecoveryR
 	}
 	return GetServerRecovery200JSONResponse(r), nil
 }
+
+func (h *Handlers) GetServerAdvisories(ctx context.Context, req GetServerAdvisoriesRequestObject) (GetServerAdvisoriesResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, err := h.fleet.Advisories(ctx, a, req.ServerId)
+	if err != nil {
+		return nil, err
+	}
+	return GetServerAdvisories200JSONResponse(r), nil
+}

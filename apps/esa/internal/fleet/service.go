@@ -67,6 +67,9 @@ type Deps struct {
 	// MaxOrgsPerUser caps organizations one user can own, not counting
 	// their personal space. Zero uses 20.
 	MaxOrgsPerUser int
+	// AdvisoryFeed is a local JSON file of exact affected package versions.
+	// Empty means matching is off. The control plane never downloads it.
+	AdvisoryFeed string
 	// MetricsRawRetention and MetricsHourlyRetention say how long metric
 	// samples and hourly averages are kept. Zero uses 48 hours and 90 days.
 	MetricsRawRetention    time.Duration
@@ -113,6 +116,7 @@ type Service struct {
 
 	// exposureBudget is how many exposure reports this poll cycle may start.
 	exposureBudget atomic.Int32
+	advisoryFeed   string
 }
 
 // New returns a Service.
@@ -132,6 +136,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 		pollConcurrency: orDefault(d.PollConcurrency, defaultPollConcurrency),
 		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
 		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
+		advisoryFeed:    d.AdvisoryFeed,
 		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),
 		hourlyRetention: orDefault(d.MetricsHourlyRetention, defaultHourlyRetention),

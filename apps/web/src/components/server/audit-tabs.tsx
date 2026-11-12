@@ -282,6 +282,7 @@ function banText(
 export function SecurityTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.security(serverId))
   const recovery = useQuery(q.recovery(serverId))
+  const advisories = useQuery(q.advisories(serverId))
   if (r.isLoading) return <Loading />
   if (r.error || !r.data) return <ErrorBanner error={r.error} />
   const d = r.data
@@ -313,6 +314,21 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           ))}
         </ul>
       </Panel>
+      {advisories.data && (
+        <Panel title="Advisories" className="xl:col-span-2">
+          <p className="text-xs text-muted-foreground">{advisories.data.coverage}</p>
+          <p className="mt-2 font-mono text-xs text-faint">
+            {advisories.data.distro} {advisories.data.release} · {advisories.data.packages} packages · feed {advisories.data.feed}
+          </p>
+          <ul className="mt-2 space-y-1 font-mono text-xs">
+            {advisories.data.matches.map((m) => (
+              <li key={`${m.id}-${m.package}`}>
+                {m.id} {m.package} {m.version} · fixed {m.fixed || 'unknown'} · {m.severity}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
       <Panel title="Listening sockets" flush>
         <p className="px-4 pt-3 text-xs text-muted-foreground">
           A socket on 0.0.0.0 or :: listens on all interfaces. That does not
