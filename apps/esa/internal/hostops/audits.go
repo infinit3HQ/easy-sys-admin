@@ -668,11 +668,11 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 		rep.Gaps = append(rep.Gaps, "docker ports")
 	}
 	attachContainers(rep.Listening, pubs)
-	rep.Listening = addMissingPublications(rep.Listening, pubs)
-
 	h.readFirewall(ctx, &rep)
-	// After ufw: a ufw rule is not protection for a port Docker publishes.
-	markDockerUnknown(rep.Listening, pubs)
+	ufw := strings.HasPrefix(rep.Firewall, "ufw active")
+	rep.Listening = addMissingPublications(rep.Listening, pubs, ufw)
+	// A ufw rule is not protection for a port Docker publishes.
+	markDockerUnknown(rep.Listening, pubs, ufw)
 
 	rep.CrowdSec = h.serviceState(ctx, "crowdsec.service")
 	if rep.CrowdSec == "active" {

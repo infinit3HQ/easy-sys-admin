@@ -517,7 +517,7 @@ func attachContainers(ls []proto.Listener, pubs []publication) {
 
 // addMissingPublications lists a published port that ss does not show, as
 // with userland-proxy off. A port ss already lists is not added again.
-func addMissingPublications(ls []proto.Listener, pubs []publication) []proto.Listener {
+func addMissingPublications(ls []proto.Listener, pubs []publication, ufwActive bool) []proto.Listener {
 	have := map[string]bool{}
 	for _, l := range ls {
 		have[strconv.Itoa(l.Port)+"/"+baseProto(l.Proto)] = true
@@ -534,7 +534,7 @@ func addMissingPublications(ls []proto.Listener, pubs []publication) []proto.Lis
 		added[p.key()+" "+exposure] = true
 		ls = append(ls, proto.Listener{
 			Proto: p.Proto, Address: p.Address, Port: p.Port, Process: "docker",
-			Container: p.Names, Exposure: exposure, UFW: "unknown",
+			Container: p.Names, Exposure: exposure, UFW: map[bool]string{true: "unknown"}[ufwActive],
 		})
 	}
 	sort.SliceStable(ls, func(i, j int) bool {
@@ -549,7 +549,10 @@ func addMissingPublications(ls []proto.Listener, pubs []publication) []proto.Lis
 // markDockerUnknown refuses to treat a ufw rule as protection for a port
 // Docker publishes. Published traffic is forwarded by Docker's own rules
 // and does not pass ufw's input rules. Call it after applyUFW.
-func markDockerUnknown(ls []proto.Listener, pubs []publication) {
+func markDockerUnknown(ls []proto.Listener, pubs []publication, ufwActive bool) {
+	if !ufwActive {
+		return
+	}
 	names := publishedNames(pubs)
 	if len(names) == 0 {
 		return
