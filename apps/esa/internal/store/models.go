@@ -40,6 +40,7 @@ func Models() []any {
 		&NotifyDelivery{},
 		&RateWindow{},
 		&JobLease{},
+		&DatasetPolicy{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -69,6 +70,18 @@ type JobLease struct {
 }
 
 func (JobLease) TableName() string { return "job_leases" }
+
+// DatasetPolicy is how old a named backup dataset may be. It does not run
+// a backup. A dataset with no policy is not current.
+type DatasetPolicy struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;uniqueIndex:dataset_policies_account_name,priority:1"`
+	Name        string    `gorm:"not null;size:80;uniqueIndex:dataset_policies_account_name,priority:2"`
+	MaxAgeHours int       `gorm:"not null"`
+	CreatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
 
 // Every server, group, and run belongs to one account.
 type Account struct {

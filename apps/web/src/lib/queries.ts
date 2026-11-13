@@ -172,6 +172,11 @@ export const q = {
       queryFn: () => call(api().GET('/plans')),
       refetchInterval: LIVE,
     }),
+  datasets: () =>
+    queryOptions({
+      queryKey: ['datasets'],
+      queryFn: () => call(api().GET('/datasets')),
+    }),
   evidence: () =>
     queryOptions({
       queryKey: ['evidence'],

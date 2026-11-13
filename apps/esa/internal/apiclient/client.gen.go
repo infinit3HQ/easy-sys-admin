@@ -1172,6 +1172,26 @@ type CreatedToken struct {
 // CronEntry defines model for CronEntry.
 type CronEntry = proto.CronEntry
 
+// Dataset defines model for Dataset.
+type Dataset struct {
+	Id int64 `json:"id"`
+
+	// MaxAgeHours How old a successful backup of this dataset may be, in hours.
+	MaxAgeHours int    `json:"maxAgeHours"`
+	Name        string `json:"name"`
+}
+
+// DatasetInput defines model for DatasetInput.
+type DatasetInput struct {
+	MaxAgeHours int    `json:"maxAgeHours"`
+	Name        string `json:"name"`
+}
+
+// DatasetList defines model for DatasetList.
+type DatasetList struct {
+	Items []Dataset `json:"items"`
+}
+
 // Day defines model for Day.
 type Day string
 
@@ -2510,6 +2530,9 @@ type CreateChannelJSONRequestBody = CreateChannelRequest
 // UpdateChannelJSONRequestBody defines body for UpdateChannel for application/json ContentType.
 type UpdateChannelJSONRequestBody = UpdateChannelRequest
 
+// CreateDatasetJSONRequestBody defines body for CreateDataset for application/json ContentType.
+type CreateDatasetJSONRequestBody = DatasetInput
+
 // UpdateGroupShareJSONRequestBody defines body for UpdateGroupShare for application/json ContentType.
 type UpdateGroupShareJSONRequestBody = UpdateGroupShareRequest
 
@@ -2802,6 +2825,30 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 	TestChannel(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDatasets Named backup datasets and how old a success may be
+	//
+	// Corresponds with GET /datasets (the `ListDatasets` operationId).
+	ListDatasets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDatasetWithBody Add a dataset policy (admin)
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /datasets (the `CreateDataset` operationId).
+	CreateDatasetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateDataset Add a dataset policy (admin)
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /datasets (the `CreateDataset` operationId).
+	CreateDataset(ctx context.Context, body CreateDatasetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDataset Remove a dataset policy (admin). This does not change a server.
+	//
+	// Corresponds with DELETE /datasets/{datasetId} (the `DeleteDataset` operationId).
+	DeleteDataset(ctx context.Context, datasetId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListDeliveries The 100 most recent notification sends of this space
 	//
@@ -3884,6 +3931,70 @@ func (c *Client) UpdateChannel(ctx context.Context, channelId ChannelId, body Up
 // Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 func (c *Client) TestChannel(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewTestChannelRequest(c.Server, channelId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDatasets Named backup datasets and how old a success may be
+//
+// Corresponds with GET /datasets (the `ListDatasets` operationId).
+func (c *Client) ListDatasets(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDatasetsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDatasetWithBody Add a dataset policy (admin)
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /datasets (the `CreateDataset` operationId).
+func (c *Client) CreateDatasetWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDatasetRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateDataset Add a dataset policy (admin)
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /datasets (the `CreateDataset` operationId).
+func (c *Client) CreateDataset(ctx context.Context, body CreateDatasetJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDatasetRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteDataset Remove a dataset policy (admin). This does not change a server.
+//
+// Corresponds with DELETE /datasets/{datasetId} (the `DeleteDataset` operationId).
+func (c *Client) DeleteDataset(ctx context.Context, datasetId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDatasetRequest(c.Server, datasetId)
 	if err != nil {
 		return nil, err
 	}
@@ -6488,6 +6599,107 @@ func NewTestChannelRequest(server string, channelId ChannelId) (*http.Request, e
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListDatasetsRequest constructs an http.Request for the ListDatasets method
+func NewListDatasetsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/datasets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateDatasetRequest calls the generic CreateDataset builder with application/json body
+func NewCreateDatasetRequest(server string, body CreateDatasetJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDatasetRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDatasetRequestWithBody constructs an http.Request for the CreateDataset method, with any body, and a specified content type
+func NewCreateDatasetRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/datasets")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteDatasetRequest constructs an http.Request for the DeleteDataset method
+func NewDeleteDatasetRequest(server string, datasetId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "datasetId", datasetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/datasets/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -10378,6 +10590,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 	TestChannelWithResponse(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*TestChannelResponse, error)
 
+	// ListDatasetsWithResponse Named backup datasets and how old a success may be
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /datasets (the `ListDatasets` operationId).
+	ListDatasetsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDatasetsResponse, error)
+
+	// CreateDatasetWithBodyWithResponse Add a dataset policy (admin)
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /datasets (the `CreateDataset` operationId).
+	CreateDatasetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDatasetResponse, error)
+
+	// CreateDatasetWithResponse Add a dataset policy (admin)
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /datasets (the `CreateDataset` operationId).
+	CreateDatasetWithResponse(ctx context.Context, body CreateDatasetJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDatasetResponse, error)
+
+	// DeleteDatasetWithResponse Remove a dataset policy (admin). This does not change a server.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /datasets/{datasetId} (the `DeleteDataset` operationId).
+	DeleteDatasetWithResponse(ctx context.Context, datasetId int64, reqEditors ...RequestEditorFn) (*DeleteDatasetResponse, error)
+
 	// ListDeliveriesWithResponse The 100 most recent notification sends of this space
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -11962,6 +12202,143 @@ func (r TestChannelResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r TestChannelResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDatasetsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DatasetList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDatasetsResponse) GetJSON200() *DatasetList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDatasetsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDatasetsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDatasetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDatasetsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDatasetsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateDatasetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Dataset
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateDatasetResponse) GetJSON201() *Dataset {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateDatasetResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateDatasetResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDatasetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDatasetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateDatasetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteDatasetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteDatasetResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteDatasetResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDatasetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDatasetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteDatasetResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -16594,6 +16971,58 @@ func (c *ClientWithResponses) TestChannelWithResponse(ctx context.Context, chann
 	return ParseTestChannelResponse(rsp)
 }
 
+// ListDatasetsWithResponse Named backup datasets and how old a success may be
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /datasets (the `ListDatasets` operationId).
+func (c *ClientWithResponses) ListDatasetsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListDatasetsResponse, error) {
+	rsp, err := c.ListDatasets(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDatasetsResponse(rsp)
+}
+
+// CreateDatasetWithBodyWithResponse Add a dataset policy (admin)
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /datasets (the `CreateDataset` operationId).
+func (c *ClientWithResponses) CreateDatasetWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDatasetResponse, error) {
+	rsp, err := c.CreateDatasetWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDatasetResponse(rsp)
+}
+
+// CreateDatasetWithResponse Add a dataset policy (admin)
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /datasets (the `CreateDataset` operationId).
+func (c *ClientWithResponses) CreateDatasetWithResponse(ctx context.Context, body CreateDatasetJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDatasetResponse, error) {
+	rsp, err := c.CreateDataset(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDatasetResponse(rsp)
+}
+
+// DeleteDatasetWithResponse Remove a dataset policy (admin). This does not change a server.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /datasets/{datasetId} (the `DeleteDataset` operationId).
+func (c *ClientWithResponses) DeleteDatasetWithResponse(ctx context.Context, datasetId int64, reqEditors ...RequestEditorFn) (*DeleteDatasetResponse, error) {
+	rsp, err := c.DeleteDataset(ctx, datasetId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDatasetResponse(rsp)
+}
+
 // ListDeliveriesWithResponse The 100 most recent notification sends of this space
 //
 // Returns a wrapper object for the known response body format(s).
@@ -18710,6 +19139,101 @@ func ParseTestChannelResponse(rsp *http.Response) (*TestChannelResponse, error) 
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDatasetsResponse parses an HTTP response from a ListDatasetsWithResponse call
+func ParseListDatasetsResponse(rsp *http.Response) (*ListDatasetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDatasetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DatasetList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDatasetResponse parses an HTTP response from a CreateDatasetWithResponse call
+func ParseCreateDatasetResponse(rsp *http.Response) (*CreateDatasetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDatasetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Dataset
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDatasetResponse parses an HTTP response from a DeleteDatasetWithResponse call
+func ParseDeleteDatasetResponse(rsp *http.Response) (*DeleteDatasetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDatasetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

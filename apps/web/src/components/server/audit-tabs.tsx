@@ -321,12 +321,17 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           {recovery.data?.sources.map((s) => (
             <li key={`${s.tool}-${s.dataset}`}>
               {s.tool} {s.dataset}: backup {s.backupState}
-              {s.freshness ? ` (${s.freshness})` : ''}, check {s.checkKind}{' '}
+              {s.freshness ? ` (${s.freshness})` : ''}
+              {s.policy ? `, policy ${s.policy}` : ''}, check {s.checkKind}{' '}
               {s.checkState}, restore {s.restoreState}, smoke {s.smokeState}
               {s.note ? `. ${s.note}` : ''}
             </li>
           ))}
         </ul>
+        <p className="mt-2 text-xs text-muted-foreground">
+          A dataset with no policy is not current. within means the backup time
+          is inside the account limit. It is not proof the data can be restored.
+        </p>
       </Panel>
       <ScanPanel
         serverId={serverId}

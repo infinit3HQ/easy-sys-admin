@@ -323,6 +323,9 @@ type RecoverySource struct {
 	// backup time is more than 7 days ago. Unknown is not a current success.
 	Freshness string `json:"freshness"`
 	Note      string `json:"note"`
+	// Policy is within, older, or none. none means this account has no
+	// policy for the dataset. That is not a current backup.
+	Policy string `json:"policy"`
 }
 
 // PackageInventory is the deb packages dpkg reports. It is not a vulnerability scan.

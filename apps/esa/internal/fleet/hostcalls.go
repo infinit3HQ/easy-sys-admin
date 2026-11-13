@@ -258,6 +258,7 @@ func (s *Service) Recovery(ctx context.Context, a Actor, serverID int64) (proto.
 		out.Gaps = append(out.Gaps, "helper")
 	}
 	hostops.AnnotateRecovery(&out, time.Now())
+	s.applyDatasetPolicy(ctx, srv.AccountID, &out)
 	return out, err
 }
 

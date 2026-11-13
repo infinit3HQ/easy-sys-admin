@@ -935,6 +935,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Named backup datasets and how old a success may be */
+        get: operations["listDatasets"];
+        put?: never;
+        /** Add a dataset policy (admin) */
+        post: operations["createDataset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{datasetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                datasetId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a dataset policy (admin). This does not change a server. */
+        delete: operations["deleteDataset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plans": {
         parameters: {
             query?: never;
@@ -1943,6 +1980,20 @@ export interface components {
                 servers: string[];
             }[];
         };
+        Dataset: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description How old a successful backup of this dataset may be, in hours. */
+            maxAgeHours: number;
+        };
+        DatasetList: {
+            items: components["schemas"]["Dataset"][];
+        };
+        DatasetInput: {
+            name: string;
+            maxAgeHours: number;
+        };
         Offboarding: {
             /** @description What this report does not prove. */
             statement: string;
@@ -2499,6 +2550,8 @@ export interface components {
                 freshness?: string;
                 /** @description What this file does not prove. A sampled check is not a full read, and a backup success is not a restore. */
                 note?: string;
+                /** @description within, older, or none. none means this account has no policy for the dataset. That is not a current backup. */
+                policy?: string;
             }[];
             gaps: string[];
         };
@@ -4725,6 +4778,73 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EvidenceExport"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listDatasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policies for this account. A dataset that is not listed is not current. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetInput"];
+            };
+        };
+        responses: {
+            /** @description The policy */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                datasetId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

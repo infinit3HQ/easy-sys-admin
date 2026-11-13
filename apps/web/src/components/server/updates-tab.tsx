@@ -313,7 +313,11 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
 function backupNote(
   report:
     | {
-        sources?: { backupState?: string; freshness?: string }[]
+        sources?: {
+          backupState?: string
+          freshness?: string
+          policy?: string
+        }[]
       }
     | undefined,
   pending: boolean,
@@ -323,6 +327,10 @@ function backupNote(
     return 'Reading the backup result files. The update can still start.'
   if (failed || !report) {
     return 'The backup result files could not be read. The update can still start. That is not proof a backup exists.'
+  }
+  const older = report.sources?.some((s) => s.policy === 'older')
+  if (older) {
+    return 'A dataset is older than its policy, or the backup did not succeed. The update can still start. A file is not proof the data can be restored.'
   }
   const current = report.sources?.some(
     (s) => s.backupState === 'success' && s.freshness === 'current',

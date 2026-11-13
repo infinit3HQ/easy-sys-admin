@@ -1173,6 +1173,26 @@ type CreatedToken struct {
 // CronEntry defines model for CronEntry.
 type CronEntry = proto.CronEntry
 
+// Dataset defines model for Dataset.
+type Dataset struct {
+	Id int64 `json:"id"`
+
+	// MaxAgeHours How old a successful backup of this dataset may be, in hours.
+	MaxAgeHours int    `json:"maxAgeHours"`
+	Name        string `json:"name"`
+}
+
+// DatasetInput defines model for DatasetInput.
+type DatasetInput struct {
+	MaxAgeHours int    `json:"maxAgeHours"`
+	Name        string `json:"name"`
+}
+
+// DatasetList defines model for DatasetList.
+type DatasetList struct {
+	Items []Dataset `json:"items"`
+}
+
 // Day defines model for Day.
 type Day string
 
@@ -2511,6 +2531,9 @@ type CreateChannelJSONRequestBody = CreateChannelRequest
 // UpdateChannelJSONRequestBody defines body for UpdateChannel for application/json ContentType.
 type UpdateChannelJSONRequestBody = UpdateChannelRequest
 
+// CreateDatasetJSONRequestBody defines body for CreateDataset for application/json ContentType.
+type CreateDatasetJSONRequestBody = DatasetInput
+
 // UpdateGroupShareJSONRequestBody defines body for UpdateGroupShare for application/json ContentType.
 type UpdateGroupShareJSONRequestBody = UpdateGroupShareRequest
 
@@ -2657,6 +2680,15 @@ type ServerInterface interface {
 	// TestChannel Send a test notification
 	// (POST /channels/{channelId}/test)
 	TestChannel(w http.ResponseWriter, r *http.Request, channelId ChannelId)
+	// ListDatasets Named backup datasets and how old a success may be
+	// (GET /datasets)
+	ListDatasets(w http.ResponseWriter, r *http.Request)
+	// CreateDataset Add a dataset policy (admin)
+	// (POST /datasets)
+	CreateDataset(w http.ResponseWriter, r *http.Request)
+	// DeleteDataset Remove a dataset policy (admin). This does not change a server.
+	// (DELETE /datasets/{datasetId})
+	DeleteDataset(w http.ResponseWriter, r *http.Request, datasetId int64)
 	// ListDeliveries The 100 most recent notification sends of this space
 	// (GET /deliveries)
 	ListDeliveries(w http.ResponseWriter, r *http.Request, params ListDeliveriesParams)
@@ -3259,6 +3291,60 @@ func (siw *ServerInterfaceWrapper) TestChannel(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.TestChannel(w, r, channelId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDatasets operation middleware
+func (siw *ServerInterfaceWrapper) ListDatasets(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDatasets(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDataset operation middleware
+func (siw *ServerInterfaceWrapper) CreateDataset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDataset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDataset operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDataset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "datasetId" -------------
+	var datasetId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "datasetId", r.PathValue("datasetId"), &datasetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "datasetId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDataset(w, r, datasetId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5765,6 +5851,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/evidence", wrapper.GetEvidence)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/datasets", wrapper.ListDatasets)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/datasets", wrapper.CreateDataset)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/datasets/{datasetId}", wrapper.DeleteDataset)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans", wrapper.ListPlans)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans", wrapper.ProposePlan)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans/{planId}", wrapper.GetPlan)
@@ -6366,6 +6455,116 @@ type TestChanneldefaultJSONResponse struct {
 }
 
 func (response TestChanneldefaultJSONResponse) VisitTestChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDatasetsRequestObject struct {
+}
+
+type ListDatasetsResponseObject interface {
+	VisitListDatasetsResponse(w http.ResponseWriter) error
+}
+
+type ListDatasets200JSONResponse DatasetList
+
+func (response ListDatasets200JSONResponse) VisitListDatasetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDatasetsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDatasetsdefaultJSONResponse) VisitListDatasetsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDatasetRequestObject struct {
+	Body *CreateDatasetJSONRequestBody
+}
+
+type CreateDatasetResponseObject interface {
+	VisitCreateDatasetResponse(w http.ResponseWriter) error
+}
+
+type CreateDataset201JSONResponse Dataset
+
+func (response CreateDataset201JSONResponse) VisitCreateDatasetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateDatasetdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateDatasetdefaultJSONResponse) VisitCreateDatasetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteDatasetRequestObject struct {
+	DatasetId int64 `json:"datasetId"`
+}
+
+type DeleteDatasetResponseObject interface {
+	VisitDeleteDatasetResponse(w http.ResponseWriter) error
+}
+
+type DeleteDataset204Response struct {
+}
+
+func (response DeleteDataset204Response) VisitDeleteDatasetResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteDatasetdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteDatasetdefaultJSONResponse) VisitDeleteDatasetResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9980,6 +10179,15 @@ type StrictServerInterface interface {
 	// TestChannel Send a test notification
 	// (POST /channels/{channelId}/test)
 	TestChannel(ctx context.Context, request TestChannelRequestObject) (TestChannelResponseObject, error)
+	// ListDatasets Named backup datasets and how old a success may be
+	// (GET /datasets)
+	ListDatasets(ctx context.Context, request ListDatasetsRequestObject) (ListDatasetsResponseObject, error)
+	// CreateDataset Add a dataset policy (admin)
+	// (POST /datasets)
+	CreateDataset(ctx context.Context, request CreateDatasetRequestObject) (CreateDatasetResponseObject, error)
+	// DeleteDataset Remove a dataset policy (admin). This does not change a server.
+	// (DELETE /datasets/{datasetId})
+	DeleteDataset(ctx context.Context, request DeleteDatasetRequestObject) (DeleteDatasetResponseObject, error)
 	// ListDeliveries The 100 most recent notification sends of this space
 	// (GET /deliveries)
 	ListDeliveries(ctx context.Context, request ListDeliveriesRequestObject) (ListDeliveriesResponseObject, error)
@@ -10702,6 +10910,87 @@ func (sh *strictHandler) TestChannel(w http.ResponseWriter, r *http.Request, cha
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(TestChannelResponseObject); ok {
 		if err := validResponse.VisitTestChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDatasets operation middleware
+func (sh *strictHandler) ListDatasets(w http.ResponseWriter, r *http.Request) {
+	var request ListDatasetsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDatasets(ctx, request.(ListDatasetsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDatasets")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDatasetsResponseObject); ok {
+		if err := validResponse.VisitListDatasetsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDataset operation middleware
+func (sh *strictHandler) CreateDataset(w http.ResponseWriter, r *http.Request) {
+	var request CreateDatasetRequestObject
+
+	var body CreateDatasetJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDataset(ctx, request.(CreateDatasetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDataset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDatasetResponseObject); ok {
+		if err := validResponse.VisitCreateDatasetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDataset operation middleware
+func (sh *strictHandler) DeleteDataset(w http.ResponseWriter, r *http.Request, datasetId int64) {
+	var request DeleteDatasetRequestObject
+
+	request.DatasetId = datasetId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDataset(ctx, request.(DeleteDatasetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDataset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDatasetResponseObject); ok {
+		if err := validResponse.VisitDeleteDatasetResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
