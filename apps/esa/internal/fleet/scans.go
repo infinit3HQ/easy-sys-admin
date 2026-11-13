@@ -101,6 +101,7 @@ type grypeReport struct {
 			Built  string `json:"built"`
 			Status struct {
 				Built string `json:"built"`
+				Error string `json:"error"`
 			} `json:"status"`
 		} `json:"db"`
 	} `json:"descriptor"`
@@ -115,6 +116,9 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 	}
 	if !strings.EqualFold(r.Descriptor.Name, "grype") {
 		return "", "", nil, nil, invalid("scan", "the report does not say it came from Grype")
+	}
+	if msg := strings.TrimSpace(r.Descriptor.DB.Status.Error); msg != "" {
+		return "", "", nil, nil, invalid("scan", "the scanner reported a database error, so this report has no coverage: %s", msg)
 	}
 	for _, s := range []string{r.Descriptor.DB.Built, r.Descriptor.DB.Status.Built} {
 		if t, err := time.Parse(time.RFC3339, s); err == nil {

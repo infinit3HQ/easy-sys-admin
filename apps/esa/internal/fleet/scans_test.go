@@ -50,6 +50,9 @@ func TestParseGrype(t *testing.T) {
 	if _, _, _, _, err := parseGrype([]byte(`{"matches":[],"descriptor":{"name":"trivy"}}`)); err == nil {
 		t.Fatal("a report from another tool was read as Grype")
 	}
+	if _, _, _, ms, err := parseGrype([]byte(`{"matches":[],"descriptor":{"name":"grype","db":{"status":{"error":"database is corrupt","built":"2026-11-14T00:00:00Z"}}}}`)); err == nil || len(ms) != 0 {
+		t.Fatal("a database error was stored as zero matches")
+	}
 	_, _, built, _, _ = parseGrype([]byte(`{"matches":[],"descriptor":{"name":"grype","db":{"built":"2026-11-01T00:00:00Z"}}}`))
 	if built == nil {
 		t.Fatal("the older db.built field was not read")
