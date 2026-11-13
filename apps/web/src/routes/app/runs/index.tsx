@@ -5,7 +5,8 @@ import { RunsTable } from '#/components/runs-table'
 import { PageHeader } from '#/components/kit'
 
 export const Route = createFileRoute('/app/runs/')({
-  loader: ({ context }) => context.queryClient.ensureQueryData(q.runs({ limit: 100 })),
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData(q.runs({ limit: 100 })),
   head: () => ({ meta: [{ title: 'Runs · easy-sys-admin' }] }),
   component: Runs,
 })

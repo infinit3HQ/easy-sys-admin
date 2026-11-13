@@ -6,7 +6,7 @@ import {
 } from '@tanstack/react-query'
 import { useState } from 'react'
 import { z } from 'zod'
-import { api, call } from '#/lib/api'
+import { api, call, orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import {
   ErrorBanner,
@@ -28,7 +28,9 @@ export const Route = createFileRoute('/app/alerts/notices/$incidentId')({
     stringify: (p) => ({ incidentId: String(p.incidentId) }),
   },
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.incident(params.incidentId)),
+    orNotFound(
+      context.queryClient.ensureQueryData(q.incident(params.incidentId)),
+    ),
   head: () => ({ meta: [{ title: 'Notice · easy-sys-admin' }] }),
   component: NoticePage,
 })

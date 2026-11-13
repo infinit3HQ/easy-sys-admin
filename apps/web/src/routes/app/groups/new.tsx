@@ -30,7 +30,13 @@ function NewGroup() {
         }
         title="New group"
       />
-      <GroupForm initial={defaultGroup} submitLabel="Create group" busy={m.isPending} error={m.error} onSubmit={(g) => m.mutate(g)} />
+      <GroupForm
+        initial={defaultGroup}
+        submitLabel="Create group"
+        busy={m.isPending}
+        error={m.error}
+        onSubmit={(g) => m.mutate(g)}
+      />
     </div>
   )
 }

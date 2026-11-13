@@ -3,7 +3,7 @@ import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
 import type { ReactNode } from 'react'
 import type { RunServer } from '@esa/api'
-import { api, call } from '#/lib/api'
+import { api, call, orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { bytes } from '#/lib/format'
 import { When } from '#/components/time'
@@ -20,7 +20,7 @@ export const Route = createFileRoute('/app/runs/$runId')({
     stringify: (p) => ({ runId: String(p.runId) }),
   },
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.run(params.runId)),
+    orNotFound(context.queryClient.ensureQueryData(q.run(params.runId))),
   head: ({ params }) => ({
     meta: [{ title: `Run #${params.runId} · easy-sys-admin` }],
   }),

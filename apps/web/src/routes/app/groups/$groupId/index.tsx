@@ -2,6 +2,7 @@ import { Link, createFileRoute } from '@tanstack/react-router'
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import type { Server, ServerStatus } from '@esa/api'
 import { pct } from '#/lib/format'
+import { orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago, Until } from '#/components/time'
 import { RunsTable } from '#/components/runs-table'
@@ -21,7 +22,7 @@ import { Route as GroupRoute } from './route'
 
 export const Route = createFileRoute('/app/groups/$groupId/')({
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.group(params.groupId)),
+    orNotFound(context.queryClient.ensureQueryData(q.group(params.groupId))),
   component: GroupOverview,
 })
 

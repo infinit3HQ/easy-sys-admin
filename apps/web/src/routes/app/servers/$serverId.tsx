@@ -1,6 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
+import { orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
 import { Crumb, Notice, PageHeader, StatusBadge } from '#/components/kit'
@@ -41,7 +42,7 @@ export const Route = createFileRoute('/app/servers/$serverId')({
     stringify: (p) => ({ serverId: String(p.serverId) }),
   },
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.server(params.serverId)),
+    orNotFound(context.queryClient.ensureQueryData(q.server(params.serverId))),
   head: ({ loaderData }) => ({
     meta: [
       { title: `${loaderData?.server.name ?? 'Server'} · easy-sys-admin` },

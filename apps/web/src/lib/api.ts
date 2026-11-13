@@ -1,3 +1,4 @@
+import { notFound } from '@tanstack/react-router'
 import { createIsomorphicFn } from '@tanstack/react-start'
 import { getRequestHeader } from '@tanstack/react-start/server'
 import { createApiClient } from '@esa/api'
@@ -45,12 +46,17 @@ export async function call<T>(p: Promise<ApiResult<T>>): Promise<T> {
   try {
     res = await p
   } catch (e) {
-    throw new ApiError(0, 'network', e instanceof Error ? e.message : 'The control plane cannot be reached.')
+    throw new ApiError(
+      0,
+      'network',
+      e instanceof Error ? e.message : 'The control plane cannot be reached.',
+    )
   }
   if (res.response.ok) {
     return res.data as T
   }
-  const body = res.error as { error?: { code?: string; message?: string; field?: string } } | undefined
+  const body = res.error as
+    { error?: { code?: string; message?: string; field?: string } } | undefined
   throw new ApiError(
     res.response.status,
     body?.error?.code ?? 'error',
@@ -63,4 +69,17 @@ export function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message
   if (e instanceof Error) return e.message
   return 'Something went wrong.'
+}
+
+/**
+ * orNotFound turns a 404 from the control plane into the router's
+ * not-found, so a missing run, server, or group answers 404, not 500.
+ */
+export async function orNotFound<T>(p: Promise<T>): Promise<T> {
+  try {
+    return await p
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404) throw notFound()
+    throw e
+  }
 }

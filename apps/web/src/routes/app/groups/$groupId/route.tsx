@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { z } from 'zod'
 import { BrushCleaningIcon, DownloadIcon, GaugeIcon } from 'lucide-react'
 import type { RunKind } from '@esa/api'
-import { api, call } from '#/lib/api'
+import { api, call, orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import {
   ConfirmDialog,
@@ -28,7 +28,7 @@ export const Route = createFileRoute('/app/groups/$groupId')({
     stringify: (p) => ({ groupId: String(p.groupId) }),
   },
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.group(params.groupId)),
+    orNotFound(context.queryClient.ensureQueryData(q.group(params.groupId))),
   head: ({ loaderData }) => ({
     meta: [{ title: `${loaderData?.name ?? 'Group'} · easy-sys-admin` }],
   }),
