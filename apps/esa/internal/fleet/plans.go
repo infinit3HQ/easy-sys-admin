@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -220,6 +221,16 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 		return RunView{}, ErrForbidden
 	}
 	claim, err := s.claimPlan(ctx, a, id)
+	for range 50 {
+		if !errors.Is(err, errPlanStarting) {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+		claim, err = s.claimPlan(ctx, a, id)
+	}
+	if errors.Is(err, errPlanStarting) {
+		return RunView{}, invalid("status", "the plan is already being executed")
+	}
 	if claim.refuse != nil {
 		s.setPlanStatus(ctx, a, claim.row, claim.refuse.status, claim.refuse.reason)
 	}
@@ -260,6 +271,8 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 
 type planRefusal struct{ status, reason string }
 
+var errPlanStarting = errors.New("fleet: plan starting")
+
 type planClaim struct {
 	row    store.FixPlan
 	body   PlanBody
@@ -281,7 +294,7 @@ func (s *Service) claimPlan(ctx context.Context, a Actor, id int64) (planClaim, 
 				c.runID = row.RunID
 				return nil
 			}
-			return invalid("status", "the plan is already being executed")
+			return errPlanStarting
 		}
 		if row.RunID != nil && (row.Status == "succeeded" || row.Status == "failed" || row.Status == "partial") {
 			c.runID = row.RunID

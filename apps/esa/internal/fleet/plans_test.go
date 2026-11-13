@@ -151,3 +151,47 @@ func TestOldSessionCannotApprove(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTwoExecutionsShareOneRun(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	owner := signIn(t, s, "plan-race")
+	srv := store.Server{AccountID: owner.AccountID, Name: "web", Host: "10.0.0.8", Port: 22, Username: "esa", Enrollment: "pending", ProtectedContainers: store.JSON("[]"),
+		HelperCapabilities: store.MustJSON(proto.Capabilities()), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&srv).Error; err != nil {
+		t.Fatal(err)
+	}
+	state := store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), Updates: store.MustJSON(map[string]any{"packages": []map[string]any{{"name": "openssl", "security": true}}})}
+	if err := s.db.Create(&state).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.ProposePlan(ctx, owner, PlanBody{Kind: RunUpdate, ServerIDs: []int64{srv.ID}, UpdateMode: "security"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ApprovePlan(ctx, owner, plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	exec := owner
+	exec.Source, exec.TokenID, exec.Scopes = SourceAPI, 4, []Scope{ScopeActions}
+	type result struct {
+		id  int64
+		err error
+	}
+	ch := make(chan result, 2)
+	for range 2 {
+		go func() {
+			run, err := s.ExecutePlan(ctx, exec, plan.ID)
+			ch <- result{run.ID, err}
+		}()
+	}
+	a, b := <-ch, <-ch
+	if a.err != nil || b.err != nil || a.id == 0 || a.id != b.id {
+		t.Fatalf("two executions: %+v %+v", a, b)
+	}
+	var runs int64
+	if err := s.db.Model(&store.Run{}).Where("account_id = ?", owner.AccountID).Count(&runs).Error; err != nil || runs != 1 {
+		t.Fatalf("runs: %d %v", runs, err)
+	}
+	s.Wait()
+}
