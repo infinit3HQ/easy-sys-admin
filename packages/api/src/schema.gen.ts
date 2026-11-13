@@ -1162,6 +1162,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/key-exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Fingerprints expected on this server until a date. This does not change the server. */
+        get: operations["listKeyExceptions"];
+        put?: never;
+        /** Expect one fingerprint on one login until a date */
+        post: operations["createKeyException"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-exceptions/{exceptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a key exception. This does not change the server. */
+        delete: operations["deleteKeyException"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/identities": {
         parameters: {
             query?: never;
@@ -2063,6 +2103,27 @@ export interface components {
             /** Format: date-time */
             approvedAt: string;
             approvedBy: string;
+        };
+        KeyException: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            user: string;
+            fingerprint: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        KeyExceptionInput: {
+            user: string;
+            fingerprint: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        KeyExceptionList: {
+            items: components["schemas"]["KeyException"][];
         };
         BaselineVersionList: {
             items: components["schemas"]["BaselineVersion"][];
@@ -5152,6 +5213,78 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BaselineVersionList"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listKeyExceptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exceptions. One does not mean access was removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyExceptionList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createKeyException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyExceptionInput"];
+            };
+        };
+        responses: {
+            /** @description The exception */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyException"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteKeyException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

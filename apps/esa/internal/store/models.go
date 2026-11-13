@@ -42,6 +42,7 @@ func Models() []any {
 		&JobLease{},
 		&DatasetPolicy{},
 		&IngestedRecovery{},
+		&KeyException{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -102,6 +103,22 @@ type IngestedRecovery struct {
 	RestoreState   string    `gorm:"not null;default:'not run';size:20"`
 	SmokeState     string    `gorm:"not null;default:'not run';size:20"`
 	ReceivedAt     time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyException says one fingerprint on one login is expected until Until.
+// It does not remove the key and does not mean access was revoked.
+type KeyException struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;index"`
+	ServerID    int64     `gorm:"not null;uniqueIndex:key_exceptions_server_user_fp,priority:1"`
+	User        string    `gorm:"not null;size:64;uniqueIndex:key_exceptions_server_user_fp,priority:2"`
+	Fingerprint string    `gorm:"not null;size:120;uniqueIndex:key_exceptions_server_user_fp,priority:3"`
+	Until       time.Time `gorm:"not null"`
+	Reason      string    `gorm:"not null;size:200"`
+	CreatedAt   time.Time `gorm:"not null"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`

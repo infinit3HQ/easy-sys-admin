@@ -84,11 +84,15 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		have[item.User+"\n"+item.Fingerprint] = item
 	}
 	seen := map[string]bool{}
+	excepted := s.keyExceptions(ctx, srv.ID)
 	for _, k := range keys {
 		id := k.User + "\n" + k.Fingerprint
 		seen[id] = true
 		old, ok := have[id]
 		if !ok {
+			if excepted[id] {
+				continue
+			}
 			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" on "+k.User, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline", false)
 			continue
 		}

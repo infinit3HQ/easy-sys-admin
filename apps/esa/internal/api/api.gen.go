@@ -1627,6 +1627,29 @@ type Key struct {
 	Uses  []KeyOccurrence `json:"uses"`
 }
 
+// KeyException defines model for KeyException.
+type KeyException struct {
+	Fingerprint string    `json:"fingerprint"`
+	Id          int64     `json:"id"`
+	Reason      string    `json:"reason"`
+	ServerId    int64     `json:"serverId"`
+	Until       time.Time `json:"until"`
+	User        string    `json:"user"`
+}
+
+// KeyExceptionInput defines model for KeyExceptionInput.
+type KeyExceptionInput struct {
+	Fingerprint string    `json:"fingerprint"`
+	Reason      string    `json:"reason"`
+	Until       time.Time `json:"until"`
+	User        string    `json:"user"`
+}
+
+// KeyExceptionList defines model for KeyExceptionList.
+type KeyExceptionList struct {
+	Items []KeyException `json:"items"`
+}
+
 // KeyLabelRequest defines model for KeyLabelRequest.
 type KeyLabelRequest struct {
 	Fingerprint string `json:"fingerprint"`
@@ -2632,6 +2655,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 
+// CreateKeyExceptionJSONRequestBody defines body for CreateKeyException for application/json ContentType.
+type CreateKeyExceptionJSONRequestBody = KeyExceptionInput
+
 // SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
 type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
@@ -2928,6 +2954,15 @@ type ServerInterface interface {
 	// ListBaselineVersions Earlier key approvals of this server, newest first
 	// (GET /servers/{serverId}/key-baseline/versions)
 	ListBaselineVersions(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// ListKeyExceptions Fingerprints expected on this server until a date. This does not change the server.
+	// (GET /servers/{serverId}/key-exceptions)
+	ListKeyExceptions(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// CreateKeyException Expect one fingerprint on one login until a date
+	// (POST /servers/{serverId}/key-exceptions)
+	CreateKeyException(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// DeleteKeyException Remove a key exception. This does not change the server.
+	// (DELETE /servers/{serverId}/key-exceptions/{exceptionId})
+	DeleteKeyException(w http.ResponseWriter, r *http.Request, serverId ServerId, exceptionId int64)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerLogsParams)
@@ -5171,6 +5206,93 @@ func (siw *ServerInterfaceWrapper) ListBaselineVersions(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// ListKeyExceptions operation middleware
+func (siw *ServerInterfaceWrapper) ListKeyExceptions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListKeyExceptions(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateKeyException operation middleware
+func (siw *ServerInterfaceWrapper) CreateKeyException(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateKeyException(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteKeyException operation middleware
+func (siw *ServerInterfaceWrapper) DeleteKeyException(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "exceptionId" -------------
+	var exceptionId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "exceptionId", r.PathValue("exceptionId"), &exceptionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "exceptionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteKeyException(w, r, serverId, exceptionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetServerLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -5934,6 +6056,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-baseline/versions", wrapper.ListBaselineVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-exceptions", wrapper.ListKeyExceptions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-exceptions", wrapper.CreateKeyException)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/servers/{serverId}/key-exceptions/{exceptionId}", wrapper.DeleteKeyException)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/identities", wrapper.ListIdentities)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/identities", wrapper.SaveIdentity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/offboarding", wrapper.Offboarding)
@@ -9546,6 +9671,119 @@ func (response ListBaselineVersionsdefaultJSONResponse) VisitListBaselineVersion
 	return err
 }
 
+type ListKeyExceptionsRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type ListKeyExceptionsResponseObject interface {
+	VisitListKeyExceptionsResponse(w http.ResponseWriter) error
+}
+
+type ListKeyExceptions200JSONResponse KeyExceptionList
+
+func (response ListKeyExceptions200JSONResponse) VisitListKeyExceptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListKeyExceptionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListKeyExceptionsdefaultJSONResponse) VisitListKeyExceptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKeyExceptionRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Body     *CreateKeyExceptionJSONRequestBody
+}
+
+type CreateKeyExceptionResponseObject interface {
+	VisitCreateKeyExceptionResponse(w http.ResponseWriter) error
+}
+
+type CreateKeyException201JSONResponse KeyException
+
+func (response CreateKeyException201JSONResponse) VisitCreateKeyExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateKeyExceptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateKeyExceptiondefaultJSONResponse) VisitCreateKeyExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteKeyExceptionRequestObject struct {
+	ServerId    ServerId `json:"serverId"`
+	ExceptionId int64    `json:"exceptionId"`
+}
+
+type DeleteKeyExceptionResponseObject interface {
+	VisitDeleteKeyExceptionResponse(w http.ResponseWriter) error
+}
+
+type DeleteKeyException204Response struct {
+}
+
+func (response DeleteKeyException204Response) VisitDeleteKeyExceptionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteKeyExceptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteKeyExceptiondefaultJSONResponse) VisitDeleteKeyExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerLogsRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 	Params   GetServerLogsParams
@@ -10520,6 +10758,15 @@ type StrictServerInterface interface {
 	// ListBaselineVersions Earlier key approvals of this server, newest first
 	// (GET /servers/{serverId}/key-baseline/versions)
 	ListBaselineVersions(ctx context.Context, request ListBaselineVersionsRequestObject) (ListBaselineVersionsResponseObject, error)
+	// ListKeyExceptions Fingerprints expected on this server until a date. This does not change the server.
+	// (GET /servers/{serverId}/key-exceptions)
+	ListKeyExceptions(ctx context.Context, request ListKeyExceptionsRequestObject) (ListKeyExceptionsResponseObject, error)
+	// CreateKeyException Expect one fingerprint on one login until a date
+	// (POST /servers/{serverId}/key-exceptions)
+	CreateKeyException(ctx context.Context, request CreateKeyExceptionRequestObject) (CreateKeyExceptionResponseObject, error)
+	// DeleteKeyException Remove a key exception. This does not change the server.
+	// (DELETE /servers/{serverId}/key-exceptions/{exceptionId})
+	DeleteKeyException(ctx context.Context, request DeleteKeyExceptionRequestObject) (DeleteKeyExceptionResponseObject, error)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(ctx context.Context, request GetServerLogsRequestObject) (GetServerLogsResponseObject, error)
@@ -13246,6 +13493,92 @@ func (sh *strictHandler) ListBaselineVersions(w http.ResponseWriter, r *http.Req
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListBaselineVersionsResponseObject); ok {
 		if err := validResponse.VisitListBaselineVersionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListKeyExceptions operation middleware
+func (sh *strictHandler) ListKeyExceptions(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ListKeyExceptionsRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListKeyExceptions(ctx, request.(ListKeyExceptionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListKeyExceptions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListKeyExceptionsResponseObject); ok {
+		if err := validResponse.VisitListKeyExceptionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateKeyException operation middleware
+func (sh *strictHandler) CreateKeyException(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request CreateKeyExceptionRequestObject
+
+	request.ServerId = serverId
+
+	var body CreateKeyExceptionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateKeyException(ctx, request.(CreateKeyExceptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateKeyException")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateKeyExceptionResponseObject); ok {
+		if err := validResponse.VisitCreateKeyExceptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteKeyException operation middleware
+func (sh *strictHandler) DeleteKeyException(w http.ResponseWriter, r *http.Request, serverId ServerId, exceptionId int64) {
+	var request DeleteKeyExceptionRequestObject
+
+	request.ServerId = serverId
+	request.ExceptionId = exceptionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteKeyException(ctx, request.(DeleteKeyExceptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteKeyException")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteKeyExceptionResponseObject); ok {
+		if err := validResponse.VisitDeleteKeyExceptionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

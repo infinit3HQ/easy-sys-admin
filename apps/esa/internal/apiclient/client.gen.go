@@ -1626,6 +1626,29 @@ type Key struct {
 	Uses  []KeyOccurrence `json:"uses"`
 }
 
+// KeyException defines model for KeyException.
+type KeyException struct {
+	Fingerprint string    `json:"fingerprint"`
+	Id          int64     `json:"id"`
+	Reason      string    `json:"reason"`
+	ServerId    int64     `json:"serverId"`
+	Until       time.Time `json:"until"`
+	User        string    `json:"user"`
+}
+
+// KeyExceptionInput defines model for KeyExceptionInput.
+type KeyExceptionInput struct {
+	Fingerprint string    `json:"fingerprint"`
+	Reason      string    `json:"reason"`
+	Until       time.Time `json:"until"`
+	User        string    `json:"user"`
+}
+
+// KeyExceptionList defines model for KeyExceptionList.
+type KeyExceptionList struct {
+	Items []KeyException `json:"items"`
+}
+
 // KeyLabelRequest defines model for KeyLabelRequest.
 type KeyLabelRequest struct {
 	Fingerprint string `json:"fingerprint"`
@@ -2631,6 +2654,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 
+// CreateKeyExceptionJSONRequestBody defines body for CreateKeyException for application/json ContentType.
+type CreateKeyExceptionJSONRequestBody = KeyExceptionInput
+
 // SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
 type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
@@ -3518,6 +3544,30 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
 	ListBaselineVersions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListKeyExceptions Fingerprints expected on this server until a date. This does not change the server.
+	//
+	// Corresponds with GET /servers/{serverId}/key-exceptions (the `ListKeyExceptions` operationId).
+	ListKeyExceptions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateKeyExceptionWithBody Expect one fingerprint on one login until a date
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+	CreateKeyExceptionWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateKeyException Expect one fingerprint on one login until a date
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+	CreateKeyException(ctx context.Context, serverId ServerId, body CreateKeyExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteKeyException Remove a key exception. This does not change the server.
+	//
+	// Corresponds with DELETE /servers/{serverId}/key-exceptions/{exceptionId} (the `DeleteKeyException` operationId).
+	DeleteKeyException(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -5738,6 +5788,70 @@ func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId ServerId, body
 // Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
 func (c *Client) ListBaselineVersions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListBaselineVersionsRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListKeyExceptions Fingerprints expected on this server until a date. This does not change the server.
+//
+// Corresponds with GET /servers/{serverId}/key-exceptions (the `ListKeyExceptions` operationId).
+func (c *Client) ListKeyExceptions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListKeyExceptionsRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateKeyExceptionWithBody Expect one fingerprint on one login until a date
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+func (c *Client) CreateKeyExceptionWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateKeyExceptionRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateKeyException Expect one fingerprint on one login until a date
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+func (c *Client) CreateKeyException(ctx context.Context, serverId ServerId, body CreateKeyExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateKeyExceptionRequest(c.Server, serverId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteKeyException Remove a key exception. This does not change the server.
+//
+// Corresponds with DELETE /servers/{serverId}/key-exceptions/{exceptionId} (the `DeleteKeyException` operationId).
+func (c *Client) DeleteKeyException(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteKeyExceptionRequest(c.Server, serverId, exceptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -9753,6 +9867,128 @@ func NewListBaselineVersionsRequest(server string, serverId ServerId) (*http.Req
 	return req, nil
 }
 
+// NewListKeyExceptionsRequest constructs an http.Request for the ListKeyExceptions method
+func NewListKeyExceptionsRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/key-exceptions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateKeyExceptionRequest calls the generic CreateKeyException builder with application/json body
+func NewCreateKeyExceptionRequest(server string, serverId ServerId, body CreateKeyExceptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateKeyExceptionRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewCreateKeyExceptionRequestWithBody constructs an http.Request for the CreateKeyException method, with any body, and a specified content type
+func NewCreateKeyExceptionRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/key-exceptions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteKeyExceptionRequest constructs an http.Request for the DeleteKeyException method
+func NewDeleteKeyExceptionRequest(server string, serverId ServerId, exceptionId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "exceptionId", exceptionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/key-exceptions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetServerLogsRequest constructs an http.Request for the GetServerLogs method
 func NewGetServerLogsRequest(server string, serverId ServerId, params *GetServerLogsParams) (*http.Request, error) {
 	var err error
@@ -11486,6 +11722,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
 	ListBaselineVersionsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListBaselineVersionsResponse, error)
+
+	// ListKeyExceptionsWithResponse Fingerprints expected on this server until a date. This does not change the server.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/key-exceptions (the `ListKeyExceptions` operationId).
+	ListKeyExceptionsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListKeyExceptionsResponse, error)
+
+	// CreateKeyExceptionWithBodyWithResponse Expect one fingerprint on one login until a date
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+	CreateKeyExceptionWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateKeyExceptionResponse, error)
+
+	// CreateKeyExceptionWithResponse Expect one fingerprint on one login until a date
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+	CreateKeyExceptionWithResponse(ctx context.Context, serverId ServerId, body CreateKeyExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateKeyExceptionResponse, error)
+
+	// DeleteKeyExceptionWithResponse Remove a key exception. This does not change the server.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /servers/{serverId}/key-exceptions/{exceptionId} (the `DeleteKeyException` operationId).
+	DeleteKeyExceptionWithResponse(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*DeleteKeyExceptionResponse, error)
 
 	// GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -16042,6 +16306,143 @@ func (r ListBaselineVersionsResponse) ContentType() string {
 	return ""
 }
 
+type ListKeyExceptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *KeyExceptionList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListKeyExceptionsResponse) GetJSON200() *KeyExceptionList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListKeyExceptionsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListKeyExceptionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListKeyExceptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListKeyExceptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListKeyExceptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateKeyExceptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *KeyException
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateKeyExceptionResponse) GetJSON201() *KeyException {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateKeyExceptionResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateKeyExceptionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateKeyExceptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateKeyExceptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateKeyExceptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteKeyExceptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteKeyExceptionResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteKeyExceptionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteKeyExceptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteKeyExceptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteKeyExceptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerLogsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -18581,6 +18982,58 @@ func (c *ClientWithResponses) ListBaselineVersionsWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseListBaselineVersionsResponse(rsp)
+}
+
+// ListKeyExceptionsWithResponse Fingerprints expected on this server until a date. This does not change the server.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/key-exceptions (the `ListKeyExceptions` operationId).
+func (c *ClientWithResponses) ListKeyExceptionsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListKeyExceptionsResponse, error) {
+	rsp, err := c.ListKeyExceptions(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListKeyExceptionsResponse(rsp)
+}
+
+// CreateKeyExceptionWithBodyWithResponse Expect one fingerprint on one login until a date
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+func (c *ClientWithResponses) CreateKeyExceptionWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateKeyExceptionResponse, error) {
+	rsp, err := c.CreateKeyExceptionWithBody(ctx, serverId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateKeyExceptionResponse(rsp)
+}
+
+// CreateKeyExceptionWithResponse Expect one fingerprint on one login until a date
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/key-exceptions (the `CreateKeyException` operationId).
+func (c *ClientWithResponses) CreateKeyExceptionWithResponse(ctx context.Context, serverId ServerId, body CreateKeyExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateKeyExceptionResponse, error) {
+	rsp, err := c.CreateKeyException(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateKeyExceptionResponse(rsp)
+}
+
+// DeleteKeyExceptionWithResponse Remove a key exception. This does not change the server.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /servers/{serverId}/key-exceptions/{exceptionId} (the `DeleteKeyException` operationId).
+func (c *ClientWithResponses) DeleteKeyExceptionWithResponse(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*DeleteKeyExceptionResponse, error) {
+	rsp, err := c.DeleteKeyException(ctx, serverId, exceptionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteKeyExceptionResponse(rsp)
 }
 
 // GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
@@ -21894,6 +22347,101 @@ func ParseListBaselineVersionsResponse(rsp *http.Response) (*ListBaselineVersion
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListKeyExceptionsResponse parses an HTTP response from a ListKeyExceptionsWithResponse call
+func ParseListKeyExceptionsResponse(rsp *http.Response) (*ListKeyExceptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListKeyExceptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest KeyExceptionList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateKeyExceptionResponse parses an HTTP response from a CreateKeyExceptionWithResponse call
+func ParseCreateKeyExceptionResponse(rsp *http.Response) (*CreateKeyExceptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateKeyExceptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest KeyException
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteKeyExceptionResponse parses an HTTP response from a DeleteKeyExceptionWithResponse call
+func ParseDeleteKeyExceptionResponse(rsp *http.Response) (*DeleteKeyExceptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteKeyExceptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
