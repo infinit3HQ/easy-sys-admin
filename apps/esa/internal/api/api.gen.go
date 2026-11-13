@@ -2001,8 +2001,11 @@ type ScanReport struct {
 		FixedIn        *[]string `json:"fixedIn,omitempty"`
 		Id             string    `json:"id"`
 		KnownExploited *bool     `json:"knownExploited,omitempty"`
-		Package        string    `json:"package"`
-		Reason         string    `json:"reason"`
+
+		// NotRunningKernel This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.
+		NotRunningKernel *bool  `json:"notRunningKernel,omitempty"`
+		Package          string `json:"package"`
+		Reason           string `json:"reason"`
 
 		// Severity As the scanner reported it.
 		Severity string `json:"severity"`
@@ -2011,8 +2014,11 @@ type ScanReport struct {
 		Tier    int    `json:"tier"`
 		Version string `json:"version"`
 	} `json:"matches"`
-	Scanner        string `json:"scanner"`
-	ScannerVersion string `json:"scannerVersion"`
+
+	// RunningKernel The kernel from the last status check, as uname -r. Empty when that check has not run.
+	RunningKernel  *string `json:"runningKernel,omitempty"`
+	Scanner        string  `json:"scanner"`
+	ScannerVersion string  `json:"scannerVersion"`
 
 	// Stale True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.
 	Stale bool `json:"stale"`

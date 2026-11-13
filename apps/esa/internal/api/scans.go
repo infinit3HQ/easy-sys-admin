@@ -65,6 +65,10 @@ func (h *Handlers) ImportServerScan(ctx context.Context, req ImportServerScanReq
 func toScanReport(v fleet.ScanView) (ScanReport, error) {
 	rep := ScanReport{Imported: v.Imported, Scanner: v.Scanner, ScannerVersion: v.ScannerVersion, DbBuilt: v.DBBuilt,
 		Stale: v.Stale, Coverage: v.Coverage}
+	if v.RunningKernel != "" {
+		k := v.RunningKernel
+		rep.RunningKernel = &k
+	}
 	if v.Imported {
 		at := v.ImportedAt
 		rep.ImportedAt = &at

@@ -3204,6 +3204,7 @@ components:
         importedAt: { type: string, format: date-time, nullable: true }
         stale: { type: boolean, description: 'True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.' }
         coverage: { type: string, description: What this result does not prove. }
+        runningKernel: { type: string, description: 'The kernel from the last status check, as uname -r. Empty when that check has not run.' }
         matches:
           type: array
           maxItems: 20000
@@ -3222,6 +3223,7 @@ components:
               epss: { type: number }
               tier: { type: integer, description: '1 known exploited, 2 high or critical with a fix, 3 the rest.' }
               reason: { type: string }
+              notRunningKernel: { type: boolean, description: 'This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.' }
 
     CheckOverride:
       type: object

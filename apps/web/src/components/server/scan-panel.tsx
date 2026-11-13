@@ -58,6 +58,7 @@ export function ScanPanel({
   })
   const d = r.data
   const matches = d?.matches ?? []
+  const idle = matches.filter((m) => m.notRunningKernel).length
   const shown = showAll ? matches : matches.slice(0, 25)
   return (
     <Panel title="Vulnerability scan" className="xl:col-span-2">
@@ -72,6 +73,13 @@ export function ScanPanel({
           {d.dbBuilt ? <When iso={d.dbBuilt} /> : 'age unknown'} · scanned{' '}
           {d.importedAt ? <When iso={d.importedAt} /> : '?'} · {matches.length}{' '}
           matches
+          {idle > 0 && (
+            <>
+              {' '}
+              · {idle} from a kernel that is installed but not running
+              {d.runningKernel ? ` (${d.runningKernel})` : ''}
+            </>
+          )}
         </p>
       )}
       {shown.length > 0 && (
@@ -94,6 +102,7 @@ export function ScanPanel({
               <span className="text-faint">
                 {' '}
                 · {tierLabel[m.tier] ?? m.reason}
+                {m.notRunningKernel ? ' · not the running kernel' : ''}
               </span>
             </li>
           ))}

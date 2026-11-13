@@ -3,6 +3,8 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -33,6 +35,10 @@ type VulnMatch struct {
 	FixedIn        []string `json:"fixedIn,omitempty"`
 	KnownExploited bool     `json:"knownExploited,omitempty"`
 	EPSS           float64  `json:"epss,omitempty"`
+	// NotRunningKernel is a kernel package that is installed but is not the
+	// kernel the server is running. The match is kept: the package is still
+	// on disk.
+	NotRunningKernel bool `json:"notRunningKernel,omitempty"`
 	// Tier ranks the match: 1 known exploited, 2 a fix exists for a high
 	// or critical issue, 3 everything else. It explains, not scores.
 	Tier   int    `json:"tier"`
@@ -48,6 +54,7 @@ type ScanView struct {
 	ImportedAt     time.Time
 	Stale          bool
 	Coverage       string
+	RunningKernel  string
 	Matches        []VulnMatch
 }
 
@@ -183,6 +190,12 @@ func rankMatch(m VulnMatch) (int, string) {
 
 func sortMatches(ms []VulnMatch) {
 	slices.SortStableFunc(ms, func(a, b VulnMatch) int {
+		if a.NotRunningKernel != b.NotRunningKernel {
+			if a.NotRunningKernel {
+				return 1
+			}
+			return -1
+		}
 		if a.Tier != b.Tier {
 			return a.Tier - b.Tier
 		}
@@ -262,5 +275,79 @@ func (s *Service) LatestScan(ctx context.Context, a Actor, serverID int64) (Scan
 		v.Stale = true
 		v.Coverage += " The scan is from " + row.ImportedAt.UTC().Format("Jan 2") + "; the packages may have changed since."
 	}
+	v.RunningKernel = s.runningKernel(ctx, srv.ID)
+	idle := markIdleKernels(v.Matches, v.RunningKernel)
+	sortMatches(v.Matches)
+	switch {
+	case idle == 1:
+		v.Coverage += " 1 match is a kernel package that is installed but not the running kernel " + v.RunningKernel + ". It stays in the list, after the others, because that package is still on disk."
+	case idle > 1:
+		v.Coverage += fmt.Sprintf(" %d matches are kernel packages that are installed but not the running kernel %s. They stay in the list, after the others, because those packages are still on disk.", idle, v.RunningKernel)
+	case v.RunningKernel == "" && kernelPackages(v.Matches) > 0:
+		v.Coverage += " The running kernel is not known yet, so installed kernels are not separated from the packages in use."
+	}
 	return v, nil
+}
+
+func (s *Service) runningKernel(ctx context.Context, serverID int64) string {
+	var st store.ServerState
+	if err := s.db.WithContext(ctx).Where("server_id = ?", serverID).Take(&st).Error; err != nil {
+		return ""
+	}
+	var snap struct {
+		Kernel string `json:"kernel"`
+	}
+	if st.Snapshot.Decode(&snap) != nil {
+		return ""
+	}
+	return strings.TrimSpace(snap.Kernel)
+}
+
+// kernelPkgRelease matches a kernel image, modules, or headers package
+// whose name includes the uname release, such as
+// linux-modules-7.0.0-1013-generic. Meta packages such as
+// linux-image-generic do not match.
+var kernelPkgRelease = regexp.MustCompile(`^linux-(?:image-unsigned|modules-extra|cloud-tools|modules|headers|image|tools)-(\d+\.\d+\.\d+-\d+(?:-[a-z0-9]+)?)(?:-dbgsym)?$`)
+
+func kernelRelease(pkg string) string {
+	m := kernelPkgRelease.FindStringSubmatch(pkg)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
+func sameKernel(pkgRelease, running string) bool {
+	if pkgRelease == running {
+		return true
+	}
+	return strings.HasPrefix(running, pkgRelease+"-") || strings.HasPrefix(pkgRelease, running+"-")
+}
+
+// markIdleKernels flags matches for a kernel build that is not running.
+// An unknown running kernel flags nothing. It returns how many it flagged.
+func markIdleKernels(ms []VulnMatch, running string) int {
+	if running == "" {
+		return 0
+	}
+	n := 0
+	for i := range ms {
+		rel := kernelRelease(ms[i].Package)
+		if rel == "" || sameKernel(rel, running) {
+			continue
+		}
+		ms[i].NotRunningKernel = true
+		n++
+	}
+	return n
+}
+
+func kernelPackages(ms []VulnMatch) int {
+	n := 0
+	for _, m := range ms {
+		if kernelRelease(m.Package) != "" {
+			n++
+		}
+	}
+	return n
 }

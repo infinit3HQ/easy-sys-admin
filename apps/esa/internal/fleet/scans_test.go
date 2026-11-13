@@ -77,6 +77,61 @@ func TestSBOMPurls(t *testing.T) {
 	}
 }
 
+func TestIdleKernelStaysListedAfterTheRunningOne(t *testing.T) {
+	if kernelRelease("linux-image-generic") != "" || kernelRelease("linux-libc-dev") != "" {
+		t.Fatal("a meta package or linux-libc-dev was read as one kernel build")
+	}
+	if kernelRelease("linux-modules-7.0.0-1013-generic") != "7.0.0-1013-generic" {
+		t.Fatal("old modules package")
+	}
+	if !sameKernel("7.0.0-1016", "7.0.0-1016-generic") || sameKernel("7.0.0-101", "7.0.0-1016-generic") {
+		t.Fatal("headers without a flavor must match the running kernel, and a shorter ABI must not")
+	}
+
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "kernels")
+	srv := addTestServer(t, s, a, nil, "mail")
+	now := time.Now()
+	snap := proto.Status{Kernel: "7.0.0-1016-generic", MemTotal: 100, MemUsed: 10, TimeSynced: true, FailedUnits: []string{},
+		Disks: []proto.Disk{{Mount: "/", Total: 100, Used: 10}}}
+	st := store.ServerState{ServerID: srv.ID, Status: "ok", Snapshot: store.MustJSON(snap), Reasons: store.JSON("[]"), LastSeenAt: &now}
+	s.saveState(ctx, &st)
+
+	raw := `{
+	  "matches": [
+	    {"vulnerability": {"id": "CVE-OLD", "severity": "Critical", "fix": {"versions": ["7.0.0-1016.17"], "state": "fixed"}, "knownExploited": [{}]},
+	     "artifact": {"name": "linux-modules-7.0.0-1013-generic", "version": "7.0.0-1013.14", "type": "deb"}},
+	    {"vulnerability": {"id": "CVE-LIB", "severity": "High", "fix": {"versions": ["2.39-0ubuntu8.10"], "state": "fixed"}},
+	     "artifact": {"name": "libc6", "version": "2.39-0ubuntu8.9", "type": "deb"}},
+	    {"vulnerability": {"id": "CVE-RUN", "severity": "High", "fix": {"versions": ["7.0.0-1017.1"], "state": "fixed"}},
+	     "artifact": {"name": "linux-image-7.0.0-1016-generic", "version": "7.0.0-1016.17", "type": "deb"}},
+	    {"vulnerability": {"id": "CVE-HDR", "severity": "Low", "fix": {"state": "not-fixed"}},
+	     "artifact": {"name": "linux-headers-7.0.0-1016", "version": "7.0.0-1016.17", "type": "deb"}}
+	  ],
+	  "descriptor": {"name": "grype", "version": "0.121.3", "db": {"built": "` + s.now().UTC().Format(time.RFC3339) + `"}}
+	}`
+	v, err := s.ImportScan(ctx, a, srv.ID, []byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.RunningKernel != "7.0.0-1016-generic" || len(v.Matches) != 4 {
+		t.Fatalf("scan: %+v", v)
+	}
+	if v.Matches[0].Package != "libc6" || v.Matches[1].Package != "linux-image-7.0.0-1016-generic" {
+		t.Fatalf("running system should come first: %+v", v.Matches)
+	}
+	if v.Matches[1].NotRunningKernel || !v.Matches[3].NotRunningKernel || v.Matches[3].Package != "linux-modules-7.0.0-1013-generic" {
+		t.Fatalf("only the old kernel is set aside: %+v", v.Matches)
+	}
+	if v.Matches[2].Package != "linux-headers-7.0.0-1016" || v.Matches[2].NotRunningKernel {
+		t.Fatalf("headers for the running kernel were set aside: %+v", v.Matches[2])
+	}
+	if !strings.Contains(v.Coverage, "1 match is a kernel package") || !strings.Contains(v.Coverage, "7.0.0-1016-generic") {
+		t.Fatalf("coverage: %s", v.Coverage)
+	}
+}
+
 func TestLatestScanStates(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()

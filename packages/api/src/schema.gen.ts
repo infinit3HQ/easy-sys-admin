@@ -2683,6 +2683,8 @@ export interface components {
             stale: boolean;
             /** @description What this result does not prove. */
             coverage: string;
+            /** @description The kernel from the last status check, as uname -r. Empty when that check has not run. */
+            runningKernel?: string;
             matches: {
                 id: string;
                 aliases?: string[];
@@ -2697,6 +2699,8 @@ export interface components {
                 /** @description 1 known exploited, 2 high or critical with a fix, 3 the rest. */
                 tier: number;
                 reason: string;
+                /** @description This package is a kernel build that is installed but is not the kernel the server is running. The match is kept. */
+                notRunningKernel?: boolean;
             }[];
         };
         /** @description Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it. */
