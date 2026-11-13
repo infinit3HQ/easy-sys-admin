@@ -641,7 +641,8 @@ export interface paths {
         /** Backup reports an operator wrote on the server */
         get: operations["getServerRecovery"];
         put?: never;
-        post?: never;
+        /** Store one backup result. The same Idempotency-Key returns the first result and does not change it. */
+        post: operations["submitServerRecovery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4227,6 +4228,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RecoveryReport"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitServerRecovery: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. A later result does not replace an earlier one. This does not run a backup or a restore. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

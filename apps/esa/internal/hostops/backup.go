@@ -75,6 +75,11 @@ func readRecoveryFile(path string) (proto.RecoverySource, string) {
 	return src, ""
 }
 
+// ParseRecovery reads one result object. A repository URL is rejected.
+func ParseRecovery(buf []byte) (proto.RecoverySource, error) {
+	return parseRecovery(buf)
+}
+
 func parseRecovery(buf []byte) (proto.RecoverySource, error) {
 	var raw struct {
 		Schema      int    `json:"schema"`

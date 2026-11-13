@@ -732,6 +732,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/RecoveryReport' }
         default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: submitServerRecovery
+      summary: Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+      tags: [server-live]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '204':
+          description: Stored. A later result does not replace an earlier one. This does not run a backup or a restore.
+        default: { $ref: '#/components/responses/Error' }
 
   /servers/{serverId}/sbom:
     parameters:

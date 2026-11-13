@@ -2512,6 +2512,14 @@ type GetServerMetricsParams struct {
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
 
+// SubmitServerRecoveryJSONBody defines parameters for SubmitServerRecovery.
+type SubmitServerRecoveryJSONBody map[string]interface{}
+
+// SubmitServerRecoveryParams defines parameters for SubmitServerRecovery.
+type SubmitServerRecoveryParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // ImportServerScanJSONBody defines parameters for ImportServerScan.
 type ImportServerScanJSONBody map[string]interface{}
 
@@ -2622,6 +2630,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
+
+// SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
+type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
 // ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
 type ImportServerScanJSONRequestBody ImportServerScanJSONBody
@@ -3522,6 +3533,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 	GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitServerRecoveryWithBody Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+	SubmitServerRecoveryWithBody(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+	SubmitServerRecovery(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	//
@@ -5758,6 +5783,40 @@ func (c *Client) GetServerMetrics(ctx context.Context, serverId ServerId, params
 // Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 func (c *Client) GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerRecoveryRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitServerRecoveryWithBody Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+func (c *Client) SubmitServerRecoveryWithBody(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitServerRecoveryRequestWithBody(c.Server, serverId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+func (c *Client) SubmitServerRecovery(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitServerRecoveryRequest(c.Server, serverId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -9898,6 +9957,66 @@ func NewGetServerRecoveryRequest(server string, serverId ServerId) (*http.Reques
 	return req, nil
 }
 
+// NewSubmitServerRecoveryRequest calls the generic SubmitServerRecovery builder with application/json body
+func NewSubmitServerRecoveryRequest(server string, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitServerRecoveryRequestWithBody(server, serverId, params, "application/json", bodyReader)
+}
+
+// NewSubmitServerRecoveryRequestWithBody constructs an http.Request for the SubmitServerRecovery method, with any body, and a specified content type
+func NewSubmitServerRecoveryRequestWithBody(server string, serverId ServerId, params *SubmitServerRecoveryParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/recovery", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetServerSbomRequest constructs an http.Request for the GetServerSbom method
 func NewGetServerSbomRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -11388,6 +11507,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 	GetServerRecoveryWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerRecoveryResponse, error)
+
+	// SubmitServerRecoveryWithBodyWithResponse Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+	SubmitServerRecoveryWithBodyWithResponse(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitServerRecoveryResponse, error)
+
+	// SubmitServerRecoveryWithResponse Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+	SubmitServerRecoveryWithResponse(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitServerRecoveryResponse, error)
 
 	// GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	//
@@ -16053,6 +16186,47 @@ func (r GetServerRecoveryResponse) ContentType() string {
 	return ""
 }
 
+type SubmitServerRecoveryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SubmitServerRecoveryResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SubmitServerRecoveryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitServerRecoveryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitServerRecoveryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubmitServerRecoveryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerSbomResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -18446,6 +18620,32 @@ func (c *ClientWithResponses) GetServerRecoveryWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetServerRecoveryResponse(rsp)
+}
+
+// SubmitServerRecoveryWithBodyWithResponse Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+func (c *ClientWithResponses) SubmitServerRecoveryWithBodyWithResponse(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitServerRecoveryResponse, error) {
+	rsp, err := c.SubmitServerRecoveryWithBody(ctx, serverId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitServerRecoveryResponse(rsp)
+}
+
+// SubmitServerRecoveryWithResponse Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
+func (c *ClientWithResponses) SubmitServerRecoveryWithResponse(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitServerRecoveryResponse, error) {
+	rsp, err := c.SubmitServerRecovery(ctx, serverId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitServerRecoveryResponse(rsp)
 }
 
 // GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
@@ -21793,6 +21993,35 @@ func ParseGetServerRecoveryResponse(rsp *http.Response) (*GetServerRecoveryRespo
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitServerRecoveryResponse parses an HTTP response from a SubmitServerRecoveryWithResponse call
+func ParseSubmitServerRecoveryResponse(rsp *http.Response) (*SubmitServerRecoveryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitServerRecoveryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

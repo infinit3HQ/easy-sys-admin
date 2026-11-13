@@ -2513,6 +2513,14 @@ type GetServerMetricsParams struct {
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
 
+// SubmitServerRecoveryJSONBody defines parameters for SubmitServerRecovery.
+type SubmitServerRecoveryJSONBody map[string]interface{}
+
+// SubmitServerRecoveryParams defines parameters for SubmitServerRecovery.
+type SubmitServerRecoveryParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // ImportServerScanJSONBody defines parameters for ImportServerScan.
 type ImportServerScanJSONBody map[string]interface{}
 
@@ -2623,6 +2631,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
+
+// SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
+type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
 // ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
 type ImportServerScanJSONRequestBody ImportServerScanJSONBody
@@ -2926,6 +2937,9 @@ type ServerInterface interface {
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	// (POST /servers/{serverId}/recovery)
+	SubmitServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId, params SubmitServerRecoveryParams)
 	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	// (GET /servers/{serverId}/sbom)
 	GetServerSbom(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -5319,6 +5333,60 @@ func (siw *ServerInterfaceWrapper) GetServerRecovery(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// SubmitServerRecovery operation middleware
+func (siw *ServerInterfaceWrapper) SubmitServerRecovery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitServerRecoveryParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitServerRecovery(w, r, serverId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerSbom operation middleware
 func (siw *ServerInterfaceWrapper) GetServerSbom(w http.ResponseWriter, r *http.Request) {
 
@@ -5828,6 +5896,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/security", wrapper.GetServerSecurity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/jobs", wrapper.GetServerJobs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.GetServerRecovery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.SubmitServerRecovery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/sbom", wrapper.GetServerSbom)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.GetServerScan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.ImportServerScan)
@@ -9596,6 +9665,41 @@ func (response GetServerRecoverydefaultJSONResponse) VisitGetServerRecoveryRespo
 	return err
 }
 
+type SubmitServerRecoveryRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Params   SubmitServerRecoveryParams
+	Body     *SubmitServerRecoveryJSONRequestBody
+}
+
+type SubmitServerRecoveryResponseObject interface {
+	VisitSubmitServerRecoveryResponse(w http.ResponseWriter) error
+}
+
+type SubmitServerRecovery204Response struct {
+}
+
+func (response SubmitServerRecovery204Response) VisitSubmitServerRecoveryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SubmitServerRecoverydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SubmitServerRecoverydefaultJSONResponse) VisitSubmitServerRecoveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerSbomRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -10425,6 +10529,9 @@ type StrictServerInterface interface {
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(ctx context.Context, request GetServerRecoveryRequestObject) (GetServerRecoveryResponseObject, error)
+	// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+	// (POST /servers/{serverId}/recovery)
+	SubmitServerRecovery(ctx context.Context, request SubmitServerRecoveryRequestObject) (SubmitServerRecoveryResponseObject, error)
 	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	// (GET /servers/{serverId}/sbom)
 	GetServerSbom(ctx context.Context, request GetServerSbomRequestObject) (GetServerSbomResponseObject, error)
@@ -13219,6 +13326,40 @@ func (sh *strictHandler) GetServerRecovery(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerRecoveryResponseObject); ok {
 		if err := validResponse.VisitGetServerRecoveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitServerRecovery operation middleware
+func (sh *strictHandler) SubmitServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId, params SubmitServerRecoveryParams) {
+	var request SubmitServerRecoveryRequestObject
+
+	request.ServerId = serverId
+	request.Params = params
+
+	var body SubmitServerRecoveryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitServerRecovery(ctx, request.(SubmitServerRecoveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitServerRecovery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitServerRecoveryResponseObject); ok {
+		if err := validResponse.VisitSubmitServerRecoveryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

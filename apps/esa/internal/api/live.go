@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
 )
@@ -141,6 +142,24 @@ func (h *Handlers) GetServerRecovery(ctx context.Context, req GetServerRecoveryR
 		return nil, err
 	}
 	return GetServerRecovery200JSONResponse(r), nil
+}
+
+func (h *Handlers) SubmitServerRecovery(ctx context.Context, req SubmitServerRecoveryRequestObject) (SubmitServerRecoveryResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "report", Message: "is required"}
+	}
+	raw, err := json.Marshal(req.Body)
+	if err != nil {
+		return nil, &fleet.ValidationError{Field: "report", Message: "could not be read"}
+	}
+	if err := h.fleet.SubmitRecovery(ctx, a, req.ServerId, req.Params.IdempotencyKey, raw); err != nil {
+		return nil, err
+	}
+	return SubmitServerRecovery204Response{}, nil
 }
 
 func (h *Handlers) GetServerAdvisories(ctx context.Context, req GetServerAdvisoriesRequestObject) (GetServerAdvisoriesResponseObject, error) {

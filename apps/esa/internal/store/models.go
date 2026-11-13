@@ -41,6 +41,7 @@ func Models() []any {
 		&RateWindow{},
 		&JobLease{},
 		&DatasetPolicy{},
+		&IngestedRecovery{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -81,6 +82,29 @@ type DatasetPolicy struct {
 	CreatedAt   time.Time `gorm:"not null"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// IngestedRecovery is one backup result sent to the API. A row is not
+// updated. The same idempotency key returns the first row.
+type IngestedRecovery struct {
+	ID             int64  `gorm:"primaryKey"`
+	AccountID      int64  `gorm:"not null;uniqueIndex:ingested_recovery_key,priority:1"`
+	ServerID       int64  `gorm:"not null;index"`
+	IdempotencyKey string `gorm:"not null;size:80;uniqueIndex:ingested_recovery_key,priority:2"`
+	Dataset        string `gorm:"not null;size:80"`
+	Tool           string `gorm:"not null;size:20"`
+	Snapshot       string `gorm:"not null;default:'';size:80"`
+	BackupState    string `gorm:"not null;size:20"`
+	BackupAt       *time.Time
+	CheckKind      string `gorm:"not null;default:'none';size:20"`
+	CheckState     string `gorm:"not null;default:'unknown';size:20"`
+	CheckAt        *time.Time
+	RestoreState   string    `gorm:"not null;default:'not run';size:20"`
+	SmokeState     string    `gorm:"not null;default:'not run';size:20"`
+	ReceivedAt     time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 // Every server, group, and run belongs to one account.

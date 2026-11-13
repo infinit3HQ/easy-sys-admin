@@ -254,12 +254,19 @@ func (s *Service) Recovery(ctx context.Context, a Actor, serverID int64) (proto.
 	}
 	var out proto.RecoveryReport
 	err = s.callServer(ctx, srv, time.Minute, &out, "recovery")
-	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+	if err != nil {
+		out.Gaps = append(out.Gaps, "files unread")
+	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") && err == nil {
 		out.Gaps = append(out.Gaps, "helper")
+	}
+	s.attachIngested(ctx, srv.ID, &out)
+	if err != nil && len(out.Sources) == 0 {
+		return out, err
 	}
 	hostops.AnnotateRecovery(&out, time.Now())
 	s.applyDatasetPolicy(ctx, srv.AccountID, &out)
-	return out, err
+	return out, nil
 }
 
 // CheckUpdates refreshes the package lists on a server and returns the
