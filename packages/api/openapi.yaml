@@ -797,6 +797,42 @@ paths:
               schema: { $ref: '#/components/schemas/ScanReport' }
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/vuln-exceptions:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: createVulnException
+      summary: Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+      tags: [server-live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VulnExceptionInput' }
+      responses:
+        '201':
+          description: The exception
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VulnException' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/vuln-exceptions/{exceptionId}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+      - name: exceptionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteVulnException
+      summary: Remove a scan exception. This does not change the server or the scan.
+      tags: [server-live]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
   /servers/{serverId}/advisories:
     parameters:
       - $ref: '#/components/parameters/ServerId'
@@ -2526,6 +2562,26 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/KeyException' } }
 
+    VulnException:
+      type: object
+      required: [id, serverId, advisory, package, until, reason]
+      properties:
+        id: { type: integer, format: int64 }
+        serverId: { type: integer, format: int64 }
+        advisory: { type: string }
+        package: { type: string }
+        until: { type: string, format: date-time }
+        reason: { type: string }
+
+    VulnExceptionInput:
+      type: object
+      required: [advisory, package, until, reason]
+      properties:
+        advisory: { type: string, maxLength: 40 }
+        package: { type: string, maxLength: 80 }
+        until: { type: string, format: date-time }
+        reason: { type: string, maxLength: 200 }
+
     BaselineVersionList:
       type: object
       required: [items]
@@ -3431,6 +3487,7 @@ components:
               tier: { type: integer, description: '1 known exploited, 2 high or critical with a fix, 3 the rest.' }
               reason: { type: string }
               notRunningKernel: { type: boolean, description: 'This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.' }
+              exceptedUntil: { type: string, format: date-time, nullable: true, description: 'Set when a person has set this match aside until this date. The match stays. An exception is not a fix.' }
 
     CheckOverride:
       type: object

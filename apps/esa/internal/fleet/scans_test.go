@@ -132,6 +132,48 @@ func TestIdleKernelStaysListedAfterTheRunningOne(t *testing.T) {
 	}
 }
 
+// The playground server (mailserver, Ubuntu 24.04) was checked on 14 November
+// 2026. It was running 7.0.0-1013-oracle while 7.0.0-1016 and two 6.17 builds
+// were still installed. Meta packages must not be treated as a kernel build.
+func TestPlaygroundKernelPackages(t *testing.T) {
+	running := "7.0.0-1013-oracle"
+	idle := []string{
+		"linux-image-7.0.0-1016-oracle",
+		"linux-modules-7.0.0-1016-oracle",
+		"linux-headers-7.0.0-1016-oracle",
+		"linux-tools-7.0.0-1016-oracle",
+		"linux-image-6.17.0-1011-oracle",
+		"linux-modules-extra-6.17.0-1011-oracle",
+		"linux-image-6.17.0-1018-oracle",
+		"linux-modules-6.17.0-1018-oracle",
+	}
+	runningPkgs := []string{
+		"linux-image-7.0.0-1013-oracle",
+		"linux-modules-7.0.0-1013-oracle",
+		"linux-headers-7.0.0-1013-oracle",
+		"linux-tools-7.0.0-1013-oracle",
+	}
+	meta := []string{"linux-image-oracle", "linux-headers-oracle", "linux-tools-common", "linux-libc-dev"}
+	for _, name := range meta {
+		if kernelRelease(name) != "" {
+			t.Fatalf("%s was read as one kernel build", name)
+		}
+	}
+	var matches []VulnMatch
+	for _, name := range append(append([]string{}, runningPkgs...), idle...) {
+		matches = append(matches, VulnMatch{ID: "CVE-K", Package: name, Severity: "High", FixState: "fixed"})
+	}
+	if n := markIdleKernels(matches, running); n != len(idle) {
+		t.Fatalf("flagged %d, want %d", n, len(idle))
+	}
+	for _, m := range matches {
+		wantIdle := kernelRelease(m.Package) != "" && !sameKernel(kernelRelease(m.Package), running)
+		if m.NotRunningKernel != wantIdle {
+			t.Fatalf("%s idle=%v", m.Package, m.NotRunningKernel)
+		}
+	}
+}
+
 func TestLatestScanStates(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()

@@ -2069,12 +2069,15 @@ type ScanReport struct {
 	Imported   bool       `json:"imported"`
 	ImportedAt *time.Time `json:"importedAt,omitempty"`
 	Matches    []struct {
-		Aliases        *[]string `json:"aliases,omitempty"`
-		Epss           *float32  `json:"epss,omitempty"`
-		FixState       string    `json:"fixState"`
-		FixedIn        *[]string `json:"fixedIn,omitempty"`
-		Id             string    `json:"id"`
-		KnownExploited *bool     `json:"knownExploited,omitempty"`
+		Aliases *[]string `json:"aliases,omitempty"`
+		Epss    *float32  `json:"epss,omitempty"`
+
+		// ExceptedUntil Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
+		ExceptedUntil  *time.Time `json:"exceptedUntil,omitempty"`
+		FixState       string     `json:"fixState"`
+		FixedIn        *[]string  `json:"fixedIn,omitempty"`
+		Id             string     `json:"id"`
+		KnownExploited *bool      `json:"knownExploited,omitempty"`
 
 		// NotRunningKernel This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.
 		NotRunningKernel *bool  `json:"notRunningKernel,omitempty"`
@@ -2404,6 +2407,24 @@ type User struct {
 	Name  string `json:"name"`
 }
 
+// VulnException defines model for VulnException.
+type VulnException struct {
+	Advisory string    `json:"advisory"`
+	Id       int64     `json:"id"`
+	Package  string    `json:"package"`
+	Reason   string    `json:"reason"`
+	ServerId int64     `json:"serverId"`
+	Until    time.Time `json:"until"`
+}
+
+// VulnExceptionInput defines model for VulnExceptionInput.
+type VulnExceptionInput struct {
+	Advisory string    `json:"advisory"`
+	Package  string    `json:"package"`
+	Reason   string    `json:"reason"`
+	Until    time.Time `json:"until"`
+}
+
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
@@ -2662,6 +2683,9 @@ type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
 // ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
 type ImportServerScanJSONRequestBody ImportServerScanJSONBody
+
+// CreateVulnExceptionJSONRequestBody defines body for CreateVulnException for application/json ContentType.
+type CreateVulnExceptionJSONRequestBody = VulnExceptionInput
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -3641,6 +3665,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /servers/{serverId}/updates/check (the `CheckServerUpdates` operationId).
 	CheckServerUpdates(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateVulnExceptionWithBody Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+	CreateVulnExceptionWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateVulnException Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+	CreateVulnException(ctx context.Context, serverId ServerId, body CreateVulnExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteVulnException Remove a scan exception. This does not change the server or the scan.
+	//
+	// Corresponds with DELETE /servers/{serverId}/vuln-exceptions/{exceptionId} (the `DeleteVulnException` operationId).
+	DeleteVulnException(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetSSHKey The public key the control plane logs in to servers with
 	//
@@ -6055,6 +6098,55 @@ func (c *Client) ServiceAction(ctx context.Context, serverId ServerId, unit stri
 // Corresponds with POST /servers/{serverId}/updates/check (the `CheckServerUpdates` operationId).
 func (c *Client) CheckServerUpdates(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCheckServerUpdatesRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateVulnExceptionWithBody Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+func (c *Client) CreateVulnExceptionWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateVulnExceptionRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateVulnException Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+func (c *Client) CreateVulnException(ctx context.Context, serverId ServerId, body CreateVulnExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateVulnExceptionRequest(c.Server, serverId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteVulnException Remove a scan exception. This does not change the server or the scan.
+//
+// Corresponds with DELETE /servers/{serverId}/vuln-exceptions/{exceptionId} (the `DeleteVulnException` operationId).
+func (c *Client) DeleteVulnException(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteVulnExceptionRequest(c.Server, serverId, exceptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -10518,6 +10610,94 @@ func NewCheckServerUpdatesRequest(server string, serverId ServerId) (*http.Reque
 	return req, nil
 }
 
+// NewCreateVulnExceptionRequest calls the generic CreateVulnException builder with application/json body
+func NewCreateVulnExceptionRequest(server string, serverId ServerId, body CreateVulnExceptionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateVulnExceptionRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewCreateVulnExceptionRequestWithBody constructs an http.Request for the CreateVulnException method, with any body, and a specified content type
+func NewCreateVulnExceptionRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/vuln-exceptions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteVulnExceptionRequest constructs an http.Request for the DeleteVulnException method
+func NewDeleteVulnExceptionRequest(server string, serverId ServerId, exceptionId int64) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "exceptionId", exceptionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/vuln-exceptions/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetSSHKeyRequest constructs an http.Request for the GetSSHKey method
 func NewGetSSHKeyRequest(server string) (*http.Request, error) {
 	var err error
@@ -11841,6 +12021,27 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /servers/{serverId}/updates/check (the `CheckServerUpdates` operationId).
 	CheckServerUpdatesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*CheckServerUpdatesResponse, error)
+
+	// CreateVulnExceptionWithBodyWithResponse Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+	CreateVulnExceptionWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateVulnExceptionResponse, error)
+
+	// CreateVulnExceptionWithResponse Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+	CreateVulnExceptionWithResponse(ctx context.Context, serverId ServerId, body CreateVulnExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateVulnExceptionResponse, error)
+
+	// DeleteVulnExceptionWithResponse Remove a scan exception. This does not change the server or the scan.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /servers/{serverId}/vuln-exceptions/{exceptionId} (the `DeleteVulnException` operationId).
+	DeleteVulnExceptionWithResponse(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*DeleteVulnExceptionResponse, error)
 
 	// GetSSHKeyWithResponse The public key the control plane logs in to servers with
 	//
@@ -16964,6 +17165,95 @@ func (r CheckServerUpdatesResponse) ContentType() string {
 	return ""
 }
 
+type CreateVulnExceptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *VulnException
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateVulnExceptionResponse) GetJSON201() *VulnException {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateVulnExceptionResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateVulnExceptionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateVulnExceptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateVulnExceptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateVulnExceptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteVulnExceptionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteVulnExceptionResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteVulnExceptionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteVulnExceptionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteVulnExceptionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteVulnExceptionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetSSHKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -19203,6 +19493,45 @@ func (c *ClientWithResponses) CheckServerUpdatesWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseCheckServerUpdatesResponse(rsp)
+}
+
+// CreateVulnExceptionWithBodyWithResponse Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+func (c *ClientWithResponses) CreateVulnExceptionWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateVulnExceptionResponse, error) {
+	rsp, err := c.CreateVulnExceptionWithBody(ctx, serverId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateVulnExceptionResponse(rsp)
+}
+
+// CreateVulnExceptionWithResponse Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/vuln-exceptions (the `CreateVulnException` operationId).
+func (c *ClientWithResponses) CreateVulnExceptionWithResponse(ctx context.Context, serverId ServerId, body CreateVulnExceptionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateVulnExceptionResponse, error) {
+	rsp, err := c.CreateVulnException(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateVulnExceptionResponse(rsp)
+}
+
+// DeleteVulnExceptionWithResponse Remove a scan exception. This does not change the server or the scan.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /servers/{serverId}/vuln-exceptions/{exceptionId} (the `DeleteVulnException` operationId).
+func (c *ClientWithResponses) DeleteVulnExceptionWithResponse(ctx context.Context, serverId ServerId, exceptionId int64, reqEditors ...RequestEditorFn) (*DeleteVulnExceptionResponse, error) {
+	rsp, err := c.DeleteVulnException(ctx, serverId, exceptionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteVulnExceptionResponse(rsp)
 }
 
 // GetSSHKeyWithResponse The public key the control plane logs in to servers with
@@ -22801,6 +23130,68 @@ func ParseCheckServerUpdatesResponse(rsp *http.Response) (*CheckServerUpdatesRes
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateVulnExceptionResponse parses an HTTP response from a CreateVulnExceptionWithResponse call
+func ParseCreateVulnExceptionResponse(rsp *http.Response) (*CreateVulnExceptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateVulnExceptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest VulnException
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteVulnExceptionResponse parses an HTTP response from a DeleteVulnExceptionWithResponse call
+func ParseDeleteVulnExceptionResponse(rsp *http.Response) (*DeleteVulnExceptionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteVulnExceptionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

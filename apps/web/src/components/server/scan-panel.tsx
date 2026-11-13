@@ -5,6 +5,7 @@ import { q } from '#/lib/queries'
 import { ErrorBanner, Notice, Panel } from '#/components/kit'
 import { When } from '#/components/time'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 
 const tierLabel: Record<number, string> = {
   1: 'Known exploited',
@@ -26,6 +27,10 @@ export function ScanPanel({
   const r = useQuery(q.scan(serverId))
   const file = useRef<HTMLInputElement>(null)
   const [showAll, setShowAll] = useState(false)
+  const [advisory, setAdvisory] = useState('')
+  const [pkg, setPkg] = useState('')
+  const [days, setDays] = useState('7')
+  const [reason, setReason] = useState('')
   const sbom = useMutation({
     mutationFn: () =>
       call(
@@ -55,6 +60,28 @@ export function ScanPanel({
       )
     },
     onSuccess: (data) => qc.setQueryData(q.scan(serverId).queryKey, data),
+  })
+  const except = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/servers/{serverId}/vuln-exceptions', {
+          params: { path: { serverId } },
+          body: {
+            advisory: advisory.trim(),
+            package: pkg.trim(),
+            until: new Date(
+              Date.now() + Number(days) * 24 * 60 * 60 * 1000,
+            ).toISOString(),
+            reason: reason.trim(),
+          },
+        }),
+      ),
+    onSuccess: () => {
+      setAdvisory('')
+      setPkg('')
+      setReason('')
+      void qc.invalidateQueries({ queryKey: ['scan', serverId] })
+    },
   })
   const d = r.data
   const matches = d?.matches ?? []
@@ -103,7 +130,14 @@ export function ScanPanel({
                 {' '}
                 · {tierLabel[m.tier] ?? m.reason}
                 {m.notRunningKernel ? ' · not the running kernel' : ''}
+                {m.exceptedUntil ? ' · excepted, not a fix' : ''}
               </span>
+              {m.exceptedUntil && (
+                <>
+                  {' '}
+                  until <When iso={m.exceptedUntil} />
+                </>
+              )}
             </li>
           ))}
         </ul>
@@ -116,6 +150,52 @@ export function ScanPanel({
         >
           {showAll ? 'Show fewer' : `Show all ${matches.length}`}
         </button>
+      )}
+      {canImport && d?.imported && (
+        <form
+          className="mt-3 flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            except.mutate()
+          }}
+        >
+          <Input
+            value={advisory}
+            onChange={(e) => setAdvisory(e.target.value)}
+            placeholder="CVE-..."
+            aria-label="Advisory"
+            className="h-8 w-36"
+          />
+          <Input
+            value={pkg}
+            onChange={(e) => setPkg(e.target.value)}
+            placeholder="package"
+            aria-label="Package"
+            className="h-8 w-32"
+          />
+          <Input
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            inputMode="numeric"
+            aria-label="Days"
+            className="h-8 w-16"
+          />
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="why"
+            aria-label="Reason"
+            className="h-8 w-36"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            busy={except.isPending}
+          >
+            Except until then
+          </Button>
+        </form>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         <Button
@@ -156,7 +236,7 @@ export function ScanPanel({
         result. esa does not send the SBOM anywhere.
       </p>
       <ErrorBanner
-        error={r.error ?? sbom.error ?? upload.error}
+        error={r.error ?? sbom.error ?? upload.error ?? except.error}
         className="mt-2"
       />
     </Panel>

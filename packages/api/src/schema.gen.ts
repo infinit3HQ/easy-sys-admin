@@ -688,6 +688,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/vuln-exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set one scan match aside until a date. The match stays in the list. An exception is not a fix. */
+        post: operations["createVulnException"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/vuln-exceptions/{exceptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a scan exception. This does not change the server or the scan. */
+        delete: operations["deleteVulnException"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/advisories": {
         parameters: {
             query?: never;
@@ -2125,6 +2164,24 @@ export interface components {
         KeyExceptionList: {
             items: components["schemas"]["KeyException"][];
         };
+        VulnException: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            advisory: string;
+            package: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        VulnExceptionInput: {
+            advisory: string;
+            package: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
         BaselineVersionList: {
             items: components["schemas"]["BaselineVersion"][];
         };
@@ -2863,6 +2920,11 @@ export interface components {
                 reason: string;
                 /** @description This package is a kernel build that is installed but is not the kernel the server is running. The match is kept. */
                 notRunningKernel?: boolean;
+                /**
+                 * Format: date-time
+                 * @description Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
+                 */
+                exceptedUntil?: string | null;
             }[];
         };
         /** @description Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it. */
@@ -4395,6 +4457,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ScanReport"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createVulnException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VulnExceptionInput"];
+            };
+        };
+        responses: {
+            /** @description The exception */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnException"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteVulnException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

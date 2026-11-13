@@ -39,6 +39,9 @@ type VulnMatch struct {
 	// kernel the server is running. The match is kept: the package is still
 	// on disk.
 	NotRunningKernel bool `json:"notRunningKernel,omitempty"`
+	// ExceptedUntil is set when a person has set this match aside until that
+	// date. The match stays in the list. An exception is not a fix.
+	ExceptedUntil *time.Time `json:"exceptedUntil,omitempty"`
 	// Tier ranks the match: 1 known exploited, 2 a fix exists for a high
 	// or critical issue, 3 everything else. It explains, not scores.
 	Tier   int    `json:"tier"`
@@ -277,7 +280,11 @@ func (s *Service) LatestScan(ctx context.Context, a Actor, serverID int64) (Scan
 	}
 	v.RunningKernel = s.runningKernel(ctx, srv.ID)
 	idle := markIdleKernels(v.Matches, v.RunningKernel)
+	excepted := s.markExceptions(ctx, srv.ID, v.Matches)
 	sortMatches(v.Matches)
+	if excepted > 0 {
+		v.Coverage += fmt.Sprintf(" %d matches are excepted until a date. An exception is not a fix.", excepted)
+	}
 	switch {
 	case idle == 1:
 		v.Coverage += " 1 match is a kernel package that is installed but not the running kernel " + v.RunningKernel + ". It stays in the list, after the others, because that package is still on disk."

@@ -43,6 +43,7 @@ func Models() []any {
 		&DatasetPolicy{},
 		&IngestedRecovery{},
 		&KeyException{},
+		&VulnException{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -119,6 +120,22 @@ type KeyException struct {
 	Until       time.Time `gorm:"not null"`
 	Reason      string    `gorm:"not null;size:200"`
 	CreatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// VulnException sets one advisory for one package aside until Until.
+// The match stays in the scan. An exception is not a fix.
+type VulnException struct {
+	ID         int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	ServerID   int64     `gorm:"not null;uniqueIndex:vuln_exceptions_key,priority:1"`
+	AdvisoryID string    `gorm:"not null;size:40;uniqueIndex:vuln_exceptions_key,priority:2"`
+	Package    string    `gorm:"not null;size:80;uniqueIndex:vuln_exceptions_key,priority:3"`
+	Until      time.Time `gorm:"not null"`
+	Reason     string    `gorm:"not null;size:200"`
+	CreatedAt  time.Time `gorm:"not null"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`

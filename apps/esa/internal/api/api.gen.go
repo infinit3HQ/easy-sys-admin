@@ -2070,12 +2070,15 @@ type ScanReport struct {
 	Imported   bool       `json:"imported"`
 	ImportedAt *time.Time `json:"importedAt,omitempty"`
 	Matches    []struct {
-		Aliases        *[]string `json:"aliases,omitempty"`
-		Epss           *float32  `json:"epss,omitempty"`
-		FixState       string    `json:"fixState"`
-		FixedIn        *[]string `json:"fixedIn,omitempty"`
-		Id             string    `json:"id"`
-		KnownExploited *bool     `json:"knownExploited,omitempty"`
+		Aliases *[]string `json:"aliases,omitempty"`
+		Epss    *float32  `json:"epss,omitempty"`
+
+		// ExceptedUntil Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
+		ExceptedUntil  *time.Time `json:"exceptedUntil,omitempty"`
+		FixState       string     `json:"fixState"`
+		FixedIn        *[]string  `json:"fixedIn,omitempty"`
+		Id             string     `json:"id"`
+		KnownExploited *bool      `json:"knownExploited,omitempty"`
 
 		// NotRunningKernel This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.
 		NotRunningKernel *bool  `json:"notRunningKernel,omitempty"`
@@ -2405,6 +2408,24 @@ type User struct {
 	Name  string `json:"name"`
 }
 
+// VulnException defines model for VulnException.
+type VulnException struct {
+	Advisory string    `json:"advisory"`
+	Id       int64     `json:"id"`
+	Package  string    `json:"package"`
+	Reason   string    `json:"reason"`
+	ServerId int64     `json:"serverId"`
+	Until    time.Time `json:"until"`
+}
+
+// VulnExceptionInput defines model for VulnExceptionInput.
+type VulnExceptionInput struct {
+	Advisory string    `json:"advisory"`
+	Package  string    `json:"package"`
+	Reason   string    `json:"reason"`
+	Until    time.Time `json:"until"`
+}
+
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
@@ -2663,6 +2684,9 @@ type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
 // ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
 type ImportServerScanJSONRequestBody ImportServerScanJSONBody
+
+// CreateVulnExceptionJSONRequestBody defines body for CreateVulnException for application/json ContentType.
+type CreateVulnExceptionJSONRequestBody = VulnExceptionInput
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -2996,6 +3020,12 @@ type ServerInterface interface {
 	// CheckServerUpdates Refresh package lists on the server (apt-get update) and list pending updates
 	// (POST /servers/{serverId}/updates/check)
 	CheckServerUpdates(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// CreateVulnException Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	// (POST /servers/{serverId}/vuln-exceptions)
+	CreateVulnException(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// DeleteVulnException Remove a scan exception. This does not change the server or the scan.
+	// (DELETE /servers/{serverId}/vuln-exceptions/{exceptionId})
+	DeleteVulnException(w http.ResponseWriter, r *http.Request, serverId ServerId, exceptionId int64)
 	// GetSSHKey The public key the control plane logs in to servers with
 	// (GET /settings/ssh-key)
 	GetSSHKey(w http.ResponseWriter, r *http.Request)
@@ -5709,6 +5739,67 @@ func (siw *ServerInterfaceWrapper) CheckServerUpdates(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// CreateVulnException operation middleware
+func (siw *ServerInterfaceWrapper) CreateVulnException(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateVulnException(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteVulnException operation middleware
+func (siw *ServerInterfaceWrapper) DeleteVulnException(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "exceptionId" -------------
+	var exceptionId int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "exceptionId", r.PathValue("exceptionId"), &exceptionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "exceptionId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteVulnException(w, r, serverId, exceptionId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetSSHKey operation middleware
 func (siw *ServerInterfaceWrapper) GetSSHKey(w http.ResponseWriter, r *http.Request) {
 
@@ -6022,6 +6113,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/sbom", wrapper.GetServerSbom)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.GetServerScan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.ImportServerScan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/vuln-exceptions", wrapper.CreateVulnException)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/servers/{serverId}/vuln-exceptions/{exceptionId}", wrapper.DeleteVulnException)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/advisories", wrapper.GetServerAdvisories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups", wrapper.ListGroups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups", wrapper.CreateGroup)
@@ -10214,6 +10307,80 @@ func (response CheckServerUpdatesdefaultJSONResponse) VisitCheckServerUpdatesRes
 	return err
 }
 
+type CreateVulnExceptionRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Body     *CreateVulnExceptionJSONRequestBody
+}
+
+type CreateVulnExceptionResponseObject interface {
+	VisitCreateVulnExceptionResponse(w http.ResponseWriter) error
+}
+
+type CreateVulnException201JSONResponse VulnException
+
+func (response CreateVulnException201JSONResponse) VisitCreateVulnExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateVulnExceptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateVulnExceptiondefaultJSONResponse) VisitCreateVulnExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteVulnExceptionRequestObject struct {
+	ServerId    ServerId `json:"serverId"`
+	ExceptionId int64    `json:"exceptionId"`
+}
+
+type DeleteVulnExceptionResponseObject interface {
+	VisitDeleteVulnExceptionResponse(w http.ResponseWriter) error
+}
+
+type DeleteVulnException204Response struct {
+}
+
+func (response DeleteVulnException204Response) VisitDeleteVulnExceptionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteVulnExceptiondefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DeleteVulnExceptiondefaultJSONResponse) VisitDeleteVulnExceptionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetSSHKeyRequestObject struct {
 }
 
@@ -10800,6 +10967,12 @@ type StrictServerInterface interface {
 	// CheckServerUpdates Refresh package lists on the server (apt-get update) and list pending updates
 	// (POST /servers/{serverId}/updates/check)
 	CheckServerUpdates(ctx context.Context, request CheckServerUpdatesRequestObject) (CheckServerUpdatesResponseObject, error)
+	// CreateVulnException Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+	// (POST /servers/{serverId}/vuln-exceptions)
+	CreateVulnException(ctx context.Context, request CreateVulnExceptionRequestObject) (CreateVulnExceptionResponseObject, error)
+	// DeleteVulnException Remove a scan exception. This does not change the server or the scan.
+	// (DELETE /servers/{serverId}/vuln-exceptions/{exceptionId})
+	DeleteVulnException(ctx context.Context, request DeleteVulnExceptionRequestObject) (DeleteVulnExceptionResponseObject, error)
 	// GetSSHKey The public key the control plane logs in to servers with
 	// (GET /settings/ssh-key)
 	GetSSHKey(ctx context.Context, request GetSSHKeyRequestObject) (GetSSHKeyResponseObject, error)
@@ -13884,6 +14057,66 @@ func (sh *strictHandler) CheckServerUpdates(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CheckServerUpdatesResponseObject); ok {
 		if err := validResponse.VisitCheckServerUpdatesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateVulnException operation middleware
+func (sh *strictHandler) CreateVulnException(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request CreateVulnExceptionRequestObject
+
+	request.ServerId = serverId
+
+	var body CreateVulnExceptionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateVulnException(ctx, request.(CreateVulnExceptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateVulnException")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateVulnExceptionResponseObject); ok {
+		if err := validResponse.VisitCreateVulnExceptionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteVulnException operation middleware
+func (sh *strictHandler) DeleteVulnException(w http.ResponseWriter, r *http.Request, serverId ServerId, exceptionId int64) {
+	var request DeleteVulnExceptionRequestObject
+
+	request.ServerId = serverId
+	request.ExceptionId = exceptionId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteVulnException(ctx, request.(DeleteVulnExceptionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteVulnException")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteVulnExceptionResponseObject); ok {
+		if err := validResponse.VisitDeleteVulnExceptionResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
