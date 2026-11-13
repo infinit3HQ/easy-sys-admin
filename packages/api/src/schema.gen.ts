@@ -1837,6 +1837,8 @@ export interface components {
             other: number;
             /** Format: date-time */
             checkedAt?: string | null;
+            /** @description True when no package check has succeeded for 12 hours, two missed checks. The counts are then old, or there are none because a check has never run. */
+            stale: boolean;
         };
         Exposure: {
             /**

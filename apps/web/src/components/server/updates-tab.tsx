@@ -79,6 +79,7 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
         <p className="font-mono text-xs text-muted-foreground">
           Package lists from <Ago iso={upd?.listsUpdatedAt} /> · checked{' '}
           <Ago iso={data.server.updates?.checkedAt} />
+          {data.server.updates?.stale ? ' · stale, older than 12 hours' : ''}
         </p>
         {canAct && (
           <Button

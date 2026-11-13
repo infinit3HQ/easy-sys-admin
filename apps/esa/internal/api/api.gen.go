@@ -2263,6 +2263,9 @@ type UpdateCounts struct {
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
 	Other     int        `json:"other"`
 	Security  int        `json:"security"`
+
+	// Stale True when no package check has succeeded for 12 hours, two missed checks. The counts are then old, or there are none because a check has never run.
+	Stale bool `json:"stale"`
 }
 
 // UpdateGroupShareRequest defines model for UpdateGroupShareRequest.

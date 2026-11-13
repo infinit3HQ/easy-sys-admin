@@ -2179,11 +2179,12 @@ components:
 
     UpdateCounts:
       type: object
-      required: [security, other]
+      required: [security, other, stale]
       properties:
         security: { type: integer }
         other: { type: integer }
         checkedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, description: 'True when no package check has succeeded for 12 hours, two missed checks. The counts are then old, or there are none because a check has never run.' }
 
     Exposure:
       type: object

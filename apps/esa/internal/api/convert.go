@@ -98,7 +98,7 @@ func toServer(v fleet.ServerView) Server {
 		s.Metrics = &m
 	}
 	if v.Updates != nil {
-		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt}
+		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt, Stale: fleet.UpdatesAreStale(v.UpdatesAt, time.Now())}
 	}
 	if ex := v.Exposure; ex != nil {
 		s.Exposure = &Exposure{

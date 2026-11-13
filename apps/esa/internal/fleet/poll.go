@@ -18,6 +18,9 @@ import (
 const (
 	pollTimeout  = 45 * time.Second
 	updatesEvery = 6 * time.Hour
+	// updatesStaleAfter is two missed update checks. A list older than this,
+	// or one that has never been collected, is not the current set.
+	updatesStaleAfter = 2 * updatesEvery
 	// Defaults of ESA_POLL_CONCURRENCY, ESA_METRICS_RAW_RETENTION, and
 	// ESA_METRICS_HOURLY_RETENTION. The Service holds the settings.
 	defaultPollConcurrency = 64
@@ -111,6 +114,13 @@ func (s *Service) claimJob(ctx context.Context, name string, ttl time.Duration) 
 		return false
 	}
 	return res.RowsAffected == 1
+}
+
+// UpdatesAreStale reports whether a package list is too old to show as current.
+// The list is collected every 6 hours, so two missed checks is 12 hours.
+// A list that was never collected is stale.
+func UpdatesAreStale(at *time.Time, now time.Time) bool {
+	return at == nil || at.IsZero() || now.Sub(*at) > updatesStaleAfter
 }
 
 func (s *Service) holder() string {

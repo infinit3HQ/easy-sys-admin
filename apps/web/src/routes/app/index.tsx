@@ -220,14 +220,25 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
 
 function Updates({ s }: { s: Server }) {
   if (!s.updates) return <span className="text-faint">—</span>
-  const { security, other } = s.updates
-  if (!security && !other) return <span className="text-faint">none</span>
+  const { security, other, stale } = s.updates
+  if (!security && !other && !stale) return <span className="text-faint">none</span>
   return (
-    <span title={`${security} security, ${other} other`}>
-      <span className="text-ink-2">{security + other}</span>
-      {security > 0 && (
-        <span className="text-warn"> · {security} security</span>
+    <span
+      title={
+        stale
+          ? `${security} security, ${other} other. No check for over 12 hours, so these counts are not current.`
+          : `${security} security, ${other} other`
+      }
+    >
+      {!security && !other ? (
+        <span className="text-faint">none</span>
+      ) : (
+        <>
+          <span className="text-ink-2">{security + other}</span>
+          {security > 0 && <span className="text-warn"> · {security} security</span>}
+        </>
       )}
+      {stale && <span className="text-warn"> · stale</span>}
     </span>
   )
 }

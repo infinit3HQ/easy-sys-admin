@@ -67,6 +67,21 @@ func TestPollBackoffSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestUpdatesAreStale(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	if !UpdatesAreStale(nil, now) {
+		t.Fatal("a server that has never been checked is current")
+	}
+	recent := now.Add(-6 * time.Hour)
+	if UpdatesAreStale(&recent, now) {
+		t.Fatal("one 6 hour interval is stale")
+	}
+	old := now.Add(-13 * time.Hour)
+	if !UpdatesAreStale(&old, now) {
+		t.Fatal("two missed checks are still current")
+	}
+}
+
 func TestOnlyOneProcessPolls(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
