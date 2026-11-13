@@ -29,7 +29,7 @@ function Plans() {
       <PageHeader
         kicker="Maintenance"
         title="Plans"
-        description="A plan is a typed update, cleanup, or measure on a fixed list of servers. A person, the CLI, or an agent can propose one. Only a person signed in here can approve it, and the approval lasts 30 minutes. Approving does not change a server; running the plan does."
+        description="A plan is a typed update, cleanup, or measure on a fixed list of servers. A person, the CLI, or an agent can propose one. Only a person signed in here can approve it, within 15 minutes of signing in. The approval lasts 30 minutes. Approving does not change a server; running the plan does."
       />
       {r.isLoading ? (
         <Loading />

@@ -122,3 +122,32 @@ func TestEmptyUpdatePlanIsRefused(t *testing.T) {
 		t.Fatalf("a full plan with one pending package: %v", err)
 	}
 }
+
+func TestOldSessionCannotApprove(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	owner := signIn(t, s, "plan-fresh")
+	srv := store.Server{AccountID: owner.AccountID, Name: "web", Host: "10.0.0.9", Port: 22, Username: "esa", Enrollment: "pending", ProtectedContainers: store.JSON("[]"),
+		HelperCapabilities: store.MustJSON(proto.Capabilities()), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&srv).Error; err != nil {
+		t.Fatal(err)
+	}
+	state := store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), Updates: store.MustJSON(map[string]any{"packages": []map[string]any{{"name": "openssl", "security": true}}})}
+	if err := s.db.Create(&state).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.ProposePlan(ctx, owner, PlanBody{Kind: RunUpdate, ServerIDs: []int64{srv.ID}, UpdateMode: "security"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := s.now().Add(-20 * time.Minute)
+	owner.SignedInAt = &old
+	if _, err := s.ApprovePlan(ctx, owner, plan.ID); err == nil {
+		t.Fatal("a 20 minute old session approved a plan")
+	}
+	fresh := s.now().Add(-time.Minute)
+	owner.SignedInAt = &fresh
+	if _, err := s.ApprovePlan(ctx, owner, plan.ID); err != nil {
+		t.Fatal(err)
+	}
+}

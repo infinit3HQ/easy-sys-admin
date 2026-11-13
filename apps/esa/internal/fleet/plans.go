@@ -149,9 +149,13 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 }
 
 // ApprovePlan records a human approval. A token cannot approve, including an admin token.
+// A browser session older than 15 minutes must sign in again first.
 func (s *Service) ApprovePlan(ctx context.Context, a Actor, id int64) (PlanView, error) {
 	if !a.isPerson() || !a.Role.AtLeast(RoleAdmin) {
 		return PlanView{}, ErrForbidden
+	}
+	if a.SignedInAt != nil && s.now().Sub(*a.SignedInAt) > 15*time.Minute {
+		return PlanView{}, invalid("status", "sign in again, then approve. This session is more than 15 minutes old")
 	}
 	row, body, err := s.loadPlan(ctx, a, id)
 	if err != nil {

@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"slices"
+	"time"
 )
 
 // Role is a user's permission level inside one account.
@@ -64,6 +65,9 @@ type Actor struct {
 	Scopes []Scope
 	// TokenID is set for API tokens, for the audit log.
 	TokenID int64
+	// SignedInAt is when this browser session was created. Nil for tokens,
+	// tests, and scheduled work. Plan approval requires it to be recent.
+	SignedInAt *time.Time
 }
 
 // System is the actor for scheduled work.

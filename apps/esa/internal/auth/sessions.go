@@ -213,10 +213,11 @@ func (m *Sessions) resolveActor(r *http.Request) (fleet.Actor, bool, error) {
 	}
 
 	return fleet.Actor{
-		UserID:    sess.UserID,
-		AccountID: membership.Account.ID,
-		Role:      fleet.Role(membership.Role),
-		Source:    fleet.SourceWeb,
+		UserID:     sess.UserID,
+		AccountID:  membership.Account.ID,
+		Role:       fleet.Role(membership.Role),
+		Source:     fleet.SourceWeb,
+		SignedInAt: &sess.CreatedAt,
 	}, true, nil
 }
 
