@@ -47,6 +47,34 @@ func TestPruneAuditLeavesRecentRowsAndTheLedger(t *testing.T) {
 	}
 }
 
+func TestOnlyOneProcessPrunesAudit(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	other := &Service{db: s.db, log: s.log, now: s.now}
+	s.auditRetention = 48 * time.Hour
+	other.auditRetention = s.auditRetention
+	old := s.now().Add(-100 * 24 * time.Hour)
+	if err := s.db.Exec(`INSERT INTO audit_log (action, target, detail, source, created_at) VALUES ('server.add', '', '{}', 'web', ?)`, old).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.PruneAudit(ctx)
+	if err := s.db.Exec(`INSERT INTO audit_log (action, target, detail, source, created_at) VALUES ('server.add', 'later', '{}', 'web', ?)`, old).Error; err != nil {
+		t.Fatal(err)
+	}
+	other.PruneAudit(ctx)
+	var left int64
+	if err := s.db.Model(&store.AuditEntry{}).Where("action = ?", "server.add").Count(&left).Error; err != nil {
+		t.Fatal(err)
+	}
+	if left != 1 {
+		t.Fatalf("the second process pruned too: %d rows left", left)
+	}
+	var runs int64
+	if err := s.db.Model(&store.RetentionRun{}).Count(&runs).Error; err != nil || runs != 1 {
+		t.Fatalf("ledger %d %v", runs, err)
+	}
+}
+
 func TestActivityShowsTheOldestKeptRow(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()

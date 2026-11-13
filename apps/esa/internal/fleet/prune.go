@@ -18,6 +18,9 @@ func (s *Service) PruneAudit(ctx context.Context) {
 		s.log.Info("audit prune skipped", "hold_until", s.auditHoldUntil.UTC().Format(time.RFC3339))
 		return
 	}
+	if !s.claimJob(ctx, "audit", 30*time.Minute) {
+		return
+	}
 	cutoff := s.now().Add(-s.auditRetention)
 	eligible := s.countOldAudit(ctx, cutoff)
 	var deleted int64
