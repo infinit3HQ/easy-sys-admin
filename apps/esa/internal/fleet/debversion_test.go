@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
@@ -61,3 +62,16 @@ func writeFeed(t *testing.T, body string) string {
 }
 
 func containsText(s, sub string) bool { return strings.Contains(s, sub) }
+
+func TestExposureStale(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	if (Exposure{CheckedAt: now.Add(-90 * time.Minute)}).Stale(now) {
+		t.Fatal("90 minutes is within two intervals")
+	}
+	if !(Exposure{CheckedAt: now.Add(-3 * time.Hour)}).Stale(now) {
+		t.Fatal("3 hours old must be stale")
+	}
+	if !(Exposure{}).Stale(now) {
+		t.Fatal("never collected must be stale")
+	}
+}

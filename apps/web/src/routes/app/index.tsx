@@ -181,6 +181,7 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
     )
   }
   const bits: string[] = []
+  if (e.stale) bits.push('stale: no check for over 2 hours')
   const listeners = e.listeningOnAllInterfaces
   if (listeners.length)
     bits.push(`${listeners.length} listening on all interfaces`)

@@ -2038,10 +2038,11 @@ components:
 
     Exposure:
       type: object
-      required: [checkedAt, attemptedAt, ready, publicPorts, listeningOnAllInterfaces, specificBinds, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered, gaps]
+      required: [checkedAt, attemptedAt, stale, ready, publicPorts, listeningOnAllInterfaces, specificBinds, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered, gaps]
       properties:
         checkedAt: { type: string, format: date-time, description: When this summary was last collected successfully. }
         attemptedAt: { type: string, format: date-time, description: When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged. }
+        stale: { type: boolean, description: 'True when no collection has succeeded for two expected intervals (2 hours). The fields below are then old evidence, not the current state.' }
         ready: { type: boolean, description: False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. }
         publicPorts:
           type: array

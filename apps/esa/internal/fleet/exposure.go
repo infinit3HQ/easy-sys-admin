@@ -128,6 +128,15 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	return ex
 }
 
+// exposureStaleAfter is two expected collection intervals. Older evidence
+// is shown as stale, never as the current state.
+const exposureStaleAfter = 2 * exposureEvery
+
+// Stale reports whether the summary is too old to describe the server now.
+func (ex Exposure) Stale(now time.Time) bool {
+	return ex.CheckedAt.IsZero() || now.Sub(ex.CheckedAt) > exposureStaleAfter
+}
+
 func exposureChanged(prev, next Exposure) bool {
 	if !prev.Ready || !next.Ready {
 		return false

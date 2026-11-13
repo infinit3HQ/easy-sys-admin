@@ -1735,6 +1735,8 @@ export interface components {
              * @description When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
              */
             attemptedAt: string;
+            /** @description True when no collection has succeeded for two expected intervals (2 hours). The fields below are then old evidence, not the current state. */
+            stale: boolean;
             /** @description False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. */
             ready: boolean;
             /** @description Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect. */

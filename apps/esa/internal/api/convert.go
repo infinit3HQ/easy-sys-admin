@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
@@ -101,7 +102,7 @@ func toServer(v fleet.ServerView) Server {
 	}
 	if ex := v.Exposure; ex != nil {
 		s.Exposure = &Exposure{
-			CheckedAt: ex.CheckedAt, AttemptedAt: ex.AttemptedAt, Ready: ex.Ready,
+			CheckedAt: ex.CheckedAt, AttemptedAt: ex.AttemptedAt, Ready: ex.Ready, Stale: ex.Stale(time.Now()),
 			PublicPorts: nonNil(ex.PublicPorts), ListeningOnAllInterfaces: nonNil(ex.ListeningOnAllInterfaces),
 			SpecificBinds: nonNil(ex.SpecificBinds),
 			PasswordAuth:  ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,

@@ -1126,6 +1126,9 @@ type Exposure struct {
 	// SshRead True when sshd -T was read. pubkeyAuth is meaningful only then.
 	SshRead bool `json:"sshRead"`
 
+	// Stale True when no collection has succeeded for two expected intervals (2 hours). The fields below are then old evidence, not the current state.
+	Stale bool `json:"stale"`
+
 	// Uncovered Sockets on every interface that an active ufw does not mention.
 	Uncovered int `json:"uncovered"`
 }
