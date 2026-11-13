@@ -39,6 +39,7 @@ func Models() []any {
 		&NotifyChannel{},
 		&NotifyDelivery{},
 		&RateWindow{},
+		&JobLease{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -58,6 +59,16 @@ type RateWindow struct {
 	WindowStart time.Time `gorm:"not null"`
 	N           int       `gorm:"not null"`
 }
+
+// JobLease is the right to run one background job. Until is when another
+// process may take it. The holder renews it by claiming again.
+type JobLease struct {
+	Name   string    `gorm:"primaryKey;size:40"`
+	Holder string    `gorm:"not null;size:40"`
+	Until  time.Time `gorm:"not null"`
+}
+
+func (JobLease) TableName() string { return "job_leases" }
 
 // Every server, group, and run belongs to one account.
 type Account struct {

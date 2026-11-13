@@ -121,6 +121,8 @@ type Service struct {
 
 	// serverLocks serialises maintenance runs per server.
 	serverLocks sync.Map // int64 -> *sync.Mutex
+	holderOnce  sync.Once
+	holderID    string
 	// helperTried holds when the helper's capabilities were last asked for,
 	// per server, so an unreachable server is not asked on every poll.
 	helperTried sync.Map // int64 -> time.Time

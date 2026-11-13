@@ -67,6 +67,27 @@ func TestPollBackoffSurvivesRestart(t *testing.T) {
 	}
 }
 
+func TestOnlyOneProcessPolls(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	if !s.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("the first process did not take the poll")
+	}
+	other := &Service{db: s.db, log: s.log, now: s.now}
+	if other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("a second process polled while the first still holds it")
+	}
+	if err := s.db.Model(&store.JobLease{}).Where("name = ?", "poll").Update("until", s.now().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("an expired poll lease was not taken over")
+	}
+	if !other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("the holder could not renew")
+	}
+}
+
 // A dead server is marked unreachable after 3 missed polls, then deferred.
 // Its alert still fires on the next poll after the rule's 3 minutes, and
 // resolves on the first poll that succeeds, which also ends the back-off.

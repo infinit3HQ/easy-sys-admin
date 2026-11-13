@@ -2,6 +2,8 @@ package fleet
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -29,6 +31,9 @@ const (
 // time. Servers that keep rejecting esa's login, and servers that stopped
 // answering, are polled less often (see pollBackoff).
 func (s *Service) PollAll(ctx context.Context) {
+	if !s.claimJob(ctx, "poll", 70*time.Second) {
+		return
+	}
 	start := s.startCycle()
 	var ids []int64
 	err := s.db.WithContext(ctx).Model(&store.Server{}).
@@ -86,6 +91,35 @@ loop:
 		s.log.Warn("poll cycle ran out of time; the rest wait for the next cycle. Raise ESA_POLL_CONCURRENCY if this repeats",
 			"skipped", skipped, "servers", len(ids), "deferred", deferred, "concurrency", s.pollConcurrency, "seconds", int(took.Seconds()))
 	}
+}
+
+// claimJob takes or renews a background job. A second process gets false
+// until the current holder's time has passed. A nil database always claims,
+// so a test with no database still runs.
+func (s *Service) claimJob(ctx context.Context, name string, ttl time.Duration) bool {
+	if s.db == nil {
+		return true
+	}
+	now := s.now()
+	res := s.db.WithContext(ctx).Exec(`
+		INSERT INTO job_leases (name, holder, until) VALUES (?, ?, ?)
+		ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, until = EXCLUDED.until
+		WHERE job_leases.until < ? OR job_leases.holder = EXCLUDED.holder`,
+		name, s.holder(), now.Add(ttl), now)
+	if res.Error != nil {
+		s.log.Error("claim job", "job", name, "err", res.Error)
+		return false
+	}
+	return res.RowsAffected == 1
+}
+
+func (s *Service) holder() string {
+	s.holderOnce.Do(func() {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		s.holderID = hex.EncodeToString(b[:])
+	})
+	return s.holderID
 }
 
 // PollServer collects one status snapshot, stores it, and evaluates alerts.
