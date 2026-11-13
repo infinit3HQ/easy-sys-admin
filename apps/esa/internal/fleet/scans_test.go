@@ -270,6 +270,28 @@ func TestKnownExploitedScanOpensOneNotice(t *testing.T) {
 	}
 }
 
+func TestAutomaticScanUsesTheSameNoticePath(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "auto-scan")
+	srv := addTestServer(t, s, a, nil, "web")
+	raw := strings.Replace(grypeFixture, "2026-11-12T03:00:00Z", s.now().UTC().Format(time.RFC3339), 1)
+	scanner, ver, built, matches, err := parseGrype([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.writeScan(ctx, System(srv.AccountID), srv, scanner, ver, built, matches); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "vuln", "resolved").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("automatic scan notices: %d", n)
+	}
+}
+
 func imageGrype(digest, tag, built string) string {
 	return fmt.Sprintf(`{"matches":[{"vulnerability":{"id":"CVE-IMG","severity":"High","fix":{"state":"fixed","versions":["2"]}},"artifact":{"name":"openssl","version":"1","type":"deb","metadata":{"imageID":"%s","userInput":"%s"}}}],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"%s"}}}`, digest, tag, built)
 }

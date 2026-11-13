@@ -247,6 +247,16 @@ func (s *Service) ImportScan(ctx context.Context, a Actor, serverID int64, raw [
 	if err != nil {
 		return ScanView{}, err
 	}
+	if err := s.writeScan(ctx, a, srv, scanner, ver, built, matches); err != nil {
+		return ScanView{}, err
+	}
+	return s.LatestScan(ctx, a, serverID)
+}
+
+// writeScan stores one parsed report and, when the database is fresh, opens
+// or resolves known-exploited notices. An import and an automatic scan both
+// use it, so one path cannot skip the notice.
+func (s *Service) writeScan(ctx context.Context, a Actor, srv store.Server, scanner, ver string, built *time.Time, matches []VulnMatch) error {
 	if matches == nil {
 		matches = []VulnMatch{}
 	}
@@ -264,15 +274,17 @@ func (s *Service) ImportScan(ctx context.Context, a Actor, serverID int64, raw [
 	row := store.ScanImport{AccountID: srv.AccountID, ServerID: srv.ID, Scanner: scanner, ScannerVersion: ver, DBBuilt: built,
 		Matches: store.MustJSON(matches), ImportedAt: s.now(), ImportedBy: a.UserID}
 	if err := s.db.WithContext(ctx).Omit("Account", "Server").Create(&row).Error; err != nil {
-		return ScanView{}, err
+		return err
 	}
 	s.audit(ctx, nil, a, "scan.import", srv.Name, map[string]any{"scanner": scanner, "version": ver, "matches": len(matches), "keptImages": kept})
-	v, err := s.LatestScan(ctx, a, serverID)
-	if err != nil || v.Stale {
-		return v, err
+	if built == nil || s.now().Sub(*built) > scanFeedMaxAge {
+		return nil
 	}
-	s.reportScanIncidents(ctx, srv, v.Matches)
-	return v, nil
+	noted := append([]VulnMatch{}, matches...)
+	markIdleKernels(noted, s.runningKernel(ctx, srv.ID))
+	s.markExceptions(ctx, srv.ID, noted)
+	s.reportScanIncidents(ctx, srv, noted)
+	return nil
 }
 
 // LatestScan returns the newest imported scan of a server, or an empty

@@ -112,10 +112,14 @@ func (s *Service) scanServer(ctx context.Context, srv store.Server) error {
 	if err != nil {
 		return err
 	}
-	if matches == nil {
-		matches = []VulnMatch{}
+	if inv.ImagesRead {
+		digests := make([]string, 0, len(inv.Images))
+		for _, img := range inv.Images {
+			digests = append(digests, img.Digests...)
+		}
+		s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).Updates(map[string]any{
+			"images_read": true, "image_digests": store.MustJSON(digests),
+		})
 	}
-	row := store.ScanImport{AccountID: srv.AccountID, ServerID: srv.ID, Scanner: scanner, ScannerVersion: ver, DBBuilt: built,
-		Matches: store.MustJSON(matches), ImportedAt: s.now()}
-	return s.db.WithContext(ctx).Omit("Account", "Server").Create(&row).Error
+	return s.writeScan(ctx, System(srv.AccountID), srv, scanner, ver, built, matches)
 }
