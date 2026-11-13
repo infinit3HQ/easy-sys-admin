@@ -15,6 +15,7 @@ User documentation is the `/docs` pages in the web app (`apps/web/src/content/do
 | [mcp.md](mcp.md)                     | Connect an AI agent to `/mcp`                                                  |
 | [decisions.md](decisions.md)         | See why the stack and design are what they are                                 |
 | [status.md](status.md)               | See what is built, what was verified, and what is left                         |
+| [roadmap.md](roadmap.md)             | See what comes next, in what order, and which decisions are open               |
 | [archive/](archive/)                 | Read the original plans                                                        |
 
 Instructions for coding agents are in [../AGENTS.md](../AGENTS.md), with more detail in `apps/esa/AGENTS.md`, `apps/web/AGENTS.md` and `packages/api/AGENTS.md`.
