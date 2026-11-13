@@ -66,6 +66,12 @@ func (s *Service) execute(ctx context.Context, runID int64) {
 			return s.runReboot(ctx, run, rs)
 		})
 	}
+	if ctx.Err() != nil {
+		// The process is stopping. Leave the run "running" so the next
+		// start resumes it, instead of finishing it with work outstanding.
+		log.Info("run left for the next start", "reason", ctx.Err())
+		return
+	}
 	s.finishRun(ctx, run.ID)
 }
 
@@ -121,6 +127,15 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 		if reason := s.watchCanaries(ctx, items, allCanary, o); reason != "" {
 			s.skipRest(ctx, items, rest, failed, allCanary, "stopped after the watch: "+reason)
 			return
+		}
+		if o.WaitAfterCanaries && len(rest) > 0 {
+			ok, why := s.awaitGate(ctx, items[0].RunID)
+			if !ok {
+				if why != "" {
+					s.skipRest(ctx, items, rest, failed, allCanary, why)
+				}
+				return
+			}
 		}
 	}
 	batches := planBatches(items, rest, size)
@@ -806,7 +821,7 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 // watch. Those servers are skipped, which is not a successful run.
 func runAborted(servers []store.RunServer) bool {
 	for _, rs := range servers {
-		if strings.HasPrefix(rs.Error, "stopped after") {
+		if rs.Status == "skipped" && strings.HasPrefix(rs.Error, "stopped") {
 			return true
 		}
 	}
@@ -880,6 +895,9 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 			s.batched(ctx, run.Servers, opts, failed, func(ctx context.Context, rs *store.RunServer) bool {
 				return s.runUpdate(ctx, run, rs, opts)
 			})
+			if ctx.Err() != nil {
+				return
+			}
 			s.finishRun(ctx, run.ID)
 		})
 	}

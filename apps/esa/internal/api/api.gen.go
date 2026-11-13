@@ -611,6 +611,30 @@ func (e RunTrigger) Valid() bool {
 	}
 }
 
+// Defines values for RunGateState.
+const (
+	RunGateStateContinued RunGateState = "continued"
+	RunGateStateExpired   RunGateState = "expired"
+	RunGateStateStopped   RunGateState = "stopped"
+	RunGateStateWaiting   RunGateState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the RunGateState enum.
+func (e RunGateState) Valid() bool {
+	switch e {
+	case RunGateStateContinued:
+		return true
+	case RunGateStateExpired:
+		return true
+	case RunGateStateStopped:
+		return true
+	case RunGateStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RunKind.
 const (
 	RunKindClean   RunKind = "clean"
@@ -761,6 +785,24 @@ func (e UpdatePolicyMode) Valid() bool {
 	case UpdatePolicyModeAll:
 		return true
 	case UpdatePolicyModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DecideGateJSONBodyDecision.
+const (
+	Continue DecideGateJSONBodyDecision = "continue"
+	Stop     DecideGateJSONBodyDecision = "stop"
+)
+
+// Valid indicates whether the value is a known member of the DecideGateJSONBodyDecision enum.
+func (e DecideGateJSONBodyDecision) Valid() bool {
+	switch e {
+	case Continue:
+		return true
+	case Stop:
 		return true
 	default:
 		return false
@@ -1846,18 +1888,21 @@ type RoutingWarnings string
 
 // Run defines model for Run.
 type Run struct {
-	BytesFreed int64       `json:"bytesFreed"`
-	FinishedAt *time.Time  `json:"finishedAt,omitempty"`
-	GroupId    *int64      `json:"groupId,omitempty"`
-	GroupName  *string     `json:"groupName,omitempty"`
-	Id         int64       `json:"id"`
-	Kind       RunKind     `json:"kind"`
-	Options    RunOptions  `json:"options"`
-	Servers    []RunServer `json:"servers"`
-	StartedAt  time.Time   `json:"startedAt"`
-	Status     RunStatus   `json:"status"`
-	Summary    string      `json:"summary"`
-	Trigger    RunTrigger  `json:"trigger"`
+	BytesFreed int64      `json:"bytesFreed"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+
+	// Gate Set when the run waits for a person after its canaries.
+	Gate      *RunGate    `json:"gate,omitempty"`
+	GroupId   *int64      `json:"groupId,omitempty"`
+	GroupName *string     `json:"groupName,omitempty"`
+	Id        int64       `json:"id"`
+	Kind      RunKind     `json:"kind"`
+	Options   RunOptions  `json:"options"`
+	Servers   []RunServer `json:"servers"`
+	StartedAt time.Time   `json:"startedAt"`
+	Status    RunStatus   `json:"status"`
+	Summary   string      `json:"summary"`
+	Trigger   RunTrigger  `json:"trigger"`
 }
 
 // RunStatus defines model for Run.Status.
@@ -1865,6 +1910,20 @@ type RunStatus string
 
 // RunTrigger defines model for Run.Trigger.
 type RunTrigger string
+
+// RunGate Set when the run waits for a person after its canaries.
+type RunGate struct {
+	// At When the run reached the gate.
+	At *time.Time `json:"at,omitempty"`
+
+	// By Who decided. Empty while waiting.
+	By    string       `json:"by"`
+	Note  string       `json:"note"`
+	State RunGateState `json:"state"`
+}
+
+// RunGateState defines model for RunGate.State.
+type RunGateState string
 
 // RunKind defines model for RunKind.
 type RunKind string
@@ -2046,6 +2105,9 @@ type StartRunRequest struct {
 	// Options Overrides the group's settings. Omit to use them.
 	Options   *RunOptions `json:"options,omitempty"`
 	ServerIds *[]int64    `json:"serverIds,omitempty"`
+
+	// WaitAfterCanaries Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.
+	WaitAfterCanaries *bool `json:"waitAfterCanaries,omitempty"`
 }
 
 // SudoRule defines model for SudoRule.
@@ -2283,6 +2345,15 @@ type ListRunsParams struct {
 	Limit    *int     `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// DecideGateJSONBody defines parameters for DecideGate.
+type DecideGateJSONBody struct {
+	Decision DecideGateJSONBodyDecision `json:"decision"`
+	Note     *string                    `json:"note,omitempty"`
+}
+
+// DecideGateJSONBodyDecision defines parameters for DecideGate.
+type DecideGateJSONBodyDecision string
+
 // DeleteServerParams defines parameters for DeleteServer.
 type DeleteServerParams struct {
 	// Uninstall Also remove the esa user, its sudo rule, and esa-helper from the server.
@@ -2387,6 +2458,9 @@ type RejectPlanJSONRequestBody RejectPlanJSONBody
 
 // StartRunJSONRequestBody defines body for StartRun for application/json ContentType.
 type StartRunJSONRequestBody = StartRunRequest
+
+// DecideGateJSONRequestBody defines body for DecideGate for application/json ContentType.
+type DecideGateJSONRequestBody DecideGateJSONBody
 
 // AddServerJSONRequestBody defines body for AddServer for application/json ContentType.
 type AddServerJSONRequestBody = AddServerRequest
@@ -2630,6 +2704,9 @@ type ServerInterface interface {
 	// GetRun One run with each server's result
 	// (GET /runs/{runId})
 	GetRun(w http.ResponseWriter, r *http.Request, runId RunId)
+	// DecideGate Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	// (POST /runs/{runId}/gate)
+	DecideGate(w http.ResponseWriter, r *http.Request, runId RunId)
 	// GetPatchReport Package result and checks for one update run
 	// (GET /runs/{runId}/report)
 	GetPatchReport(w http.ResponseWriter, r *http.Request, runId RunId)
@@ -4329,6 +4406,32 @@ func (siw *ServerInterfaceWrapper) GetRun(w http.ResponseWriter, r *http.Request
 	handler.ServeHTTP(w, r)
 }
 
+// DecideGate operation middleware
+func (siw *ServerInterfaceWrapper) DecideGate(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "runId" -------------
+	var runId RunId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "runId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DecideGate(w, r, runId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPatchReport operation middleware
 func (siw *ServerInterfaceWrapper) GetPatchReport(w http.ResponseWriter, r *http.Request) {
 
@@ -5413,6 +5516,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/approve", wrapper.ApprovePlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/reject", wrapper.RejectPlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/execute", wrapper.ExecutePlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/runs/{runId}/gate", wrapper.DecideGate)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-baseline/versions", wrapper.ListBaselineVersions)
@@ -8102,6 +8206,46 @@ func (response GetRundefaultJSONResponse) VisitGetRunResponse(w http.ResponseWri
 	return err
 }
 
+type DecideGateRequestObject struct {
+	RunId RunId `json:"runId"`
+	Body  *DecideGateJSONRequestBody
+}
+
+type DecideGateResponseObject interface {
+	VisitDecideGateResponse(w http.ResponseWriter) error
+}
+
+type DecideGate200JSONResponse Run
+
+func (response DecideGate200JSONResponse) VisitDecideGateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DecideGatedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response DecideGatedefaultJSONResponse) VisitDecideGateResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetPatchReportRequestObject struct {
 	RunId RunId `json:"runId"`
 }
@@ -9549,6 +9693,9 @@ type StrictServerInterface interface {
 	// GetRun One run with each server's result
 	// (GET /runs/{runId})
 	GetRun(ctx context.Context, request GetRunRequestObject) (GetRunResponseObject, error)
+	// DecideGate Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	// (POST /runs/{runId}/gate)
+	DecideGate(ctx context.Context, request DecideGateRequestObject) (DecideGateResponseObject, error)
 	// GetPatchReport Package result and checks for one update run
 	// (GET /runs/{runId}/report)
 	GetPatchReport(ctx context.Context, request GetPatchReportRequestObject) (GetPatchReportResponseObject, error)
@@ -11619,6 +11766,39 @@ func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId Ru
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetRunResponseObject); ok {
 		if err := validResponse.VisitGetRunResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DecideGate operation middleware
+func (sh *strictHandler) DecideGate(w http.ResponseWriter, r *http.Request, runId RunId) {
+	var request DecideGateRequestObject
+
+	request.RunId = runId
+
+	var body DecideGateJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DecideGate(ctx, request.(DecideGateRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DecideGate")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DecideGateResponseObject); ok {
+		if err := validResponse.VisitDecideGateResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

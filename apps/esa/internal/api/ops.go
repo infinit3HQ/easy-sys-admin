@@ -151,6 +151,7 @@ func (h *Handlers) StartRun(ctx context.Context, req StartRunRequestObject) (Sta
 	if b.ObserveSeconds != nil {
 		r.ObserveSeconds = *b.ObserveSeconds
 	}
+	r.WaitAfterCanaries = deref(b.WaitAfterCanaries)
 	run, err := h.fleet.StartRun(ctx, a, r)
 	if err != nil {
 		return nil, err
@@ -558,4 +559,19 @@ func (h *Handlers) AcceptIncident(ctx context.Context, req AcceptIncidentRequest
 		return nil, err
 	}
 	return AcceptIncident200JSONResponse(toIncident(v)), nil
+}
+
+func (h *Handlers) DecideGate(ctx context.Context, req DecideGateRequestObject) (DecideGateResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "decision", Message: "is required"}
+	}
+	run, err := h.fleet.DecideGate(ctx, a, req.RunId, string(req.Body.Decision), deref(req.Body.Note))
+	if err != nil {
+		return nil, err
+	}
+	return DecideGate200JSONResponse(toRun(run)), nil
 }

@@ -89,6 +89,7 @@ Live data read from a server through esa-helper.
 | POST | `/plans/{planId}/approve` | Session or token | Approve a plan from a browser session. A token cannot approve. |
 | POST | `/plans/{planId}/reject` | Session or token | Reject a plan from a browser session. A token cannot reject. |
 | POST | `/plans/{planId}/execute` | Session or token | Run an approved plan once. A token that can read logs cannot execute. |
+| POST | `/runs/{runId}/gate` | Session or token | Continue or stop a run waiting after its canaries. Only a person in the web app can decide. |
 | GET | `/runs/{runId}/report` | Session or token | Package result and checks for one update run |
 
 ## alerts

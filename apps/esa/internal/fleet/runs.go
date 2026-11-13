@@ -53,6 +53,9 @@ type RunOptions struct {
 	// helper installs nothing else and stops if apt would add more. Nil
 	// means no plan list; an empty list installs nothing.
 	Approved *[]string `json:"approved,omitempty"`
+	// WaitAfterCanaries pauses the run once the canaries and their watch
+	// pass, until a person continues or stops it on the run page.
+	WaitAfterCanaries bool `json:"waitAfterCanaries,omitempty"`
 }
 
 // Limits on a group's rolling update settings.
@@ -89,6 +92,8 @@ type RunRequest struct {
 	CanaryServerIDs []int64
 	// ObserveSeconds repeats the canary checks before the other servers start.
 	ObserveSeconds int
+	// WaitAfterCanaries pauses before the other servers until a person decides.
+	WaitAfterCanaries bool
 	// FromPlan is set only by ExecutePlan. A group that requires a plan
 	// refuses every other start, scheduled runs included. With a GroupID,
 	// ServerIDs then limits the run to the servers the plan pinned.
@@ -110,6 +115,8 @@ type RunView struct {
 	BytesFreed  int64
 	RequestedBy *int64
 	Servers     []RunServerView
+	// Gate is set when the run waits for a person after its canaries.
+	Gate *GateView
 }
 
 // RunServerView is one server's part of a run.
@@ -288,8 +295,14 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if opts.ObserveSeconds > 0 && len(opts.Checks) == 0 {
 			return RunView{}, invalid("observeSeconds", "add a check to watch")
 		}
+		if req.WaitAfterCanaries {
+			opts.WaitAfterCanaries = true
+		}
+		if opts.WaitAfterCanaries && len(opts.CanaryServerIDs) == 0 {
+			return RunView{}, invalid("waitAfterCanaries", "pick a canary to wait after")
+		}
 	} else {
-		opts.Checks, opts.CanaryServerIDs = nil, nil
+		opts.Checks, opts.CanaryServerIDs, opts.WaitAfterCanaries = nil, nil, false
 		opts.ObserveSeconds = 0
 	}
 
@@ -409,7 +422,16 @@ func (s *Service) GetRun(ctx context.Context, a Actor, id int64) (RunView, error
 	if err := s.hideUnsharedRunServers(ctx, a, runs); err != nil {
 		return RunView{}, err
 	}
-	return toRunView(runs[0]), nil
+	v := toRunView(runs[0])
+	if v.Gate != nil && r.GateBy != nil {
+		v.Gate.By = "a member of the owning space"
+		if r.AccountID == a.AccountID {
+			if names, err := s.userNames(ctx, []int64{*r.GateBy}); err == nil && names[*r.GateBy] != "" {
+				v.Gate.By = names[*r.GateBy]
+			}
+		}
+	}
+	return v, nil
 }
 
 // hideUnsharedRunServers drops, from runs of other accounts, the servers
@@ -461,6 +483,9 @@ func toRunView(r store.Run) RunView {
 		Servers: []RunServerView{},
 	}
 	_ = r.Options.Decode(&v.Options)
+	if r.GateState != "" {
+		v.Gate = &GateView{State: r.GateState, At: r.GateAt, Note: r.GateNote}
+	}
 	if r.Group != nil {
 		v.GroupName = r.Group.Name
 	}

@@ -610,6 +610,30 @@ func (e RunTrigger) Valid() bool {
 	}
 }
 
+// Defines values for RunGateState.
+const (
+	RunGateStateContinued RunGateState = "continued"
+	RunGateStateExpired   RunGateState = "expired"
+	RunGateStateStopped   RunGateState = "stopped"
+	RunGateStateWaiting   RunGateState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the RunGateState enum.
+func (e RunGateState) Valid() bool {
+	switch e {
+	case RunGateStateContinued:
+		return true
+	case RunGateStateExpired:
+		return true
+	case RunGateStateStopped:
+		return true
+	case RunGateStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RunKind.
 const (
 	RunKindClean   RunKind = "clean"
@@ -760,6 +784,24 @@ func (e UpdatePolicyMode) Valid() bool {
 	case UpdatePolicyModeAll:
 		return true
 	case UpdatePolicyModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DecideGateJSONBodyDecision.
+const (
+	Continue DecideGateJSONBodyDecision = "continue"
+	Stop     DecideGateJSONBodyDecision = "stop"
+)
+
+// Valid indicates whether the value is a known member of the DecideGateJSONBodyDecision enum.
+func (e DecideGateJSONBodyDecision) Valid() bool {
+	switch e {
+	case Continue:
+		return true
+	case Stop:
 		return true
 	default:
 		return false
@@ -1845,18 +1887,21 @@ type RoutingWarnings string
 
 // Run defines model for Run.
 type Run struct {
-	BytesFreed int64       `json:"bytesFreed"`
-	FinishedAt *time.Time  `json:"finishedAt,omitempty"`
-	GroupId    *int64      `json:"groupId,omitempty"`
-	GroupName  *string     `json:"groupName,omitempty"`
-	Id         int64       `json:"id"`
-	Kind       RunKind     `json:"kind"`
-	Options    RunOptions  `json:"options"`
-	Servers    []RunServer `json:"servers"`
-	StartedAt  time.Time   `json:"startedAt"`
-	Status     RunStatus   `json:"status"`
-	Summary    string      `json:"summary"`
-	Trigger    RunTrigger  `json:"trigger"`
+	BytesFreed int64      `json:"bytesFreed"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
+
+	// Gate Set when the run waits for a person after its canaries.
+	Gate      *RunGate    `json:"gate,omitempty"`
+	GroupId   *int64      `json:"groupId,omitempty"`
+	GroupName *string     `json:"groupName,omitempty"`
+	Id        int64       `json:"id"`
+	Kind      RunKind     `json:"kind"`
+	Options   RunOptions  `json:"options"`
+	Servers   []RunServer `json:"servers"`
+	StartedAt time.Time   `json:"startedAt"`
+	Status    RunStatus   `json:"status"`
+	Summary   string      `json:"summary"`
+	Trigger   RunTrigger  `json:"trigger"`
 }
 
 // RunStatus defines model for Run.Status.
@@ -1864,6 +1909,20 @@ type RunStatus string
 
 // RunTrigger defines model for Run.Trigger.
 type RunTrigger string
+
+// RunGate Set when the run waits for a person after its canaries.
+type RunGate struct {
+	// At When the run reached the gate.
+	At *time.Time `json:"at,omitempty"`
+
+	// By Who decided. Empty while waiting.
+	By    string       `json:"by"`
+	Note  string       `json:"note"`
+	State RunGateState `json:"state"`
+}
+
+// RunGateState defines model for RunGate.State.
+type RunGateState string
 
 // RunKind defines model for RunKind.
 type RunKind string
@@ -2045,6 +2104,9 @@ type StartRunRequest struct {
 	// Options Overrides the group's settings. Omit to use them.
 	Options   *RunOptions `json:"options,omitempty"`
 	ServerIds *[]int64    `json:"serverIds,omitempty"`
+
+	// WaitAfterCanaries Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.
+	WaitAfterCanaries *bool `json:"waitAfterCanaries,omitempty"`
 }
 
 // SudoRule defines model for SudoRule.
@@ -2282,6 +2344,15 @@ type ListRunsParams struct {
 	Limit    *int     `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// DecideGateJSONBody defines parameters for DecideGate.
+type DecideGateJSONBody struct {
+	Decision DecideGateJSONBodyDecision `json:"decision"`
+	Note     *string                    `json:"note,omitempty"`
+}
+
+// DecideGateJSONBodyDecision defines parameters for DecideGate.
+type DecideGateJSONBodyDecision string
+
 // DeleteServerParams defines parameters for DeleteServer.
 type DeleteServerParams struct {
 	// Uninstall Also remove the esa user, its sudo rule, and esa-helper from the server.
@@ -2386,6 +2457,9 @@ type RejectPlanJSONRequestBody RejectPlanJSONBody
 
 // StartRunJSONRequestBody defines body for StartRun for application/json ContentType.
 type StartRunJSONRequestBody = StartRunRequest
+
+// DecideGateJSONRequestBody defines body for DecideGate for application/json ContentType.
+type DecideGateJSONRequestBody DecideGateJSONBody
 
 // AddServerJSONRequestBody defines body for AddServer for application/json ContentType.
 type AddServerJSONRequestBody = AddServerRequest
@@ -3065,6 +3139,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 	GetRun(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DecideGateWithBody Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+	DecideGateWithBody(ctx context.Context, runId RunId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DecideGate Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+	DecideGate(ctx context.Context, runId RunId, body DecideGateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPatchReport Package result and checks for one update run
 	//
@@ -4840,6 +4928,40 @@ func (c *Client) StartRun(ctx context.Context, body StartRunJSONRequestBody, req
 // Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 func (c *Client) GetRun(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRunRequest(c.Server, runId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DecideGateWithBody Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+func (c *Client) DecideGateWithBody(ctx context.Context, runId RunId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDecideGateRequestWithBody(c.Server, runId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DecideGate Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+func (c *Client) DecideGate(ctx context.Context, runId RunId, body DecideGateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDecideGateRequest(c.Server, runId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -8229,6 +8351,53 @@ func NewGetRunRequest(server string, runId RunId) (*http.Request, error) {
 	return req, nil
 }
 
+// NewDecideGateRequest calls the generic DecideGate builder with application/json body
+func NewDecideGateRequest(server string, runId RunId, body DecideGateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDecideGateRequestWithBody(server, runId, "application/json", bodyReader)
+}
+
+// NewDecideGateRequestWithBody constructs an http.Request for the DecideGate method, with any body, and a specified content type
+func NewDecideGateRequestWithBody(server string, runId RunId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "runId", runId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/runs/%s/gate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetPatchReportRequest constructs an http.Request for the GetPatchReport method
 func NewGetPatchReportRequest(server string, runId RunId) (*http.Request, error) {
 	var err error
@@ -10270,6 +10439,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
 	GetRunWithResponse(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
+
+	// DecideGateWithBodyWithResponse Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+	DecideGateWithBodyWithResponse(ctx context.Context, runId RunId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DecideGateResponse, error)
+
+	// DecideGateWithResponse Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+	DecideGateWithResponse(ctx context.Context, runId RunId, body DecideGateJSONRequestBody, reqEditors ...RequestEditorFn) (*DecideGateResponse, error)
 
 	// GetPatchReportWithResponse Package result and checks for one update run
 	//
@@ -13843,6 +14026,54 @@ func (r GetRunResponse) ContentType() string {
 	return ""
 }
 
+type DecideGateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Run
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DecideGateResponse) GetJSON200() *Run {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DecideGateResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DecideGateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DecideGateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DecideGateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DecideGateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetPatchReportResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16584,6 +16815,32 @@ func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId RunI
 		return nil, err
 	}
 	return ParseGetRunResponse(rsp)
+}
+
+// DecideGateWithBodyWithResponse Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+func (c *ClientWithResponses) DecideGateWithBodyWithResponse(ctx context.Context, runId RunId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DecideGateResponse, error) {
+	rsp, err := c.DecideGateWithBody(ctx, runId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDecideGateResponse(rsp)
+}
+
+// DecideGateWithResponse Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /runs/{runId}/gate (the `DecideGate` operationId).
+func (c *ClientWithResponses) DecideGateWithResponse(ctx context.Context, runId RunId, body DecideGateJSONRequestBody, reqEditors ...RequestEditorFn) (*DecideGateResponse, error) {
+	rsp, err := c.DecideGate(ctx, runId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDecideGateResponse(rsp)
 }
 
 // GetPatchReportWithResponse Package result and checks for one update run
@@ -19374,6 +19631,39 @@ func ParseGetRunResponse(rsp *http.Response) (*GetRunResponse, error) {
 	}
 
 	response := &GetRunResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Run
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDecideGateResponse parses an HTTP response from a DecideGateWithResponse call
+func ParseDecideGateResponse(rsp *http.Response) (*DecideGateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DecideGateResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

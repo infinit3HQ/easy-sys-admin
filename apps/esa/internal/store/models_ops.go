@@ -20,6 +20,13 @@ type Run struct {
 	StartedAt   time.Time `gorm:"not null;index:runs_account_started,priority:2,sort:desc"`
 	FinishedAt  *time.Time
 	Summary     string `gorm:"not null;default:''"`
+	// GateState is the canary gate of a run that waits for a person after
+	// its canaries: waiting, continued, stopped, or expired. Empty when
+	// the run has no gate or has not reached it.
+	GateState string `gorm:"not null;default:''"`
+	GateAt    *time.Time
+	GateBy    *int64
+	GateNote  string `gorm:"not null;default:''"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Group   *Group  `gorm:"constraint:OnDelete:SET NULL"`

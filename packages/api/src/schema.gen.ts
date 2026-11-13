@@ -973,6 +973,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{runId}/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue or stop a run waiting after its canaries. Only a person in the web app can decide. */
+        post: operations["decideGate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{runId}/report": {
         parameters: {
             query?: never;
@@ -2532,6 +2551,8 @@ export interface components {
             observeSeconds?: number;
             /** @description Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request. */
             readonly approved?: string[];
+            /** @description The run pauses after its canaries until a person decides. */
+            waitAfterCanaries?: boolean;
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];
@@ -2542,6 +2563,8 @@ export interface components {
             canaryServerIds?: number[];
             /** @description Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once. */
             observeSeconds?: number;
+            /** @description Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours. */
+            waitAfterCanaries?: boolean;
             /** @description Overrides the group's settings. Omit to use them. */
             options?: components["schemas"]["RunOptions"] | null;
         };
@@ -2583,7 +2606,21 @@ export interface components {
             /** Format: int64 */
             bytesFreed: number;
             servers: components["schemas"]["RunServer"][];
+            gate?: components["schemas"]["RunGate"];
         };
+        /** @description Set when the run waits for a person after its canaries. */
+        RunGate: {
+            /** @enum {string} */
+            state: "waiting" | "continued" | "stopped" | "expired";
+            /**
+             * Format: date-time
+             * @description When the run reached the gate.
+             */
+            at?: string | null;
+            /** @description Who decided. Empty while waiting. */
+            by: string;
+            note: string;
+        } | null;
         RunList: {
             items: components["schemas"]["Run"][];
         };
@@ -4553,6 +4590,37 @@ export interface operations {
         responses: {
             /** @description The run. A repeat returns the same run. */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    decideGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "continue" | "stop";
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The run */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

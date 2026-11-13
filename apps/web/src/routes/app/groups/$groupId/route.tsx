@@ -46,6 +46,7 @@ function GroupLayout() {
   > | null>(null)
   const [canaries, setCanaries] = useState<number[]>([])
   const [watch, setWatch] = useState(0)
+  const [gate, setGate] = useState(false)
   const fleet = useQuery(q.overview())
   const members = (fleet.data?.servers ?? []).filter(
     (s) => s.groupId === groupId,
@@ -101,6 +102,10 @@ function GroupLayout() {
               kind === 'update' && canaries.length > 0 && watch > 0
                 ? watch
                 : undefined,
+            waitAfterCanaries:
+              kind === 'update' && canaries.length > 0 && gate
+                ? true
+                : undefined,
           },
         }),
       ),
@@ -143,6 +148,7 @@ function GroupLayout() {
                   onClick={() => {
                     setCanaries([])
                     setWatch(0)
+                    setGate(false)
                     setConfirm('update')
                   }}
                   disabled={empty}
@@ -241,6 +247,17 @@ function GroupLayout() {
                     </label>
                   ))}
                 </fieldset>
+              )}
+              {canaries.length > 0 && !needsPlan && (
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={gate}
+                    onChange={(e) => setGate(e.target.checked)}
+                  />
+                  Wait for me after the canaries. The run pauses until you
+                  continue or stop it, and stops by itself after 24 hours.
+                </label>
               )}
               {canaries.length > 0 && g.checks.length > 0 && (
                 <label className="block text-xs text-muted-foreground">

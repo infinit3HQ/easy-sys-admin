@@ -1117,6 +1117,31 @@ paths:
               schema: { $ref: '#/components/schemas/Run' }
         default: { $ref: '#/components/responses/Error' }
 
+  /runs/{runId}/gate:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      operationId: decideGate
+      summary: Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [continue, stop] }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
   /runs/{runId}/report:
     parameters:
       - $ref: '#/components/parameters/RunId'
@@ -3036,6 +3061,7 @@ components:
           items: { type: string }
           readOnly: true
           description: Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request.
+        waitAfterCanaries: { type: boolean, description: The run pauses after its canaries until a person decides. }
 
     StartRunRequest:
       type: object
@@ -3053,6 +3079,9 @@ components:
           minimum: 0
           maximum: 600
           description: Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once.
+        waitAfterCanaries:
+          type: boolean
+          description: 'Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.'
         options:
           type: object
           allOf: [{ $ref: '#/components/schemas/RunOptions' }]
@@ -3091,6 +3120,18 @@ components:
         summary: { type: string }
         bytesFreed: { type: integer, format: int64 }
         servers: { type: array, items: { $ref: '#/components/schemas/RunServer' } }
+        gate: { $ref: '#/components/schemas/RunGate' }
+
+    RunGate:
+      type: object
+      nullable: true
+      description: Set when the run waits for a person after its canaries.
+      required: [state, by, note]
+      properties:
+        state: { type: string, enum: [waiting, continued, stopped, expired] }
+        at: { type: string, format: date-time, nullable: true, description: When the run reached the gate. }
+        by: { type: string, description: Who decided. Empty while waiting. }
+        note: { type: string }
 
     RunList:
       type: object

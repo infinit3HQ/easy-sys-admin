@@ -195,7 +195,7 @@ func toAPIChecks(in []fleet.HealthCheck) []HealthCheck {
 }
 
 func toRun(r fleet.RunView) Run {
-	return Run{
+	out := Run{
 		Id: r.ID, Kind: RunKind(r.Kind), Trigger: RunTrigger(r.Trigger), Status: RunStatus(r.Status),
 		GroupId: r.GroupID, GroupName: optional(r.GroupName), Options: r.Options, StartedAt: r.StartedAt,
 		FinishedAt: r.FinishedAt, Summary: r.Summary, BytesFreed: r.BytesFreed,
@@ -206,6 +206,10 @@ func toRun(r fleet.RunView) Run {
 			}
 		}),
 	}
+	if r.Gate != nil {
+		out.Gate = &RunGate{State: RunGateState(r.Gate.State), At: r.Gate.At, By: r.Gate.By, Note: r.Gate.Note}
+	}
+	return out
 }
 
 func jsonObject(j store.JSON) map[string]any {

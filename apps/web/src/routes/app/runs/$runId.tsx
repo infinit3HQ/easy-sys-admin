@@ -9,6 +9,8 @@ import { bytes } from '#/lib/format'
 import { When } from '#/components/time'
 import { PageHeader, Panel, RunStatus } from '#/components/kit'
 import { Card } from '#/components/ui/card'
+import { RunGate } from '#/components/run-gate'
+import { useRole } from '../route'
 
 export const Route = createFileRoute('/app/runs/$runId')({
   params: {
@@ -28,6 +30,7 @@ export const Route = createFileRoute('/app/runs/$runId')({
 function RunPage() {
   const { runId } = Route.useParams()
   const { data: r } = useSuspenseQuery(q.run(runId))
+  const { canAct } = useRole()
   const report = useQuery({
     // The run's status is in the key, so the report is fetched once more
     // when the run finishes instead of keeping the last running copy.
@@ -49,6 +52,7 @@ function RunPage() {
       >
         <RunStatus status={r.status} />
       </PageHeader>
+      <RunGate run={r} canAct={canAct} />
       <Card className="mb-6 grid grid-cols-2 gap-x-4 gap-y-4 p-4 font-mono text-xs sm:p-5 lg:grid-cols-4">
         <Fact k="Target" v={r.groupName ?? 'selected servers'} />
         <Fact k="Trigger" v={r.trigger} />
