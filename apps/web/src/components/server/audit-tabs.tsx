@@ -157,6 +157,7 @@ export function AccessTab({ serverId }: { serverId: number }) {
           ))}
         </ul>
       </Panel>
+      <KeyExceptions serverId={serverId} canEdit={canManage} />
       <div className="min-w-0 space-y-6">
         <Panel title="SSH server">
           <dl className="space-y-2">
@@ -649,5 +650,133 @@ export function JobsTab({ serverId }: { serverId: number }) {
         )}
       </Panel>
     </div>
+  )
+}
+
+function KeyExceptions({
+  serverId,
+  canEdit,
+}: {
+  serverId: number
+  canEdit: boolean
+}) {
+  const qc = useQueryClient()
+  const r = useQuery(q.keyExceptions(serverId))
+  const [user, setUser] = useState('')
+  const [fingerprint, setFingerprint] = useState('')
+  const [days, setDays] = useState('7')
+  const [reason, setReason] = useState('')
+  const create = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/servers/{serverId}/key-exceptions', {
+          params: { path: { serverId } },
+          body: {
+            user: user.trim(),
+            fingerprint: fingerprint.trim(),
+            until: new Date(
+              Date.now() + Number(days) * 24 * 60 * 60 * 1000,
+            ).toISOString(),
+            reason: reason.trim(),
+          },
+        }),
+      ),
+    onSuccess: async () => {
+      setFingerprint('')
+      setReason('')
+      await qc.invalidateQueries({ queryKey: ['key-exceptions', serverId] })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().DELETE('/servers/{serverId}/key-exceptions/{exceptionId}', {
+          params: { path: { serverId, exceptionId: id } },
+        }),
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ['key-exceptions', serverId] }),
+  })
+  const items = r.data?.items ?? []
+  return (
+    <Panel title="Expected until a date" className="xl:col-span-2">
+      <p className="text-xs text-muted-foreground">
+        An extra fingerprint on one login stays quiet until the date. The key
+        stays on the server. This does not mean access was removed.
+      </p>
+      {items.length > 0 && (
+        <ul className="mt-2 space-y-1 font-mono text-xs">
+          {items.map((e) => (
+            <li key={e.id} className="flex flex-wrap items-baseline gap-x-3">
+              <span className="text-ink">{e.user}</span>
+              <span className="break-all text-ink-2">{e.fingerprint}</span>
+              <span className="text-faint">
+                until <When iso={e.until} />
+              </span>
+              <span className="text-faint">{e.reason}</span>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="text-faint hover:text-fail"
+                  onClick={() => remove.mutate(e.id)}
+                >
+                  remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <form
+          className="mt-3 flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            create.mutate()
+          }}
+        >
+          <Input
+            value={user}
+            onChange={(e) => setUser(e.target.value)}
+            placeholder="user"
+            aria-label="Login name"
+            className="h-8 w-28"
+          />
+          <Input
+            value={fingerprint}
+            onChange={(e) => setFingerprint(e.target.value)}
+            placeholder="SHA256:..."
+            aria-label="Fingerprint"
+            className="h-8 min-w-48 flex-1"
+          />
+          <Input
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            inputMode="numeric"
+            aria-label="Days"
+            className="h-8 w-16"
+          />
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="why"
+            aria-label="Reason"
+            className="h-8 w-40"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            busy={create.isPending}
+          >
+            Expect until then
+          </Button>
+        </form>
+      )}
+      <ErrorBanner
+        error={r.error ?? create.error ?? remove.error}
+        className="mt-2"
+      />
+    </Panel>
   )
 }

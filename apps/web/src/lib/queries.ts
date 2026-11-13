@@ -182,6 +182,16 @@ export const q = {
       queryKey: ['evidence'],
       queryFn: () => call(api().GET('/evidence')),
     }),
+  keyExceptions: (id: number) =>
+    queryOptions({
+      queryKey: ['key-exceptions', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/key-exceptions', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
   keys: () =>
     queryOptions({
       queryKey: ['keys'],
