@@ -460,12 +460,6 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 	if len(items) == 0 {
 		return
 	}
-	send := items
-	extra := 0
-	if len(send) > 8 {
-		extra = len(send) - 8
-		send = send[:8]
-	}
 	now := s.now()
 	fire := func(subject, msg string) {
 		if len(subject) > 200 {
@@ -485,12 +479,23 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 		}
 		s.notify(ctx, srv.AccountID, Message{Title: msg, Body: msg, Severity: "warning", URL: s.alertURL(&al), Kind: string(kind), ServerID: srv.ID})
 	}
-	for _, item := range send {
-		fire(item, fmt.Sprintf("%s: %s %s", srv.Name, noun, item))
+	// Several findings from one check are one notice. The message names each
+	// one, up to eight, so they stay readable without a notice per socket.
+	if len(items) > 1 {
+		shown := items
+		extra := 0
+		if len(shown) > 8 {
+			extra = len(shown) - 8
+			shown = shown[:8]
+		}
+		msg := fmt.Sprintf("%s: %d %ss: %s", srv.Name, len(items), noun, strings.Join(shown, ", "))
+		if extra > 0 {
+			msg += fmt.Sprintf(", and %d more", extra)
+		}
+		fire("this check", msg)
+		return
 	}
-	if extra > 0 {
-		fire("more", fmt.Sprintf("%s: %d other %ss", srv.Name, extra, noun))
-	}
+	fire(items[0], fmt.Sprintf("%s: %s %s", srv.Name, noun, items[0]))
 }
 
 func (s *Service) noteExposureErr(ctx context.Context, srv store.Server, err error) {

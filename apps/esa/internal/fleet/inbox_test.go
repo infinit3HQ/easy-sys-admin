@@ -96,3 +96,32 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 		t.Fatalf("notices while open = %d, want 3", deliveries)
 	}
 }
+
+func TestOneCheckOfSeveralPortsIsOneNotice(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "grouped")
+	if _, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/grouped"}); err != nil {
+		t.Fatal(err)
+	}
+	s.notifier = quietNotifier{}
+	srv := addTestServer(t, s, a, nil, "mail")
+	rules, err := s.rules(ctx, a.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports := []string{"0.0.0.0:80", "0.0.0.0:443"}
+	s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, ports, "new socket on all interfaces")
+	s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, ports, "new socket on all interfaces")
+	var incidents []store.SecurityIncident
+	if err := s.db.Where("account_id = ? AND kind = ?", a.AccountID, AlertNewPort).Find(&incidents).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(incidents) != 1 || !strings.Contains(incidents[0].Message, "0.0.0.0:80") || !strings.Contains(incidents[0].Message, "0.0.0.0:443") {
+		t.Fatalf("one check should be one notice: %+v", incidents)
+	}
+	var deliveries int64
+	if err := s.db.Model(&store.NotifyDelivery{}).Where("account_id = ?", a.AccountID).Count(&deliveries).Error; err != nil || deliveries != 1 {
+		t.Fatalf("notices = %d %v", deliveries, err)
+	}
+}
