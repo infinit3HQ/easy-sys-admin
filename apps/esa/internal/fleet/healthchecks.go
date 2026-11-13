@@ -310,7 +310,7 @@ func (s *Service) runHealthChecks(ctx context.Context, srv store.Server, ep remo
 			res.Detail = containerState(boxes, c.Container)
 		}
 		if res.Detail != "" {
-			res.State = "fail"
+			res.State = checkState(res.Detail)
 			if c.Blocking && block == "" {
 				block = c.Name + ": " + res.Detail
 			}
@@ -386,6 +386,22 @@ func dialReason(err error) string {
 		msg = msg[:160]
 	}
 	return msg
+}
+
+// checkState separates a failed application check from a check esa could
+// not run. A blocked address is not the application failing. A missing unit
+// or container is not a crash.
+func checkState(detail string) string {
+	switch detail {
+	case "":
+		return "pass"
+	case "address blocked":
+		return "unknown"
+	case "not loaded", "not found":
+		return "unconfigured"
+	default:
+		return "fail"
+	}
 }
 
 func unitState(units []proto.Service, name string) string {

@@ -147,6 +147,18 @@ func TestPlaygroundDial(t *testing.T) {
 	}
 }
 
+func TestCheckStateSeparatesFailureFromUnknown(t *testing.T) {
+	if checkState("") != "pass" || checkState("HTTP 500") != "fail" {
+		t.Fatal("pass and fail")
+	}
+	if checkState("address blocked") != "unknown" {
+		t.Fatal("a blocked address was recorded as the application failing")
+	}
+	if checkState("not loaded") != "unconfigured" || checkState("not found") != "unconfigured" {
+		t.Fatal("a missing unit or container was recorded as a crash")
+	}
+}
+
 func splitTestHost(t *testing.T, raw string) (string, int) {
 	t.Helper()
 	u := strings.TrimPrefix(raw, "http://")
