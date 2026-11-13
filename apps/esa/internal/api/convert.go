@@ -68,6 +68,7 @@ func toServer(v fleet.ServerView) Server {
 		Id: v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
 		GroupId: v.GroupID, GroupName: optional(v.GroupName), Enrollment: ServerEnrollment(v.Enrollment),
 		HostKeyFingerprint: v.HostKeyFingerprint, HelperVersion: v.HelperVersion, Arch: v.Arch,
+		HelperMissing: ptrTo(nonNil(v.HelperMissing)), HelperCheckedAt: v.HelperCheckedAt,
 		HostsControlPlane: v.HostsControlPlane, ProtectedContainers: nonNil(v.ProtectedContainers),
 		HasStoredLogin: v.HasStoredLogin, Note: v.Note, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
 		Reasons: nonNil(v.Reasons), LastSeenAt: v.LastSeenAt, LastError: v.LastError,
@@ -263,3 +264,5 @@ func toActivity(e fleet.ActivityEntry) ActivityEntry {
 		UserName: e.UserName, Detail: jsonObject(e.Detail), CreatedAt: e.CreatedAt,
 	}
 }
+
+func ptrTo[T any](v T) *T { return &v }

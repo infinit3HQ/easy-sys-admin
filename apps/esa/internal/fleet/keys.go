@@ -109,5 +109,7 @@ func (s *Service) endpoint(ctx context.Context, srv store.Server) (remote.Endpoi
 	if err != nil {
 		return remote.Endpoint{}, err
 	}
-	return remote.Endpoint{ServerID: srv.ID, Host: srv.Host, Port: srv.Port, User: srv.Username, HostKey: hk, Signer: k.signer}, nil
+	ep := remote.Endpoint{ServerID: srv.ID, Host: srv.Host, Port: srv.Port, User: srv.Username, HostKey: hk, Signer: k.signer}
+	ep.Capabilities = s.helperCapabilities(ctx, srv, ep)
+	return ep, nil
 }

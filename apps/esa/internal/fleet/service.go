@@ -116,6 +116,9 @@ type Service struct {
 
 	// serverLocks serialises maintenance runs per server.
 	serverLocks sync.Map // int64 -> *sync.Mutex
+	// helperTried holds when the helper's capabilities were last asked for,
+	// per server, so an unreachable server is not asked on every poll.
+	helperTried sync.Map // int64 -> time.Time
 
 	// exposureBudget is how many exposure reports this poll cycle may start.
 	exposureBudget atomic.Int32

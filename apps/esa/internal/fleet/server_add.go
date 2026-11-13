@@ -228,16 +228,11 @@ func (s *Service) verifyHelper(ctx context.Context, serverID int64) error {
 	if err != nil {
 		return err
 	}
-	var v struct {
-		Version  string `json:"version"`
-		Protocol int    `json:"protocol"`
-		Arch     string `json:"arch"`
-	}
-	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 30*time.Second)
-	defer cancel()
-	if err := s.pool.Call(cctx, ep, &v, "version"); err != nil {
+	v, err := s.askHelperVersion(ctx, ep)
+	if err != nil {
 		return fmt.Errorf("helper check as esa: %w", err)
 	}
-	return s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ?", serverID).
-		Updates(map[string]any{"helper_version": v.Version, "arch": v.Arch, "updated_at": s.now()}).Error
+	s.recordHelper(ctx, serverID, v)
+	s.helperTried.Delete(serverID)
+	return nil
 }

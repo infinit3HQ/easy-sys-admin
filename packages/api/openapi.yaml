@@ -2057,6 +2057,15 @@ components:
         enrollment: { type: string, enum: [pending, ready] }
         hostKeyFingerprint: { type: string }
         helperVersion: { type: string }
+        helperMissing:
+          type: array
+          items: { type: string }
+          description: Helper actions this control plane has that the installed helper does not. Reinstall the helper to add them. Empty when it has every action; actions a helper never reported are judged by the actions helpers had before they reported a list.
+        helperCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the helper last said which actions it has. Null when it was never asked.
         arch: { type: string }
         hostsControlPlane: { type: boolean }
         protectedContainers:

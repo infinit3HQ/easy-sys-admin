@@ -297,6 +297,8 @@ func (s *Service) hostErr(ctx context.Context, srv store.Server, err error) erro
 			return invalid("request", "%s", he.Message)
 		case proto.CodeRefused, proto.CodeBusy:
 			return &ConflictError{Message: srv.Name + ": " + he.Message}
+		case proto.CodeIncompatible:
+			return &ConflictError{Code: proto.CodeIncompatible, Message: srv.Name + ": " + he.Message}
 		}
 	}
 	return &UnavailableError{Message: srv.Name + ": " + err.Error()}

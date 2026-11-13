@@ -1572,10 +1572,16 @@ type Server struct {
 	Enrollment ServerEnrollment `json:"enrollment"`
 
 	// Exposure Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
-	Exposure           *Exposure      `json:"exposure,omitempty"`
-	GroupId            *int64         `json:"groupId,omitempty"`
-	GroupName          *string        `json:"groupName,omitempty"`
-	HasStoredLogin     bool           `json:"hasStoredLogin"`
+	Exposure       *Exposure `json:"exposure,omitempty"`
+	GroupId        *int64    `json:"groupId,omitempty"`
+	GroupName      *string   `json:"groupName,omitempty"`
+	HasStoredLogin bool      `json:"hasStoredLogin"`
+
+	// HelperCheckedAt When the helper last said which actions it has. Null when it was never asked.
+	HelperCheckedAt *time.Time `json:"helperCheckedAt,omitempty"`
+
+	// HelperMissing Helper actions this control plane has that the installed helper does not. Reinstall the helper to add them. Empty when it has every action; actions a helper never reported are judged by the actions helpers had before they reported a list.
+	HelperMissing      *[]string      `json:"helperMissing,omitempty"`
 	HelperVersion      string         `json:"helperVersion"`
 	Host               string         `json:"host"`
 	HostKeyFingerprint string         `json:"hostKeyFingerprint"`

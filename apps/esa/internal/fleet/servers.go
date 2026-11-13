@@ -11,16 +11,19 @@ import (
 // ServerView is a server with its latest state, as the front doors show it.
 // It never contains credentials.
 type ServerView struct {
-	ID                  int64
-	Name                string
-	Host                string
-	Port                int
-	Username            string
-	GroupID             *int64
-	GroupName           string
-	Enrollment          string
-	HostKeyFingerprint  string
-	HelperVersion       string
+	ID                 int64
+	Name               string
+	Host               string
+	Port               int
+	Username           string
+	GroupID            *int64
+	GroupName          string
+	Enrollment         string
+	HostKeyFingerprint string
+	HelperVersion      string
+	// HelperMissing are the actions a reinstall would add.
+	HelperMissing       []string
+	HelperCheckedAt     *time.Time
 	Arch                string
 	HostsControlPlane   bool
 	ProtectedContainers []string
@@ -205,6 +208,7 @@ func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 		HelperVersion: srv.HelperVersion, Arch: srv.Arch, HostsControlPlane: srv.HostsControlPlane,
 		HasStoredLogin: hasLogin, Note: srv.Note, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},
 		Status: StatusPending, Reasons: []string{},
+		HelperMissing: proto.Missing(storedCapabilities(srv)), HelperCheckedAt: srv.HelperCheckedAt,
 	}
 	_ = srv.ProtectedContainers.Decode(&v.ProtectedContainers)
 	if srv.Group != nil {

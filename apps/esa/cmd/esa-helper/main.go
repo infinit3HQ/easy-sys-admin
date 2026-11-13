@@ -127,7 +127,7 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 	}
 
 	if action == "version" {
-		return proto.VersionInfo{Version: version.Version, Commit: version.Commit, Protocol: proto.Version, OS: runtime.GOOS, Arch: runtime.GOARCH}, nil
+		return proto.VersionInfo{Version: version.Version, Commit: version.Commit, Protocol: proto.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: proto.Actions}, nil
 	}
 	if os.Geteuid() != 0 {
 		return nil, &hostops.RefusedError{Reason: "esa-helper must run as root (through sudo)"}

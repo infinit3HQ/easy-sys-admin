@@ -80,7 +80,13 @@ type Server struct {
 	HostKeyAcceptedAt  *time.Time
 
 	HelperVersion string `gorm:"not null;default:''"`
-	Arch          string `gorm:"not null;default:''"`
+	// HelperProtocol and HelperCapabilities are what `esa-helper version`
+	// reported at HelperCheckedAt. Null capabilities mean an older helper
+	// that does not list them; nil HelperCheckedAt means never asked.
+	HelperProtocol     int  `gorm:"not null;default:0"`
+	HelperCapabilities JSON `gorm:"type:jsonb"`
+	HelperCheckedAt    *time.Time
+	Arch               string `gorm:"not null;default:''"`
 
 	// HostsControlPlane marks the server esa itself runs on. It is never
 	// rebooted by a schedule.

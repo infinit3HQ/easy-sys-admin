@@ -33,7 +33,12 @@ func invalid(field, format string, args ...any) error {
 
 // ConflictError means the change clashes with existing state, for example a
 // duplicate name or a run already in progress.
-type ConflictError struct{ Message string }
+type ConflictError struct {
+	Message string
+	// Code replaces the generic "conflict" code when set, for example
+	// "helper_incompatible".
+	Code string
+}
 
 func (e *ConflictError) Error() string { return e.Message }
 

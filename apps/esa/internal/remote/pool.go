@@ -27,6 +27,9 @@ type Endpoint struct {
 	User     string
 	HostKey  ssh.PublicKey
 	Signer   ssh.Signer
+	// Capabilities are the helper's actions, as it last reported them.
+	// nil means it reported none: proto.LegacyActions apply.
+	Capabilities []string
 }
 
 func (e Endpoint) key() string {
@@ -161,7 +164,14 @@ func IsRefused(err error) bool {
 
 // Call runs `sudo -n esa-helper <action> <args...>` on the server and
 // decodes the response data into out (which may be nil).
+//
+// An action the installed helper did not list is refused here, before any
+// connection, with code proto.CodeIncompatible. Every front door and
+// background job reaches a server through Call, so the check is in one place.
 func (p *Pool) Call(ctx context.Context, e Endpoint, out any, action string, args ...string) error {
+	if !proto.Supports(e.Capabilities, action) {
+		return &HelperError{Code: proto.CodeIncompatible, Message: "the helper on this server does not have the " + action + " action; reinstall the helper"}
+	}
 	client, err := p.get(ctx, e)
 	if err != nil {
 		return err

@@ -42,6 +42,9 @@ const (
 	CodeBadRequest = "bad_request" // invalid arguments
 	CodeFailed     = "failed"      // the action ran and failed
 	CodeBusy       = "busy"        // another operation holds a lock (apt, dpkg)
+	// CodeIncompatible is set by the control plane, not the helper: the
+	// installed helper does not have the action, so it was never sent.
+	CodeIncompatible = "helper_incompatible"
 )
 
 // VersionInfo answers `esa-helper version`.
@@ -51,6 +54,9 @@ type VersionInfo struct {
 	Protocol int    `json:"protocol"`
 	OS       string `json:"os"`
 	Arch     string `json:"arch"`
+	// Capabilities lists every action this helper build has. A helper
+	// older than this field sends none; see LegacyActions.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // Status is the snapshot the poller collects every minute.

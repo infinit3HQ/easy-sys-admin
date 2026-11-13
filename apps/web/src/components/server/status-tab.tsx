@@ -186,6 +186,13 @@ export function StatusTab({ serverId }: { serverId: number }) {
               <KeyValue k="Helper" v={data.server.helperVersion || '—'} />
               <KeyValue k="Collected" v={<When iso={snap.collectedAt} />} />
             </dl>
+            {(data.server.helperMissing?.length ?? 0) > 0 && (
+              <Notice tone="warn" className="mt-4">
+                The helper on this server does not have{' '}
+                {data.server.helperMissing?.join(', ')}. Those reports and
+                actions are off until you reinstall it from Settings.
+              </Notice>
+            )}
             {snap.rebootRequired && (
               <Notice tone="warn" className="mt-4">
                 Reboot required

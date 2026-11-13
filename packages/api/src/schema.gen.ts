@@ -1747,6 +1747,13 @@ export interface components {
             enrollment: "pending" | "ready";
             hostKeyFingerprint: string;
             helperVersion: string;
+            /** @description Helper actions this control plane has that the installed helper does not. Reinstall the helper to add them. Empty when it has every action; actions a helper never reported are judged by the actions helpers had before they reported a list. */
+            helperMissing?: string[];
+            /**
+             * Format: date-time
+             * @description When the helper last said which actions it has. Null when it was never asked.
+             */
+            helperCheckedAt?: string | null;
             arch: string;
             hostsControlPlane: boolean;
             /** @description Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec). */

@@ -194,6 +194,18 @@ export function SettingsTab({ serverId }: { serverId: number }) {
               v={`${s.helperVersion || '—'} · ${s.arch || '—'}`}
             />
             <KeyValue
+              wrap
+              k="Helper actions"
+              tone={s.helperMissing?.length ? 'warn' : undefined}
+              v={
+                s.helperMissing?.length
+                  ? `missing ${s.helperMissing.join(', ')}`
+                  : s.helperCheckedAt
+                    ? 'all'
+                    : 'not asked yet'
+              }
+            />
+            <KeyValue
               k="Stored login"
               v={s.hasStoredLogin ? 'yes (encrypted)' : 'no'}
             />

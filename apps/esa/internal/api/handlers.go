@@ -90,6 +90,9 @@ func errorStatus(err error) (status int, code, msg, field string) {
 	case errors.Is(err, fleet.ErrNotFound):
 		return http.StatusNotFound, "not_found", "Not found.", ""
 	case errors.As(err, &conflict):
+		if conflict.Code != "" {
+			return http.StatusConflict, conflict.Code, conflict.Message, ""
+		}
 		return http.StatusConflict, "conflict", conflict.Message, ""
 	case errors.As(err, &unavail):
 		return http.StatusBadGateway, "unavailable", unavail.Message, ""

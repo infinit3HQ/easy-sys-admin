@@ -187,6 +187,9 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if len(servers) == 0 {
 		return RunView{}, invalid("groupId", "the group has no servers")
 	}
+	if gaps := helperGaps(req.Kind, servers); len(gaps) > 0 {
+		return RunView{}, &ConflictError{Code: proto.CodeIncompatible, Message: "reinstall the helper on these servers first, or leave them out: " + joinComma(gaps)}
+	}
 	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && s.needsPlan(ctx, group, servers) {
 		return RunView{}, invalid("kind", "this group requires an approved plan")
 	}
