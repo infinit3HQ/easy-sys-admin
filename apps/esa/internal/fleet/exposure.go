@@ -129,10 +129,10 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 }
 
 // foldListen keeps the last good socket list when this check could not read
-// sockets. A failed read does not become an empty baseline, so the board
-// does not treat "ss failed" as nothing listening.
+// sockets or Docker's published ports. An incomplete read does not become
+// an empty baseline, so the board does not treat it as nothing listening.
 func foldListen(prev, ex Exposure) Exposure {
-	listenOK := !hasGap(ex.Gaps, "listening sockets")
+	listenOK := !hasGap(ex.Gaps, "listening sockets") && !hasGap(ex.Gaps, "docker ports")
 	if !listenOK && prev.BaselineSeeded {
 		ex.PublicPorts = append([]string{}, prev.PublicPorts...)
 		ex.ListeningOnAllInterfaces = append([]string{}, prev.ListeningOnAllInterfaces...)

@@ -106,4 +106,12 @@ func TestFailedSocketReadDoesNotSeedAnEmptyBaseline(t *testing.T) {
 	if !ok.BaselineSeeded || len(ok.BaselinePorts) != 1 || !ok.BaselineBindsSeeded {
 		t.Fatalf("a successful read was not kept: %+v", ok)
 	}
+	dockerFailed := foldListen(prev, Exposure{Ready: true, Gaps: []string{"docker ports"}, PublicPorts: []string{"80/tcp"}})
+	if len(dockerFailed.PublicPorts) != 1 || dockerFailed.PublicPorts[0] != "22/tcp" || dockerFailed.BaselinePorts[0] != "22/tcp" {
+		t.Fatalf("a failed Docker port read replaced the last list: %+v", dockerFailed)
+	}
+	firstDocker := foldListen(Exposure{}, Exposure{Ready: true, Gaps: []string{"docker ports"}, PublicPorts: []string{"80/tcp"}})
+	if firstDocker.BaselineSeeded {
+		t.Fatalf("the first partial read became the baseline: %+v", firstDocker)
+	}
 }
