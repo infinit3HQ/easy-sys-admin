@@ -168,7 +168,8 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
           <p className="break-words text-ink-2">
             {d.upgrade.packages?.length
               ? `${d.upgrade.packages.length} packages upgraded: ${d.upgrade.packages.join(', ')}`
-              : 'Nothing to upgrade.'}
+              : 'Nothing to upgrade.'}{' '}
+            The package result and the checks below are separate.
           </p>
           {d.upgrade.skipped?.length > 0 && (
             <p className="text-muted-foreground">
@@ -176,7 +177,7 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
             </p>
           )}
           {Array.isArray(d.checks) && d.checks.length > 0 && (
-            <ul className="space-y-1 text-ink-2">
+            <ul className="space-y-1">
               {d.checks.map(
                 (c: {
                   name: string
@@ -185,9 +186,21 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
                   detail?: string
                   overridden?: boolean
                 }) => (
-                  <li key={`${c.phase}-${c.name}`}>
+                  <li
+                    key={`${c.phase}-${c.name}`}
+                    className={
+                      c.state === 'fail'
+                        ? 'text-fail'
+                        : c.state === 'pass'
+                          ? 'text-ok'
+                          : 'text-warn'
+                    }
+                  >
                     {c.phase} {c.name}: {c.state}
                     {c.detail ? ` (${c.detail})` : ''}
+                    {c.state === 'unknown' && ' · esa could not run this check'}
+                    {c.state === 'unconfigured' &&
+                      ' · the unit or container is not there'}
                     {c.overridden && (
                       <span className="text-warn">
                         {' '}
