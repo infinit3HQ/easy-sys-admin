@@ -17,7 +17,7 @@ type PatchServer struct {
 	Held        []string
 	NotApproved []string
 	Health      string
-	Checks   []CheckResult
+	Checks      []CheckResult
 }
 
 // PatchReport is what an update run did, including skipped servers.
