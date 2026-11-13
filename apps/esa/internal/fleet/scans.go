@@ -13,8 +13,9 @@ import (
 const (
 	// maxScanBytes caps an imported scan result.
 	maxScanBytes = 10 << 20
-	// maxScanMatches caps stored matches per import.
-	maxScanMatches = 5000
+	// maxScanMatches caps stored matches per import. A real Ubuntu server
+	// with an old kernel still installed gave 14,384 matches.
+	maxScanMatches = 20000
 	// scanFeedMaxAge is how old the scanner's database, or the scan, may
 	// be before the result is shown as stale: a daily update with a day of
 	// slack. New advisories are published every day.

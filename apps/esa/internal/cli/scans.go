@@ -58,17 +58,20 @@ func scanCommands() []*cobra.Command {
 				defer f.Close()
 				in = f
 			}
-			raw, err := io.ReadAll(io.LimitReader(in, 10<<20+1))
+			// A full Grype report can be tens of MB; only a few fields are
+			// sent, so read up to 200 MiB here.
+			raw, err := io.ReadAll(io.LimitReader(in, 200<<20+1))
 			if err != nil {
 				return err
 			}
-			if len(raw) > 10<<20 {
-				return errors.New("the report is larger than 10 MiB")
+			if len(raw) > 200<<20 {
+				return errors.New("the report is larger than 200 MiB")
 			}
 			var body map[string]any
 			if err := json.Unmarshal(raw, &body); err != nil {
 				return fmt.Errorf("the report is not JSON: %w", err)
 			}
+			body = slimGrype(body)
 			cl, err := client()
 			if err != nil {
 				return err
@@ -89,4 +92,37 @@ func scanCommands() []*cobra.Command {
 		},
 	}
 	return []*cobra.Command{sbom, imp}
+}
+
+// slimGrype keeps only the fields esa reads, so a large report fits the
+// import limit. A real 69 MB report slimmed to 5 MB.
+func slimGrype(r map[string]any) map[string]any {
+	pick := func(m any, keys ...string) map[string]any {
+		src, _ := m.(map[string]any)
+		out := map[string]any{}
+		for _, k := range keys {
+			if v, ok := src[k]; ok {
+				out[k] = v
+			}
+		}
+		return out
+	}
+	desc := pick(r["descriptor"], "name", "version", "db")
+	matches, _ := r["matches"].([]any)
+	slim := make([]any, 0, len(matches))
+	for _, m := range matches {
+		mm, _ := m.(map[string]any)
+		related := []any{}
+		if rel, ok := mm["relatedVulnerabilities"].([]any); ok {
+			for _, x := range rel {
+				related = append(related, pick(x, "id"))
+			}
+		}
+		slim = append(slim, map[string]any{
+			"vulnerability":          pick(mm["vulnerability"], "id", "severity", "fix", "knownExploited", "epss"),
+			"relatedVulnerabilities": related,
+			"artifact":               pick(mm["artifact"], "name", "version", "type"),
+		})
+	}
+	return map[string]any{"descriptor": desc, "matches": slim}
 }

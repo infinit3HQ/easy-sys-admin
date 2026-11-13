@@ -112,7 +112,7 @@ With `--json` it prints the array of servers from the fleet overview.
 
 ### esa servers sbom <name|id> and esa servers scan-import <name|id> <file>
 
-`esa servers sbom` writes the server's installed packages as a CycloneDX SBOM to stdout. Run any scanner on it, wherever you like, then import a Grype JSON report with `esa servers scan-import`. esa sends the SBOM nowhere.
+`esa servers sbom` writes the server's installed packages as a CycloneDX SBOM to stdout. Run any scanner on it, wherever you like, then import a Grype JSON report with `esa servers scan-import`. esa sends the SBOM nowhere. `scan-import` keeps only the fields esa reads before it uploads, so a large report fits the 10 MiB limit (a real 69 MB report became 5 MB).
 
 ```sh
 esa servers sbom web-01 > web-01.cdx.json

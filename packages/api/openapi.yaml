@@ -3206,7 +3206,7 @@ components:
         coverage: { type: string, description: What this result does not prove. }
         matches:
           type: array
-          maxItems: 5000
+          maxItems: 20000
           items:
             type: object
             required: [id, package, version, severity, fixState, tier, reason]

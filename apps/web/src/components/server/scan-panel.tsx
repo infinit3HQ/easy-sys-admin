@@ -46,7 +46,7 @@ export function ScanPanel({
   })
   const upload = useMutation({
     mutationFn: async (f: File) => {
-      const body = JSON.parse(await f.text()) as Record<string, unknown>
+      const body = slimGrype(JSON.parse(await f.text()))
       return call(
         api().POST('/servers/{serverId}/scan', {
           params: { path: { serverId } },
@@ -152,4 +152,34 @@ export function ScanPanel({
       />
     </Panel>
   )
+}
+
+type Obj = Record<string, unknown>
+
+function pick(v: unknown, keys: string[]): Obj {
+  const src = (v ?? {}) as Obj
+  const out: Obj = {}
+  for (const k of keys) if (k in src) out[k] = src[k]
+  return out
+}
+
+/** Keeps only the fields esa reads, so a large Grype report fits the import limit. */
+function slimGrype(r: Obj): Obj {
+  const matches = Array.isArray(r.matches) ? (r.matches as Obj[]) : []
+  return {
+    descriptor: pick(r.descriptor, ['name', 'version', 'db']),
+    matches: matches.map((m) => ({
+      vulnerability: pick(m.vulnerability, [
+        'id',
+        'severity',
+        'fix',
+        'knownExploited',
+        'epss',
+      ]),
+      relatedVulnerabilities: Array.isArray(m.relatedVulnerabilities)
+        ? (m.relatedVulnerabilities as Obj[]).map((x) => pick(x, ['id']))
+        : [],
+      artifact: pick(m.artifact, ['name', 'version', 'type']),
+    })),
+  }
 }
