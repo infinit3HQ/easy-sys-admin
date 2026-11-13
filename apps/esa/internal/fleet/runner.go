@@ -877,9 +877,10 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 			var opts RunOptions
 			_ = run.Options.Decode(&opts)
 			failed, running := resumeState(run.Servers)
-			// Every server still "running" belongs to the batch that was in
-			// flight. Their upgrades went on without us, so follow all of them
-			// before the next batch starts.
+			// A server still marked running may have been claimed before the
+			// upgrade was sent. If this server has no upgrade, queue it again
+			// and start it below. If it does, follow that upgrade. A connection
+			// error is not "no upgrade": followUpgrade retries it.
 			failed = append(failed, runBatch(ctx, running, func(ctx context.Context, i int) bool {
 				rs := &run.Servers[i]
 				unlockServer, busy := s.lockServer(ctx, rs.ServerID)
@@ -887,12 +888,19 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 					s.setRunServer(ctx, rs, "failed", busy+"; the upgrade may still be running there", nil, 0)
 					return false
 				}
-				defer unlockServer()
 				ep, err := s.endpoint(ctx, rs.Server)
 				if err != nil {
+					unlockServer()
 					s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 					return false
 				}
+				if s.upgradeNotStarted(ctx, ep, run.ID) {
+					unlockServer()
+					rs.Status = "queued"
+					s.db.WithContext(ctx).Model(&store.RunServer{}).Where("id = ?", rs.ID).Updates(map[string]any{"status": "queued", "error": ""})
+					return true
+				}
+				defer unlockServer()
 				return s.followUpgrade(ctx, run, rs, ep, opts)
 			})...)
 			s.batched(ctx, run.Servers, opts, failed, func(ctx context.Context, rs *store.RunServer) bool {
@@ -918,6 +926,17 @@ func resumeState(servers []store.RunServer) (failed, running []int) {
 		}
 	}
 	return failed, running
+}
+
+// upgradeNotStarted reports that this server has no upgrade for the run.
+// A connection error is not that: the upgrade may already be running.
+func (s *Service) upgradeNotStarted(ctx context.Context, ep remote.Endpoint, runID int64) bool {
+	var res proto.UpgradeResult
+	cctx, cancel := context.WithTimeout(ctx, time.Minute)
+	err := s.pool.Call(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(runID, 10))
+	cancel()
+	var he *remote.HelperError
+	return errors.As(err, &he) && he.Code == proto.CodeBadRequest && strings.Contains(he.Message, "no upgrade with run id")
 }
 
 func humanBytes(n int64) string {

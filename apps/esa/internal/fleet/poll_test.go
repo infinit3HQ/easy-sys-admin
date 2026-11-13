@@ -176,6 +176,45 @@ func TestDeadWorkerFollowsAnUpgradeAlreadyRunning(t *testing.T) {
 	if finished.Status != "succeeded" {
 		t.Fatalf("run: %s %s", finished.Status, finished.Summary)
 	}
+	if f.upgradeStarts.Load() != 0 {
+		t.Fatal("following an upgrade started a second one")
+	}
+}
+
+// The worker died after marking the server running and before upgrade-start.
+// The server has no upgrade, so the next process starts one. It does not
+// wait out the follow timeout.
+func TestDeadWorkerStartsAnUpgradeThatWasNeverSent(t *testing.T) {
+	s := newTestService(t)
+	s.allowPrivate = true
+	ctx := context.Background()
+	a := signIn(t, s, "resume-before")
+	f := newFakeFleet(t, 0)
+	f.noUpgradeUntilStart = true
+	acceptAccountKey(t, s, f, a.AccountID)
+	t.Cleanup(s.pool.Close)
+	live := f.healthy()
+	ids := insertFakeServers(t, s, a.AccountID, []fakeHost{live}, func(int) int { return 0 }, func(int) time.Time { return time.Now() })
+	run := store.Run{AccountID: a.AccountID, Kind: string(RunUpdate), Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs := store.RunServer{RunID: run.ID, ServerID: ids[0], Status: "running", Detail: store.JSON("{}")}
+	if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.ResumeRuns(ctx)
+	s.Wait()
+	var still store.RunServer
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "succeeded" {
+		t.Fatalf("the upgrade was not started: %s %s", still.Status, still.Error)
+	}
+	if f.upgradeStarts.Load() != 1 {
+		t.Fatalf("upgrade-start calls: %d", f.upgradeStarts.Load())
+	}
 }
 
 // A dead server is marked unreachable after 3 missed polls, then deferred.

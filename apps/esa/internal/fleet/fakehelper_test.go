@@ -30,6 +30,10 @@ type fakeFleet struct {
 	t           *testing.T
 	statusDelay time.Duration
 	statusCalls atomic.Int64
+	// noUpgradeUntilStart makes the first upgrade-status calls say the run
+	// was never started, until upgrade-start has been seen.
+	noUpgradeUntilStart bool
+	upgradeStarts       atomic.Int64
 
 	keyMu     sync.Mutex
 	clientKey []byte // the account public key the servers accept
@@ -211,8 +215,18 @@ func (f *fakeFleet) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			_, _ = ch.Write(fakeStatusEnvelope)
 		case p.Command == updatesCommand:
 			_, _ = ch.Write(envelope(proto.PendingUpdates{}))
+		case strings.Contains(p.Command, " upgrade-precheck"):
+			_, _ = ch.Write(envelope(proto.Precheck{OK: true}))
+		case strings.Contains(p.Command, " upgrade-start "):
+			f.upgradeStarts.Add(1)
+			_, _ = ch.Write(envelope(proto.UpgradeStarted{Unit: "esa-upgrade"}))
 		case strings.Contains(p.Command, " upgrade-status "):
-			_, _ = ch.Write(envelope(proto.UpgradeResult{State: "succeeded", Packages: []string{"openssl"}}))
+			if f.noUpgradeUntilStart && f.upgradeStarts.Load() == 0 {
+				_, _ = ch.Write(envelopeError(proto.CodeBadRequest, "no upgrade with run id 0 on this server"))
+				exit = 1
+			} else {
+				_, _ = ch.Write(envelope(proto.UpgradeResult{State: "succeeded", Packages: []string{"openssl"}}))
+			}
 		default:
 			_, _ = ch.Stderr().Write([]byte("unknown action\n"))
 			exit = 1
@@ -225,6 +239,11 @@ func (f *fakeFleet) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 func envelope(v any) []byte {
 	data, _ := json.Marshal(v)
 	b, _ := json.Marshal(proto.Envelope{OK: true, Protocol: proto.Version, Data: data})
+	return b
+}
+
+func envelopeError(code, msg string) []byte {
+	b, _ := json.Marshal(proto.Envelope{OK: false, Protocol: proto.Version, Code: code, Error: msg})
 	return b
 }
 
