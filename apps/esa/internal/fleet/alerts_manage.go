@@ -306,7 +306,7 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 }
 
 func (s *Service) silenced(ctx context.Context, accountID, serverID int64, kind string) bool {
-	if kind == string(AlertHostKey) || kind == string(AlertNewKey) {
+	if kind == string(AlertHostKey) || kind == string(AlertNewKey) || kind == "vuln" {
 		return false
 	}
 	now := s.now()

@@ -290,6 +290,32 @@ func TestAutomaticScanUsesTheSameNoticePath(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("automatic scan notices: %d", n)
 	}
+	if _, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/vuln"}); err != nil {
+		t.Fatal(err)
+	}
+	note := &countNotifier{}
+	s.notifier = note
+	win := store.MaintenanceWindow{AccountID: a.AccountID, Reason: "patching", StartsAt: s.now().Add(-time.Minute), EndsAt: s.now().Add(time.Hour), CreatedBy: a.UserID}
+	if err := s.db.Omit("Account").Create(&win).Error; err != nil {
+		t.Fatal(err)
+	}
+	other := addTestServer(t, s, a, nil, "other")
+	if err := s.writeScan(ctx, System(other.AccountID), other, scanner, ver, built, matches); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for note.n.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if note.n.Load() != 1 {
+		t.Fatalf("known-exploited sends during maintenance: %d", note.n.Load())
+	}
+	if err := s.writeScan(ctx, System(other.AccountID), other, scanner, ver, built, matches); err != nil {
+		t.Fatal(err)
+	}
+	if note.n.Load() != 1 {
+		t.Fatal("the same advisory was sent again")
+	}
 }
 
 func imageGrype(digest, tag, built string) string {

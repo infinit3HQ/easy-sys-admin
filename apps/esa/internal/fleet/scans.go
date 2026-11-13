@@ -467,7 +467,18 @@ func (s *Service) reportScanIncidents(ctx context.Context, srv store.Server, mat
 		for _, al := range m.Aliases {
 			opened[al] = true
 		}
-		s.openIncident(ctx, srv.AccountID, srv.ID, "vuln", m.ID, srv.Name+": "+m.ID+" on "+m.Package+" "+m.Version+" is listed as known exploited", false)
+		msg := srv.Name + ": " + m.ID + " on " + m.Package + " " + m.Version + " is listed as known exploited"
+		if !s.openIncident(ctx, srv.AccountID, srv.ID, "vuln", m.ID, msg, false) {
+			continue
+		}
+		url := ""
+		if s.publicURL != nil {
+			url = s.publicURL.JoinPath("/app/alerts").String()
+		}
+		s.notify(ctx, srv.AccountID, Message{
+			Title: srv.Name + ": " + m.ID, Body: msg, Severity: "critical", Kind: "vuln",
+			ServerID: srv.ID, URL: url,
+		})
 	}
 	var rows []store.SecurityIncident
 	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, "vuln", "resolved").Find(&rows).Error; err != nil {
