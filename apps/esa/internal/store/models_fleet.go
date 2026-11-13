@@ -227,6 +227,11 @@ type ServerState struct {
 	LastAttemptAt *time.Time
 	LastError     string `gorm:"not null;default:''"`
 	MissedPolls   int    `gorm:"not null;default:0"`
+	// AuthFailures counts consecutive SSH authentication failures. It is
+	// stored so a restarted control plane does not try the login again at once.
+	AuthFailures int `gorm:"not null;default:0"`
+	// NextPollAt is the earliest time a scheduled poll may try this server.
+	NextPollAt *time.Time
 	// HostKeyMismatch is set when the server presented a different key.
 	// Every operation stops until a person accepts the new key.
 	HostKeyMismatch  bool   `gorm:"not null;default:false"`

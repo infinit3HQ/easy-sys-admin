@@ -44,6 +44,29 @@ func TestPollBackoffCombines(t *testing.T) {
 	}
 }
 
+func TestPollBackoffSurvivesRestart(t *testing.T) {
+	s := newTestService(t)
+	a := signIn(t, s, "backoff-restart")
+	srv := addTestServer(t, s, a, nil, "b1")
+	setSnapshot(t, s, srv, 10)
+	for range 3 {
+		s.recordAuthFailure(srv.ID)
+	}
+	s.rt().backoffMu.Lock()
+	s.rt().backoff = map[int64]*pollBackoff{}
+	s.rt().backoffMu.Unlock()
+	if !s.pollDeferred(srv.ID, time.Now()) {
+		t.Fatal("a restart would try a login that just failed")
+	}
+	s.clearBackoff(srv.ID)
+	s.rt().backoffMu.Lock()
+	s.rt().backoff = map[int64]*pollBackoff{}
+	s.rt().backoffMu.Unlock()
+	if s.pollDeferred(srv.ID, time.Now()) {
+		t.Fatal("clearing the back-off did not stick")
+	}
+}
+
 // A dead server is marked unreachable after 3 missed polls, then deferred.
 // Its alert still fires on the next poll after the rule's 3 minutes, and
 // resolves on the first poll that succeeds, which also ends the back-off.

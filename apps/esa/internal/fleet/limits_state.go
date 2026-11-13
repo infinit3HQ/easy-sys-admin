@@ -232,8 +232,9 @@ func (s *Service) finishDelivery(ctx context.Context, id int64, attempts int, er
 //     does not hold a poll worker for a connect or handshake timeout every
 //     minute.
 //
-// The state is in memory only. After a restart every server is tried once
-// and the back-off starts again from its stored missed-poll count.
+// The missed-poll count and the next poll time are stored on the server
+// row. A restarted control plane keeps waiting instead of trying every
+// failing login again at once. Rate limits stay in memory.
 type pollBackoff struct {
 	failures int
 	next     time.Time
@@ -270,6 +271,7 @@ func (s *Service) recordAuthFailure(serverID int64) time.Duration {
 	b.failures++
 	d := backoffDelay(b.failures)
 	b.next = time.Now().Add(d)
+	s.saveBackoff(serverID, b.failures, b.next)
 	return d
 }
 
@@ -278,6 +280,7 @@ func (s *Service) clearBackoff(serverID int64) {
 	rt.backoffMu.Lock()
 	delete(rt.backoff, serverID)
 	rt.backoffMu.Unlock()
+	s.saveBackoff(serverID, 0, time.Time{})
 }
 
 // recordUnreachable defers scheduled polls of a server that stopped
@@ -300,6 +303,7 @@ func (s *Service) recordUnreachable(serverID int64) {
 	if next.After(b.next) {
 		b.next = next
 	}
+	s.saveBackoff(serverID, b.failures, b.next)
 }
 
 // startCycle records the start of a poll cycle and returns it.
@@ -315,9 +319,46 @@ func (s *Service) startCycle() time.Time {
 // pollDeferred reports whether scheduled polling of a server is backing
 // off at time at, the start of the poll cycle asking.
 func (s *Service) pollDeferred(serverID int64, at time.Time) bool {
+	b := s.backoffFor(serverID)
+	return b != nil && at.Before(b.next)
+}
+
+func (s *Service) backoffFor(serverID int64) *pollBackoff {
 	rt := s.rt()
 	rt.backoffMu.Lock()
-	defer rt.backoffMu.Unlock()
-	b := rt.backoff[serverID]
-	return b != nil && at.Before(b.next)
+	if b, ok := rt.backoff[serverID]; ok {
+		rt.backoffMu.Unlock()
+		return b
+	}
+	rt.backoffMu.Unlock()
+	if s.db == nil {
+		return nil
+	}
+	var st store.ServerState
+	if err := s.db.Select("auth_failures", "next_poll_at").Where("server_id = ?", serverID).Take(&st).Error; err != nil {
+		return nil
+	}
+	b := &pollBackoff{failures: st.AuthFailures}
+	if st.NextPollAt != nil {
+		b.next = *st.NextPollAt
+	}
+	rt.backoffMu.Lock()
+	if existing, ok := rt.backoff[serverID]; ok {
+		rt.backoffMu.Unlock()
+		return existing
+	}
+	rt.backoff[serverID] = b
+	rt.backoffMu.Unlock()
+	return b
+}
+
+func (s *Service) saveBackoff(serverID int64, failures int, next time.Time) {
+	if s.db == nil {
+		return
+	}
+	changes := map[string]any{"auth_failures": failures, "next_poll_at": nil}
+	if !next.IsZero() {
+		changes["next_poll_at"] = next
+	}
+	s.db.Model(&store.ServerState{}).Where("server_id = ?", serverID).Updates(changes)
 }

@@ -115,7 +115,7 @@ Polling details from `apps/esa/internal/fleet/poll.go`:
 - The pending update list is refreshed from apt's existing lists when it is older than 6 hours. It does not run `apt-get update`.
 - Servers that keep refusing esa's SSH login are polled less often: no delay for the first two failures, then 2, 4, 8, and 16 minutes, capped at 30. Such a server also counts as unreachable after 3 failures, and the longer of the two delays applies.
 - A server whose host key changed is not contacted until a person accepts the new key.
-- Back-off state is kept in memory. After a restart every server is tried once, and servers that still do not answer go back to every 5 minutes.
+- Back-off state is stored on the server row. A restarted control plane does not immediately retry a login that just failed. Rate limits stay in memory.
 - The control plane serves `GET /metrics` with the last cycle's duration, server count, and skipped count, poll results and durations, pool size, running runs, and the notification queue. See [deployment.md](deployment.md#monitoring).
 
 The schedule tick claims each slot with a conditional update, so two ticks or two control plane processes never start the same slot twice. A slot more than one hour late, for example after the control plane was down, is recorded as a `missed` run instead of running late.
