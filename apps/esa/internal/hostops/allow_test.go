@@ -48,3 +48,13 @@ func TestParseDpkgVersions(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestParseDpkgWithSource(t *testing.T) {
+	out := "installed\tlibc6\t2.39-0ubuntu8.9\tarm64\tglibc\t2.39-0ubuntu8.9\n" +
+		"config-files\told\t1.0\tall\told\t1.0\n" +
+		"installed\tadduser\t3.137ubuntu1\tall\n"
+	pkgs, _ := parseDpkg(out)
+	if len(pkgs) != 2 || pkgs[0].Source != "glibc" || pkgs[0].SourceVersion != "2.39-0ubuntu8.9" || pkgs[1].Source != "" {
+		t.Fatalf("got %+v", pkgs)
+	}
+}

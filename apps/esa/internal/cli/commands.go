@@ -169,6 +169,7 @@ func findServer(ctx context.Context, ref string) (apiclient.Server, error) {
 
 func serversCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "servers", Short: "List and inspect servers"}
+	cmd.AddCommand(scanCommands()...)
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List servers",

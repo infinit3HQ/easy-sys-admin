@@ -1984,6 +1984,39 @@ type SSHKey struct {
 	PublicKey   string `json:"publicKey"`
 }
 
+// ScanReport defines model for ScanReport.
+type ScanReport struct {
+	// Coverage What this result does not prove.
+	Coverage string `json:"coverage"`
+
+	// DbBuilt When the scanner's vulnerability database was built.
+	DbBuilt    *time.Time `json:"dbBuilt,omitempty"`
+	Imported   bool       `json:"imported"`
+	ImportedAt *time.Time `json:"importedAt,omitempty"`
+	Matches    []struct {
+		Aliases        *[]string `json:"aliases,omitempty"`
+		Epss           *float32  `json:"epss,omitempty"`
+		FixState       string    `json:"fixState"`
+		FixedIn        *[]string `json:"fixedIn,omitempty"`
+		Id             string    `json:"id"`
+		KnownExploited *bool     `json:"knownExploited,omitempty"`
+		Package        string    `json:"package"`
+		Reason         string    `json:"reason"`
+
+		// Severity As the scanner reported it.
+		Severity string `json:"severity"`
+
+		// Tier 1 known exploited, 2 high or critical with a fix, 3 the rest.
+		Tier    int    `json:"tier"`
+		Version string `json:"version"`
+	} `json:"matches"`
+	Scanner        string `json:"scanner"`
+	ScannerVersion string `json:"scannerVersion"`
+
+	// Stale True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.
+	Stale bool `json:"stale"`
+}
+
 // Scope defines model for Scope.
 type Scope string
 
@@ -2417,6 +2450,9 @@ type GetServerMetricsParams struct {
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
 
+// ImportServerScanJSONBody defines parameters for ImportServerScan.
+type ImportServerScanJSONBody map[string]interface{}
+
 // SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
 type SetRoutingJSONRequestBody = Routing
 
@@ -2521,6 +2557,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
+
+// ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
+type ImportServerScanJSONRequestBody ImportServerScanJSONBody
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -3389,6 +3428,30 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 	GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	//
+	// Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
+	GetServerSbom(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
+	//
+	// Corresponds with GET /servers/{serverId}/scan (the `GetServerScan` operationId).
+	GetServerScan(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImportServerScanWithBody Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+	ImportServerScanWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImportServerScan Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+	ImportServerScan(ctx context.Context, serverId ServerId, body ImportServerScanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	//
@@ -5522,6 +5585,70 @@ func (c *Client) GetServerMetrics(ctx context.Context, serverId ServerId, params
 // Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 func (c *Client) GetServerRecovery(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerRecoveryRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+//
+// Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
+func (c *Client) GetServerSbom(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetServerSbomRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
+//
+// Corresponds with GET /servers/{serverId}/scan (the `GetServerScan` operationId).
+func (c *Client) GetServerScan(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetServerScanRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ImportServerScanWithBody Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+func (c *Client) ImportServerScanWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImportServerScanRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ImportServerScan Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+func (c *Client) ImportServerScan(ctx context.Context, serverId ServerId, body ImportServerScanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImportServerScanRequest(c.Server, serverId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -9470,6 +9597,121 @@ func NewGetServerRecoveryRequest(server string, serverId ServerId) (*http.Reques
 	return req, nil
 }
 
+// NewGetServerSbomRequest constructs an http.Request for the GetServerSbom method
+func NewGetServerSbomRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/sbom", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetServerScanRequest constructs an http.Request for the GetServerScan method
+func NewGetServerScanRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/scan", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewImportServerScanRequest calls the generic ImportServerScan builder with application/json body
+func NewImportServerScanRequest(server string, serverId ServerId, body ImportServerScanJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewImportServerScanRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewImportServerScanRequestWithBody constructs an http.Request for the ImportServerScan method, with any body, and a specified content type
+func NewImportServerScanRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/scan", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetServerSecurityRequest constructs an http.Request for the GetServerSecurity method
 func NewGetServerSecurityRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -10810,6 +11052,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
 	GetServerRecoveryWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerRecoveryResponse, error)
+
+	// GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
+	GetServerSbomWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerSbomResponse, error)
+
+	// GetServerScanWithResponse The newest vulnerability scan of this server, ranked, with the scanner and database age
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/scan (the `GetServerScan` operationId).
+	GetServerScanWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerScanResponse, error)
+
+	// ImportServerScanWithBodyWithResponse Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+	ImportServerScanWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportServerScanResponse, error)
+
+	// ImportServerScanWithResponse Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+	ImportServerScanWithResponse(ctx context.Context, serverId ServerId, body ImportServerScanJSONRequestBody, reqEditors ...RequestEditorFn) (*ImportServerScanResponse, error)
 
 	// GetServerSecurityWithResponse Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	//
@@ -15262,6 +15532,150 @@ func (r GetServerRecoveryResponse) ContentType() string {
 	return ""
 }
 
+type GetServerSbomResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *map[string]interface{}
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetServerSbomResponse) GetJSON200() *map[string]interface{} {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetServerSbomResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetServerSbomResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetServerSbomResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetServerSbomResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetServerSbomResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetServerScanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScanReport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetServerScanResponse) GetJSON200() *ScanReport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetServerScanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetServerScanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetServerScanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetServerScanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetServerScanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ImportServerScanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScanReport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ImportServerScanResponse) GetJSON200() *ScanReport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ImportServerScanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ImportServerScanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ImportServerScanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ImportServerScanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ImportServerScanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerSecurityResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -17446,6 +17860,58 @@ func (c *ClientWithResponses) GetServerRecoveryWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseGetServerRecoveryResponse(rsp)
+}
+
+// GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
+func (c *ClientWithResponses) GetServerSbomWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerSbomResponse, error) {
+	rsp, err := c.GetServerSbom(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetServerSbomResponse(rsp)
+}
+
+// GetServerScanWithResponse The newest vulnerability scan of this server, ranked, with the scanner and database age
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/scan (the `GetServerScan` operationId).
+func (c *ClientWithResponses) GetServerScanWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerScanResponse, error) {
+	rsp, err := c.GetServerScan(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetServerScanResponse(rsp)
+}
+
+// ImportServerScanWithBodyWithResponse Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+func (c *ClientWithResponses) ImportServerScanWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportServerScanResponse, error) {
+	rsp, err := c.ImportServerScanWithBody(ctx, serverId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImportServerScanResponse(rsp)
+}
+
+// ImportServerScanWithResponse Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/scan (the `ImportServerScan` operationId).
+func (c *ClientWithResponses) ImportServerScanWithResponse(ctx context.Context, serverId ServerId, body ImportServerScanJSONRequestBody, reqEditors ...RequestEditorFn) (*ImportServerScanResponse, error) {
+	rsp, err := c.ImportServerScan(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImportServerScanResponse(rsp)
 }
 
 // GetServerSecurityWithResponse Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
@@ -20609,6 +21075,105 @@ func ParseGetServerRecoveryResponse(rsp *http.Response) (*GetServerRecoveryRespo
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest RecoveryReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetServerSbomResponse parses an HTTP response from a GetServerSbomWithResponse call
+func ParseGetServerSbomResponse(rsp *http.Response) (*GetServerSbomResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetServerSbomResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest map[string]interface{}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetServerScanResponse parses an HTTP response from a GetServerScanWithResponse call
+func ParseGetServerScanResponse(rsp *http.Response) (*GetServerScanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetServerScanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScanReport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseImportServerScanResponse parses an HTTP response from a ImportServerScanWithResponse call
+func ParseImportServerScanResponse(rsp *http.Response) (*ImportServerScanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ImportServerScanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScanReport
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

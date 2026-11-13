@@ -13,6 +13,7 @@ import {
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { useServerAccess } from '#/components/server/use-access'
+import { ScanPanel } from '#/components/server/scan-panel'
 import {
   Table,
   TableBody,
@@ -283,6 +284,14 @@ function banText(
 }
 
 export function SecurityTab({ serverId }: { serverId: number }) {
+  const detail = useQuery(q.server(serverId))
+  const { canManage } = useServerAccess(
+    detail.data?.server ?? {
+      access: 'view',
+      ownerTeam: null,
+      yourRole: 'viewer',
+    },
+  )
   const r = useQuery(q.security(serverId))
   const recovery = useQuery(q.recovery(serverId))
   const advisories = useQuery(q.advisories(serverId))
@@ -317,16 +326,25 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           ))}
         </ul>
       </Panel>
+      <ScanPanel
+        serverId={serverId}
+        serverName={detail.data?.server.name ?? 'server'}
+        canImport={canManage}
+      />
       {advisories.data && (
         <Panel title="Advisories" className="xl:col-span-2">
-          <p className="text-xs text-muted-foreground">{advisories.data.coverage}</p>
+          <p className="text-xs text-muted-foreground">
+            {advisories.data.coverage}
+          </p>
           <p className="mt-2 font-mono text-xs text-faint">
-            {advisories.data.distro} {advisories.data.release} · {advisories.data.packages} packages · feed {advisories.data.feed}
+            {advisories.data.distro} {advisories.data.release} ·{' '}
+            {advisories.data.packages} packages · feed {advisories.data.feed}
           </p>
           <ul className="mt-2 space-y-1 font-mono text-xs">
             {advisories.data.matches.map((m) => (
               <li key={`${m.id}-${m.package}`}>
-                {m.id} {m.package} {m.version} · fixed {m.fixed || 'unknown'} · {m.severity}
+                {m.id} {m.package} {m.version} · fixed {m.fixed || 'unknown'} ·{' '}
+                {m.severity}
               </li>
             ))}
           </ul>

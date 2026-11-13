@@ -1985,6 +1985,39 @@ type SSHKey struct {
 	PublicKey   string `json:"publicKey"`
 }
 
+// ScanReport defines model for ScanReport.
+type ScanReport struct {
+	// Coverage What this result does not prove.
+	Coverage string `json:"coverage"`
+
+	// DbBuilt When the scanner's vulnerability database was built.
+	DbBuilt    *time.Time `json:"dbBuilt,omitempty"`
+	Imported   bool       `json:"imported"`
+	ImportedAt *time.Time `json:"importedAt,omitempty"`
+	Matches    []struct {
+		Aliases        *[]string `json:"aliases,omitempty"`
+		Epss           *float32  `json:"epss,omitempty"`
+		FixState       string    `json:"fixState"`
+		FixedIn        *[]string `json:"fixedIn,omitempty"`
+		Id             string    `json:"id"`
+		KnownExploited *bool     `json:"knownExploited,omitempty"`
+		Package        string    `json:"package"`
+		Reason         string    `json:"reason"`
+
+		// Severity As the scanner reported it.
+		Severity string `json:"severity"`
+
+		// Tier 1 known exploited, 2 high or critical with a fix, 3 the rest.
+		Tier    int    `json:"tier"`
+		Version string `json:"version"`
+	} `json:"matches"`
+	Scanner        string `json:"scanner"`
+	ScannerVersion string `json:"scannerVersion"`
+
+	// Stale True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.
+	Stale bool `json:"stale"`
+}
+
 // Scope defines model for Scope.
 type Scope string
 
@@ -2418,6 +2451,9 @@ type GetServerMetricsParams struct {
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
 
+// ImportServerScanJSONBody defines parameters for ImportServerScan.
+type ImportServerScanJSONBody map[string]interface{}
+
 // SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
 type SetRoutingJSONRequestBody = Routing
 
@@ -2522,6 +2558,9 @@ type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
 
 // ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
 type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
+
+// ImportServerScanJSONRequestBody defines body for ImportServerScan for application/json ContentType.
+type ImportServerScanJSONRequestBody ImportServerScanJSONBody
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -2810,6 +2849,15 @@ type ServerInterface interface {
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// (GET /servers/{serverId}/sbom)
+	GetServerSbom(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
+	// (GET /servers/{serverId}/scan)
+	GetServerScan(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// ImportServerScan Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	// (POST /servers/{serverId}/scan)
+	ImportServerScan(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -5126,6 +5174,84 @@ func (siw *ServerInterfaceWrapper) GetServerRecovery(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetServerSbom operation middleware
+func (siw *ServerInterfaceWrapper) GetServerSbom(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetServerSbom(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetServerScan operation middleware
+func (siw *ServerInterfaceWrapper) GetServerScan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetServerScan(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ImportServerScan operation middleware
+func (siw *ServerInterfaceWrapper) ImportServerScan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportServerScan(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerSecurity operation middleware
 func (siw *ServerInterfaceWrapper) GetServerSecurity(w http.ResponseWriter, r *http.Request) {
 
@@ -5557,6 +5683,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/security", wrapper.GetServerSecurity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/jobs", wrapper.GetServerJobs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.GetServerRecovery)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/sbom", wrapper.GetServerSbom)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.GetServerScan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.ImportServerScan)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/advisories", wrapper.GetServerAdvisories)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/groups", wrapper.ListGroups)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/groups", wrapper.CreateGroup)
@@ -9170,6 +9299,124 @@ func (response GetServerRecoverydefaultJSONResponse) VisitGetServerRecoveryRespo
 	return err
 }
 
+type GetServerSbomRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type GetServerSbomResponseObject interface {
+	VisitGetServerSbomResponse(w http.ResponseWriter) error
+}
+
+type GetServerSbom200JSONResponse map[string]interface{}
+
+func (response GetServerSbom200JSONResponse) VisitGetServerSbomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetServerSbomdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetServerSbomdefaultJSONResponse) VisitGetServerSbomResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetServerScanRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type GetServerScanResponseObject interface {
+	VisitGetServerScanResponse(w http.ResponseWriter) error
+}
+
+type GetServerScan200JSONResponse ScanReport
+
+func (response GetServerScan200JSONResponse) VisitGetServerScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetServerScandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetServerScandefaultJSONResponse) VisitGetServerScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportServerScanRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Body     *ImportServerScanJSONRequestBody
+}
+
+type ImportServerScanResponseObject interface {
+	VisitImportServerScanResponse(w http.ResponseWriter) error
+}
+
+type ImportServerScan200JSONResponse ScanReport
+
+func (response ImportServerScan200JSONResponse) VisitImportServerScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ImportServerScandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ImportServerScandefaultJSONResponse) VisitImportServerScanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerSecurityRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -9869,6 +10116,15 @@ type StrictServerInterface interface {
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(ctx context.Context, request GetServerRecoveryRequestObject) (GetServerRecoveryResponseObject, error)
+	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// (GET /servers/{serverId}/sbom)
+	GetServerSbom(ctx context.Context, request GetServerSbomRequestObject) (GetServerSbomResponseObject, error)
+	// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
+	// (GET /servers/{serverId}/scan)
+	GetServerScan(ctx context.Context, request GetServerScanRequestObject) (GetServerScanResponseObject, error)
+	// ImportServerScan Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+	// (POST /servers/{serverId}/scan)
+	ImportServerScan(ctx context.Context, request ImportServerScanRequestObject) (ImportServerScanResponseObject, error)
 	// GetServerSecurity Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
 	// (GET /servers/{serverId}/security)
 	GetServerSecurity(ctx context.Context, request GetServerSecurityRequestObject) (GetServerSecurityResponseObject, error)
@@ -12549,6 +12805,91 @@ func (sh *strictHandler) GetServerRecovery(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerRecoveryResponseObject); ok {
 		if err := validResponse.VisitGetServerRecoveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetServerSbom operation middleware
+func (sh *strictHandler) GetServerSbom(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request GetServerSbomRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetServerSbom(ctx, request.(GetServerSbomRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetServerSbom")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetServerSbomResponseObject); ok {
+		if err := validResponse.VisitGetServerSbomResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetServerScan operation middleware
+func (sh *strictHandler) GetServerScan(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request GetServerScanRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetServerScan(ctx, request.(GetServerScanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetServerScan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetServerScanResponseObject); ok {
+		if err := validResponse.VisitGetServerScanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ImportServerScan operation middleware
+func (sh *strictHandler) ImportServerScan(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ImportServerScanRequestObject
+
+	request.ServerId = serverId
+
+	var body ImportServerScanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ImportServerScan(ctx, request.(ImportServerScanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ImportServerScan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ImportServerScanResponseObject); ok {
+		if err := validResponse.VisitImportServerScanResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

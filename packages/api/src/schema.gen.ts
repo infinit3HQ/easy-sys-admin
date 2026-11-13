@@ -648,6 +648,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/sbom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. */
+        get: operations["getServerSbom"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** The newest vulnerability scan of this server, ranked, with the scanner and database age */
+        get: operations["getServerScan"];
+        put?: never;
+        /** Import a Grype JSON report made from this server's SBOM. Up to 10 MiB. */
+        post: operations["importServerScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/advisories": {
         parameters: {
             query?: never;
@@ -2629,6 +2668,37 @@ export interface components {
             servers: components["schemas"]["RunServer"][];
             gate?: components["schemas"]["RunGate"];
         };
+        ScanReport: {
+            imported: boolean;
+            scanner: string;
+            scannerVersion: string;
+            /**
+             * Format: date-time
+             * @description When the scanner's vulnerability database was built.
+             */
+            dbBuilt?: string | null;
+            /** Format: date-time */
+            importedAt?: string | null;
+            /** @description True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old. */
+            stale: boolean;
+            /** @description What this result does not prove. */
+            coverage: string;
+            matches: {
+                id: string;
+                aliases?: string[];
+                package: string;
+                version: string;
+                /** @description As the scanner reported it. */
+                severity: string;
+                fixState: string;
+                fixedIn?: string[];
+                knownExploited?: boolean;
+                epss?: number;
+                /** @description 1 known exploited, 2 high or critical with a fix, 3 the rest. */
+                tier: number;
+                reason: string;
+            }[];
+        };
         /** @description Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it. */
         CheckOverride: {
             checks: string[];
@@ -4038,6 +4108,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RecoveryReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerSbom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CycloneDX JSON */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The scan. No import is not a clean result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    importServerScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored scan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanReport"];
                 };
             };
             default: components["responses"]["Error"];

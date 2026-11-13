@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -82,6 +84,19 @@ func redactPath(p string) string { return api.RedactPath(p) }
 // maxBodyBytes caps request bodies for the API, sign-in forms, and enroll.
 const maxBodyBytes = 1 << 20
 
+// maxScanBytes is the cap for a scan report imported for one server.
+const maxScanBytes = 10 << 20
+
+var scanImportPath = regexp.MustCompile(`^/api/v1/servers/[0-9]+/scan$`)
+
+// bodyLimit is the cap for one request path.
+func bodyLimit(p string) int64 {
+	if scanImportPath.MatchString(p) {
+		return maxScanBytes
+	}
+	return maxBodyBytes
+}
+
 // limitBodies answers 413 in the API's error format when a body is over
 // maxBodyBytes. The body is read up front because the web app's proxy
 // forwards it chunked, without a Content-Length to check.
@@ -92,11 +107,12 @@ func limitBodies(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+		limit := bodyLimit(p)
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 		var tooLarge *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooLarge):
-			writeJSONError(w, http.StatusRequestEntityTooLarge, "too_large", "The request body is larger than 1 MiB.")
+			writeJSONError(w, http.StatusRequestEntityTooLarge, "too_large", fmt.Sprintf("The request body is larger than %d MiB.", limit>>20))
 			return
 		case err != nil:
 			writeJSONError(w, http.StatusBadRequest, "bad_request", "The request body could not be read.")

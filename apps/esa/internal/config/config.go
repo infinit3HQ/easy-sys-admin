@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -58,6 +59,10 @@ type Config struct {
 	Metrics bool
 	// AdvisoryFeed is ESA_ADVISORY_FEED, a local file. Empty leaves matching off.
 	AdvisoryFeed string
+	// Scanner is ESA_SCANNER, the absolute path of a Grype binary on this
+	// host. When set, esa updates its database daily and scans each
+	// server's SBOM locally. Empty leaves scanning to manual imports.
+	Scanner string
 	// AuditRetention is ESA_AUDIT_RETENTION. Zero keeps the audit log until
 	// the account is deleted. Hosted installs leave it zero.
 	AuditRetention time.Duration
@@ -257,6 +262,14 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 		return fmt.Errorf("ESA_METRICS: %w", err)
 	}
 	cfg.AdvisoryFeed = get("ESA_ADVISORY_FEED", "")
+	if cfg.Scanner = get("ESA_SCANNER", ""); cfg.Scanner != "" {
+		if !filepath.IsAbs(cfg.Scanner) {
+			return fmt.Errorf("ESA_SCANNER: must be an absolute path")
+		}
+		if fi, err := os.Stat(cfg.Scanner); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+			return fmt.Errorf("ESA_SCANNER: %s is not an executable file", cfg.Scanner)
+		}
+	}
 	if s := get("ESA_AUDIT_RETENTION", ""); s != "" {
 		if cfg.AuditRetention, err = parseDuration(s, 24*time.Hour, 0); err != nil {
 			return fmt.Errorf("ESA_AUDIT_RETENTION: %w", err)

@@ -31,6 +31,7 @@ func Models() []any {
 		&HeldWarning{},
 		&AccessIdentity{},
 		&KeyBaselineVersion{},
+		&ScanImport{},
 		&KeyOccurrence{},
 		&KeyLabel{},
 		&KeyBaseline{},

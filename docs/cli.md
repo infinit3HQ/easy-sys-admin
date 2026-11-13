@@ -110,6 +110,16 @@ esa servers list --json
 
 With `--json` it prints the array of servers from the fleet overview.
 
+### esa servers sbom <name|id> and esa servers scan-import <name|id> <file>
+
+`esa servers sbom` writes the server's installed packages as a CycloneDX SBOM to stdout. Run any scanner on it, wherever you like, then import a Grype JSON report with `esa servers scan-import`. esa sends the SBOM nowhere.
+
+```sh
+esa servers sbom web-01 > web-01.cdx.json
+grype sbom:web-01.cdx.json -o json > web-01.grype.json
+esa servers scan-import web-01 web-01.grype.json
+```
+
 ### esa servers show <name|id>
 
 Shows one server's latest snapshot: status reasons, OS, kernel, uptime, CPU, load, memory, a table of mounts, and the pending update count.

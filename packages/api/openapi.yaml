@@ -733,6 +733,52 @@ paths:
               schema: { $ref: '#/components/schemas/RecoveryReport' }
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/sbom:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerSbom
+      summary: The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+      tags: [server-live]
+      responses:
+        '200':
+          description: CycloneDX JSON
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/scan:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerScan
+      summary: The newest vulnerability scan of this server, ranked, with the scanner and database age
+      tags: [server-live]
+      responses:
+        '200':
+          description: The scan. No import is not a clean result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanReport' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: importServerScan
+      summary: Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+      tags: [server-live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: The stored scan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanReport' }
+        default: { $ref: '#/components/responses/Error' }
+
   /servers/{serverId}/advisories:
     parameters:
       - $ref: '#/components/parameters/ServerId'
@@ -3146,6 +3192,36 @@ components:
         bytesFreed: { type: integer, format: int64 }
         servers: { type: array, items: { $ref: '#/components/schemas/RunServer' } }
         gate: { $ref: '#/components/schemas/RunGate' }
+
+    ScanReport:
+      type: object
+      required: [imported, scanner, scannerVersion, stale, coverage, matches]
+      properties:
+        imported: { type: boolean }
+        scanner: { type: string }
+        scannerVersion: { type: string }
+        dbBuilt: { type: string, format: date-time, nullable: true, description: When the scanner's vulnerability database was built. }
+        importedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, description: 'True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.' }
+        coverage: { type: string, description: What this result does not prove. }
+        matches:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            required: [id, package, version, severity, fixState, tier, reason]
+            properties:
+              id: { type: string }
+              aliases: { type: array, items: { type: string } }
+              package: { type: string }
+              version: { type: string }
+              severity: { type: string, description: As the scanner reported it. }
+              fixState: { type: string }
+              fixedIn: { type: array, items: { type: string } }
+              knownExploited: { type: boolean }
+              epss: { type: number }
+              tier: { type: integer, description: '1 known exploited, 2 high or critical with a fix, 3 the rest.' }
+              reason: { type: string }
 
     CheckOverride:
       type: object

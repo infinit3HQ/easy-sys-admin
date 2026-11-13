@@ -334,4 +334,9 @@ type InstalledPackage struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
 	Arch    string `json:"arch"`
+	// Source and SourceVersion are the source package it was built from.
+	// Debian and Ubuntu advisories are mostly keyed by source package.
+	// Empty from helpers older than this field.
+	Source        string `json:"source,omitempty"`
+	SourceVersion string `json:"sourceVersion,omitempty"`
 }

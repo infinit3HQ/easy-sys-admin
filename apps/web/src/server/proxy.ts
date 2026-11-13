@@ -27,6 +27,9 @@ const CLIENT_SPOOFABLE = new Set([
 ])
 
 const MAX_BODY_BYTES = 1 << 20
+// A scan report imported for one server may be up to 10 MiB.
+const MAX_SCAN_BYTES = 10 << 20
+const SCAN_IMPORT_PATH = /^\/api\/v1\/servers\/\d+\/scan$/
 
 // Most calls answer quickly. Calls that wait on a managed server over SSH
 // (probes, helper installs, apt-get update, image checks, service and
@@ -53,11 +56,14 @@ export async function proxyToControlPlane(request: Request): Promise<Response> {
   const target = new URL(incoming.pathname + incoming.search, apiOrigin())
 
   const length = request.headers.get('content-length')
-  if (length !== null && !(Number(length) <= MAX_BODY_BYTES)) {
+  const limit = SCAN_IMPORT_PATH.test(incoming.pathname)
+    ? MAX_SCAN_BYTES
+    : MAX_BODY_BYTES
+  if (length !== null && !(Number(length) <= limit)) {
     return errorResponse(
       413,
       'too_large',
-      'The request body is larger than 1 MiB.',
+      `The request body is larger than ${limit >> 20} MiB.`,
     )
   }
 

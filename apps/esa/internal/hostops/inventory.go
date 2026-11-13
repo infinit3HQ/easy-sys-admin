@@ -16,7 +16,7 @@ func (h *Host) Inventory(ctx context.Context) (proto.PackageInventory, error) {
 	rep := proto.PackageInventory{Packages: []proto.InstalledPackage{}, Gaps: []string{}}
 	id, release := h.distro()
 	rep.Distro, rep.Release = id, release
-	out, err := h.output(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n`)
+	out, err := h.output(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n`)
 	if err != nil {
 		return rep, fmt.Errorf("dpkg-query failed: %w", err)
 	}
@@ -40,13 +40,17 @@ func parseDpkg(out string) (pkgs []proto.InstalledPackage, truncated bool) {
 	pkgs = []proto.InstalledPackage{}
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Split(line, "\t")
-		if len(f) != 4 || f[0] != "installed" || !packageName(f[1]) {
+		if (len(f) != 4 && len(f) != 6) || f[0] != "installed" || !packageName(f[1]) {
 			continue
 		}
 		if len(pkgs) == maxPackages {
 			return pkgs, true
 		}
-		pkgs = append(pkgs, proto.InstalledPackage{Name: f[1], Version: f[2], Arch: f[3]})
+		p := proto.InstalledPackage{Name: f[1], Version: f[2], Arch: f[3]}
+		if len(f) == 6 && packageName(f[4]) {
+			p.Source, p.SourceVersion = f[4], f[5]
+		}
+		pkgs = append(pkgs, p)
 	}
 	return pkgs, false
 }

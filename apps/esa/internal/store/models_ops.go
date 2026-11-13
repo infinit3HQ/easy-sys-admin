@@ -157,6 +157,24 @@ type NotifyDelivery struct {
 	Channel NotifyChannel `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// ScanImport is one vulnerability scan result an operator imported for a
+// server. esa does not run the scanner or download its database; the
+// result is evidence from that tool, with its version and database age.
+type ScanImport struct {
+	ID             int64  `gorm:"primaryKey"`
+	AccountID      int64  `gorm:"not null;index"`
+	ServerID       int64  `gorm:"not null;index"`
+	Scanner        string `gorm:"not null;size:40"`
+	ScannerVersion string `gorm:"not null;default:'';size:40"`
+	DBBuilt        *time.Time
+	Matches        JSON      `gorm:"type:jsonb;not null"`
+	ImportedAt     time.Time `gorm:"not null"`
+	ImportedBy     int64     `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // HeldWarning is a warning waiting for the space's daily summary. It is
 // stored, so a restart does not lose it, and deleted once summarised.
 type HeldWarning struct {

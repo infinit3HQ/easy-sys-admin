@@ -64,6 +64,9 @@ Live data read from a server through esa-helper.
 | GET | `/servers/{serverId}/security` | Session or token | Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades |
 | GET | `/servers/{serverId}/jobs` | Session or token | Cron entries and systemd timers |
 | GET | `/servers/{serverId}/recovery` | Session or token | Backup reports an operator wrote on the server |
+| GET | `/servers/{serverId}/sbom` | Session or token | The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. |
+| GET | `/servers/{serverId}/scan` | Session or token | The newest vulnerability scan of this server, ranked, with the scanner and database age |
+| POST | `/servers/{serverId}/scan` | Session or token | Import a Grype JSON report made from this server's SBOM. Up to 10 MiB. |
 | GET | `/servers/{serverId}/advisories` | Session or token | Exact affected versions from an imported local feed |
 
 ## groups

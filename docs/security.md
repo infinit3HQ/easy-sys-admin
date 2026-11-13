@@ -138,14 +138,15 @@ The tools a client sees depend on the token's scopes:
 
 ## Request limits
 
-| Limit                                                                                                      | Where                                                     |
-| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Bodies over 1 MiB get 413, judged by `Content-Length`                                                      | Web proxy, `apps/web/src/server/proxy.ts`                 |
-| Bodies for `/api/`, `/auth/`, and `/enroll/` are read up to 1 MiB, chunked or not, and get 413 beyond that | `limitBodies` in `apps/esa/internal/server/middleware.go` |
-| The enroll host key report is read up to 16 KiB                                                            | `apps/esa/internal/api/enroll.go`                         |
-| Header read 10 s, body read 60 s, response write 10 min, idle 120 s                                        | Control plane HTTP server                                 |
-| 60 s per proxied call, 11 min for server, certificate, and enroll calls                                    | Web proxy                                                 |
-| API tokens over 200 characters and enroll tokens over 100 are rejected without a lookup                    | `fleet`                                                   |
+| Limit                                                                                                                | Where                                                            |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Bodies over 1 MiB get 413, judged by `Content-Length`                                                                | Web proxy, `apps/web/src/server/proxy.ts`                        |
+| Bodies for `/api/`, `/auth/`, and `/enroll/` are read up to 1 MiB, chunked or not, and get 413 beyond that           | `limitBodies` in `apps/esa/internal/server/middleware.go`        |
+| A scan report imported at `POST /api/v1/servers/{id}/scan` may be up to 10 MiB; every other body keeps the 1 MiB cap | `bodyLimit` in `middleware.go`, `SCAN_IMPORT_PATH` in `proxy.ts` |
+| The enroll host key report is read up to 16 KiB                                                                      | `apps/esa/internal/api/enroll.go`                                |
+| Header read 10 s, body read 60 s, response write 10 min, idle 120 s                                                  | Control plane HTTP server                                        |
+| 60 s per proxied call, 11 min for server, certificate, and enroll calls                                              | Web proxy                                                        |
+| API tokens over 200 characters and enroll tokens over 100 are rejected without a lookup                              | `fleet`                                                          |
 
 The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `x-esa-client`, `x-forwarded-host`, `x-forwarded-proto`). Sign-in rate limits use the rightmost `X-Forwarded-For` entry, which Traefik appends. If the control plane is ever reachable without Traefik in front, clients can choose that value, and only the per-email and global limits still hold.
 

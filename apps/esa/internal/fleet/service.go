@@ -73,6 +73,8 @@ type Deps struct {
 	// AdvisoryFeed is a local JSON file of exact affected package versions.
 	// Empty means matching is off. The control plane never downloads it.
 	AdvisoryFeed string
+	// Scanner is the path of a Grype binary for the daily scan. Empty is off.
+	Scanner string
 	// AuditRetention is how long audit rows are kept. Zero keeps them until
 	// the account is deleted. A space admin cannot set this.
 	AuditRetention time.Duration
@@ -126,6 +128,9 @@ type Service struct {
 	// exposureBudget is how many exposure reports this poll cycle may start.
 	exposureBudget atomic.Int32
 	advisoryFeed   string
+	scanner        string
+	// scanDBAt is when the scanner's database was last updated.
+	scanDBAt       time.Time
 	auditRetention time.Duration
 }
 
@@ -147,6 +152,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
 		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
 		advisoryFeed:    d.AdvisoryFeed,
+		scanner:         d.Scanner,
 		auditRetention:  d.AuditRetention,
 		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),

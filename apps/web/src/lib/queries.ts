@@ -106,6 +106,16 @@ export const q = {
           }),
         ),
     }),
+  scan: (id: number) =>
+    queryOptions({
+      queryKey: ['scan', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/scan', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
   advisories: (id: number) =>
     queryOptions({
       queryKey: ['advisories', id],
