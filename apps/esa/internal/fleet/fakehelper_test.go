@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -203,13 +204,15 @@ func (f *fakeFleet) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 		}
 		_ = req.Reply(true, nil)
 		exit := uint32(0)
-		switch p.Command {
-		case statusCommand:
+		switch {
+		case p.Command == statusCommand:
 			f.statusCalls.Add(1)
 			time.Sleep(f.statusDelay)
 			_, _ = ch.Write(fakeStatusEnvelope)
-		case updatesCommand:
+		case p.Command == updatesCommand:
 			_, _ = ch.Write(envelope(proto.PendingUpdates{}))
+		case strings.Contains(p.Command, " upgrade-status "):
+			_, _ = ch.Write(envelope(proto.UpgradeResult{State: "succeeded", Packages: []string{"openssl"}}))
 		default:
 			_, _ = ch.Stderr().Write([]byte("unknown action\n"))
 			exit = 1
