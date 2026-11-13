@@ -2533,6 +2533,11 @@ type DeleteServerParams struct {
 	Uninstall *bool `form:"uninstall,omitempty" json:"uninstall,omitempty"`
 }
 
+// ApproveAccessBaselineJSONBody defines parameters for ApproveAccessBaseline.
+type ApproveAccessBaselineJSONBody struct {
+	Reason string `json:"reason"`
+}
+
 // ApproveKeyBaselineJSONBody defines parameters for ApproveKeyBaseline.
 type ApproveKeyBaselineJSONBody struct {
 	Reason *string `json:"reason,omitempty"`
@@ -2663,6 +2668,9 @@ type ProbeServerJSONRequestBody = ProbeRequest
 
 // UpdateServerJSONRequestBody defines body for UpdateServer for application/json ContentType.
 type UpdateServerJSONRequestBody = UpdateServerRequest
+
+// ApproveAccessBaselineJSONRequestBody defines body for ApproveAccessBaseline for application/json ContentType.
+type ApproveAccessBaselineJSONRequestBody ApproveAccessBaselineJSONBody
 
 // ContainerActionJSONRequestBody defines body for ContainerAction for application/json ContentType.
 type ContainerActionJSONRequestBody = ContainerActionRequest
@@ -2948,6 +2956,9 @@ type ServerInterface interface {
 	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// ApproveAccessBaseline Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	// (POST /servers/{serverId}/access-baseline)
+	ApproveAccessBaseline(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerAdvisories Exact affected versions from an imported local feed
 	// (GET /servers/{serverId}/advisories)
 	GetServerAdvisories(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -4958,6 +4969,32 @@ func (siw *ServerInterfaceWrapper) GetServerAccess(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ApproveAccessBaseline operation middleware
+func (siw *ServerInterfaceWrapper) ApproveAccessBaseline(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveAccessBaseline(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerAdvisories operation middleware
 func (siw *ServerInterfaceWrapper) GetServerAdvisories(w http.ResponseWriter, r *http.Request) {
 
@@ -6148,6 +6185,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/runs/{runId}/gate", wrapper.DecideGate)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/access-baseline", wrapper.ApproveAccessBaseline)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-baseline/versions", wrapper.ListBaselineVersions)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-exceptions", wrapper.ListKeyExceptions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-exceptions", wrapper.CreateKeyException)
@@ -9374,6 +9412,40 @@ func (response GetServerAccessdefaultJSONResponse) VisitGetServerAccessResponse(
 	return err
 }
 
+type ApproveAccessBaselineRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Body     *ApproveAccessBaselineJSONRequestBody
+}
+
+type ApproveAccessBaselineResponseObject interface {
+	VisitApproveAccessBaselineResponse(w http.ResponseWriter) error
+}
+
+type ApproveAccessBaseline204Response struct {
+}
+
+func (response ApproveAccessBaseline204Response) VisitApproveAccessBaselineResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type ApproveAccessBaselinedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ApproveAccessBaselinedefaultJSONResponse) VisitApproveAccessBaselineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetServerAdvisoriesRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -10895,6 +10967,9 @@ type StrictServerInterface interface {
 	// GetServerAccess Login users, password state, sudo rules, SSH settings, recent logins
 	// (GET /servers/{serverId}/access)
 	GetServerAccess(ctx context.Context, request GetServerAccessRequestObject) (GetServerAccessResponseObject, error)
+	// ApproveAccessBaseline Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	// (POST /servers/{serverId}/access-baseline)
+	ApproveAccessBaseline(ctx context.Context, request ApproveAccessBaselineRequestObject) (ApproveAccessBaselineResponseObject, error)
 	// GetServerAdvisories Exact affected versions from an imported local feed
 	// (GET /servers/{serverId}/advisories)
 	GetServerAdvisories(ctx context.Context, request GetServerAdvisoriesRequestObject) (GetServerAdvisoriesResponseObject, error)
@@ -13373,6 +13448,39 @@ func (sh *strictHandler) GetServerAccess(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerAccessResponseObject); ok {
 		if err := validResponse.VisitGetServerAccessResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ApproveAccessBaseline operation middleware
+func (sh *strictHandler) ApproveAccessBaseline(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ApproveAccessBaselineRequestObject
+
+	request.ServerId = serverId
+
+	var body ApproveAccessBaselineJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ApproveAccessBaseline(ctx, request.(ApproveAccessBaselineRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ApproveAccessBaseline")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ApproveAccessBaselineResponseObject); ok {
+		if err := validResponse.VisitApproveAccessBaselineResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

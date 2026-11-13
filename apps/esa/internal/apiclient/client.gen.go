@@ -2532,6 +2532,11 @@ type DeleteServerParams struct {
 	Uninstall *bool `form:"uninstall,omitempty" json:"uninstall,omitempty"`
 }
 
+// ApproveAccessBaselineJSONBody defines parameters for ApproveAccessBaseline.
+type ApproveAccessBaselineJSONBody struct {
+	Reason string `json:"reason"`
+}
+
 // ApproveKeyBaselineJSONBody defines parameters for ApproveKeyBaseline.
 type ApproveKeyBaselineJSONBody struct {
 	Reason *string `json:"reason,omitempty"`
@@ -2662,6 +2667,9 @@ type ProbeServerJSONRequestBody = ProbeRequest
 
 // UpdateServerJSONRequestBody defines body for UpdateServer for application/json ContentType.
 type UpdateServerJSONRequestBody = UpdateServerRequest
+
+// ApproveAccessBaselineJSONRequestBody defines body for ApproveAccessBaseline for application/json ContentType.
+type ApproveAccessBaselineJSONRequestBody ApproveAccessBaselineJSONBody
 
 // ContainerActionJSONRequestBody defines body for ContainerAction for application/json ContentType.
 type ContainerActionJSONRequestBody = ContainerActionRequest
@@ -3478,6 +3486,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 	GetServerAccess(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveAccessBaselineWithBody Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+	ApproveAccessBaselineWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveAccessBaseline Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+	ApproveAccessBaseline(ctx context.Context, serverId ServerId, body ApproveAccessBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerAdvisories Exact affected versions from an imported local feed
 	//
@@ -5601,6 +5623,40 @@ func (c *Client) UpdateServer(ctx context.Context, serverId ServerId, body Updat
 // Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 func (c *Client) GetServerAccess(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetServerAccessRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveAccessBaselineWithBody Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+func (c *Client) ApproveAccessBaselineWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveAccessBaselineRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveAccessBaseline Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+func (c *Client) ApproveAccessBaseline(ctx context.Context, serverId ServerId, body ApproveAccessBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveAccessBaselineRequest(c.Server, serverId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -9553,6 +9609,53 @@ func NewGetServerAccessRequest(server string, serverId ServerId) (*http.Request,
 	return req, nil
 }
 
+// NewApproveAccessBaselineRequest calls the generic ApproveAccessBaseline builder with application/json body
+func NewApproveAccessBaselineRequest(server string, serverId ServerId, body ApproveAccessBaselineJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewApproveAccessBaselineRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewApproveAccessBaselineRequestWithBody constructs an http.Request for the ApproveAccessBaseline method, with any body, and a specified content type
+func NewApproveAccessBaselineRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/access-baseline", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetServerAdvisoriesRequest constructs an http.Request for the GetServerAdvisories method
 func NewGetServerAdvisoriesRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -11800,6 +11903,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /servers/{serverId}/access (the `GetServerAccess` operationId).
 	GetServerAccessWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerAccessResponse, error)
+
+	// ApproveAccessBaselineWithBodyWithResponse Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+	ApproveAccessBaselineWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveAccessBaselineResponse, error)
+
+	// ApproveAccessBaselineWithResponse Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+	ApproveAccessBaselineWithResponse(ctx context.Context, serverId ServerId, body ApproveAccessBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveAccessBaselineResponse, error)
 
 	// GetServerAdvisoriesWithResponse Exact affected versions from an imported local feed
 	//
@@ -16034,6 +16151,47 @@ func (r GetServerAccessResponse) ContentType() string {
 	return ""
 }
 
+type ApproveAccessBaselineResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ApproveAccessBaselineResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ApproveAccessBaselineResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ApproveAccessBaselineResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ApproveAccessBaselineResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ApproveAccessBaselineResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerAdvisoriesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -19086,6 +19244,32 @@ func (c *ClientWithResponses) GetServerAccessWithResponse(ctx context.Context, s
 		return nil, err
 	}
 	return ParseGetServerAccessResponse(rsp)
+}
+
+// ApproveAccessBaselineWithBodyWithResponse Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+func (c *ClientWithResponses) ApproveAccessBaselineWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveAccessBaselineResponse, error) {
+	rsp, err := c.ApproveAccessBaselineWithBody(ctx, serverId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveAccessBaselineResponse(rsp)
+}
+
+// ApproveAccessBaselineWithResponse Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/access-baseline (the `ApproveAccessBaseline` operationId).
+func (c *ClientWithResponses) ApproveAccessBaselineWithResponse(ctx context.Context, serverId ServerId, body ApproveAccessBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveAccessBaselineResponse, error) {
+	rsp, err := c.ApproveAccessBaseline(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveAccessBaselineResponse(rsp)
 }
 
 // GetServerAdvisoriesWithResponse Exact affected versions from an imported local feed
@@ -22350,6 +22534,35 @@ func ParseGetServerAccessResponse(rsp *http.Response) (*GetServerAccessResponse,
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseApproveAccessBaselineResponse parses an HTTP response from a ApproveAccessBaselineWithResponse call
+func ParseApproveAccessBaselineResponse(rsp *http.Response) (*ApproveAccessBaselineResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ApproveAccessBaselineResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

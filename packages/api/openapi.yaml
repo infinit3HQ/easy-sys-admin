@@ -1357,6 +1357,27 @@ paths:
           description: Saved. Later scans report drift. This does not change the server.
         default: { $ref: '#/components/responses/Error' }
 
+  /servers/{serverId}/access-baseline:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: approveAccessBaseline
+      summary: Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '204':
+          description: Saved. A later check reports changes. This does not change the server.
+        default: { $ref: '#/components/responses/Error' }
+
   /servers/{serverId}/key-baseline/versions:
     parameters:
       - $ref: '#/components/parameters/ServerId'

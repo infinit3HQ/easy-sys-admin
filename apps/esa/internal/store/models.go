@@ -35,6 +35,7 @@ func Models() []any {
 		&KeyOccurrence{},
 		&KeyLabel{},
 		&KeyBaseline{},
+		&AccessBaseline{},
 		&MaintenanceWindow{},
 		&NotifyChannel{},
 		&NotifyDelivery{},

@@ -174,6 +174,19 @@ type KeyBaseline struct {
 	Server Server `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// AccessBaseline is the approved accounts, sudo rules, and SSH settings.
+// It does not remove a login and does not mean access was changed.
+type AccessBaseline struct {
+	ServerID   int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	Facts      JSON      `gorm:"type:jsonb;not null"`
+	Reason     string    `gorm:"not null;size:200"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // MaintenanceWindow suppresses ordinary notifications. Collection still runs.
 // host_key and new_key notices are not suppressed.
 type MaintenanceWindow struct {
@@ -240,6 +253,10 @@ type ServerState struct {
 	// It is not the user list. ExposureAt is when it was last attempted.
 	Exposure   JSON `gorm:"type:jsonb"`
 	ExposureAt *time.Time
+	// AccessFacts is the last complete-enough access check: SSH settings,
+	// login accounts without their keys, and sudo rules. It is not a baseline
+	// until someone approves it.
+	AccessFacts JSON `gorm:"type:jsonb"`
 	// SecuritySeen maps a pending security package to when it was first seen.
 	SecuritySeen JSON `gorm:"type:jsonb"`
 	UpdatedAt    time.Time

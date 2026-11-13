@@ -158,6 +158,7 @@ export function AccessTab({ serverId }: { serverId: number }) {
         </ul>
       </Panel>
       <KeyExceptions serverId={serverId} canEdit={canManage} />
+      <AccessBaseline serverId={serverId} canEdit={canManage} />
       <div className="min-w-0 space-y-6">
         <Panel title="SSH server">
           <dl className="space-y-2">
@@ -650,6 +651,55 @@ export function JobsTab({ serverId }: { serverId: number }) {
         )}
       </Panel>
     </div>
+  )
+}
+
+function AccessBaseline({
+  serverId,
+  canEdit,
+}: {
+  serverId: number
+  canEdit: boolean
+}) {
+  const [reason, setReason] = useState('')
+  const save = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/servers/{serverId}/access-baseline', {
+          params: { path: { serverId } },
+          body: { reason: reason.trim() },
+        }),
+      ),
+    onSuccess: () => setReason(''),
+  })
+  if (!canEdit) return null
+  return (
+    <Panel title="Accounts, sudo, and SSH settings">
+      <p className="mb-2 text-sm text-muted-foreground">
+        Approve the last recorded check. A later check reports a new login, a
+        missing login, a sudo rule change, or an SSH setting change. This does
+        not change the server, and it does not mean a login was removed.
+      </p>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          save.mutate()
+        }}
+      >
+        <Input
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="why this is expected"
+          aria-label="Reason"
+          className="h-8 w-64"
+        />
+        <Button type="submit" size="sm" variant="outline" busy={save.isPending}>
+          Approve the last check
+        </Button>
+      </form>
+      <ErrorBanner error={save.error} />
+    </Panel>
   )
 }
 

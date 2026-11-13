@@ -195,7 +195,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 	}
 	var prev Exposure
 	_ = state.Exposure.Decode(&prev)
-	ex, keys, accessRev, ok := s.collectExposure(ctx, srv)
+	ex, keys, accessRev, facts, ok := s.collectExposure(ctx, srv)
 	now := s.now()
 	if !ok {
 		// A cancelled poll cycle should try again next minute. Any other
@@ -255,9 +255,16 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 		ex.BaselineKeys = keyIDs(keys)
 	}
 	raw := store.MustJSON(ex)
-	s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).
-		Updates(map[string]any{"exposure": raw, "exposure_at": now})
+	updates := map[string]any{"exposure": raw, "exposure_at": now}
+	if facts.SSHRead {
+		updates["access_facts"] = store.MustJSON(facts)
+		state.AccessFacts = store.MustJSON(facts)
+	}
+	s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).Updates(updates)
 	state.Exposure, state.ExposureAt = raw, &now
+	if facts.SSHRead {
+		s.reportAccessDrift(ctx, srv, facts)
+	}
 }
 
 func (s *Service) takeExposureSlot() bool {
@@ -284,11 +291,11 @@ func mergeExposure(prev, next Exposure) Exposure {
 	return kept
 }
 
-func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, []keyUse, int, bool) {
+func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposure, []keyUse, int, AccessFacts, bool) {
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
 		s.log.Warn("exposure report", "server_id", srv.ID, "err", err)
-		return Exposure{}, nil, 0, false
+		return Exposure{}, nil, 0, AccessFacts{}, false
 	}
 	var access proto.AccessReport
 	cctx, cancel := context.WithTimeout(s.netCtx(ctx), 45*time.Second)
@@ -296,7 +303,7 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, nil, 0, false
+		return Exposure{}, nil, 0, AccessFacts{}, false
 	}
 	var sec proto.SecurityReport
 	cctx, cancel = context.WithTimeout(s.netCtx(ctx), 30*time.Second)
@@ -304,9 +311,9 @@ func (s *Service) collectExposure(ctx context.Context, srv store.Server) (Exposu
 	cancel()
 	if err != nil {
 		s.noteExposureErr(ctx, srv, err)
-		return Exposure{}, nil, 0, false
+		return Exposure{}, nil, 0, AccessFacts{}, false
 	}
-	return summarizeExposure(access, sec, s.now()), keyUses(access), access.Revision, true
+	return summarizeExposure(access, sec, s.now()), keyUses(access), access.Revision, accessFacts(access, s.now()), true
 }
 
 // keyUse is one authorized-key fingerprint and the login that holds it.

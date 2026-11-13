@@ -1182,6 +1182,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/servers/{serverId}/access-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server. */
+        post: operations["approveAccessBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/key-baseline/versions": {
         parameters: {
             query?: never;
@@ -5296,6 +5315,33 @@ export interface operations {
         };
         responses: {
             /** @description Saved. Later scans report drift. This does not change the server. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveAccessBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. A later check reports changes. This does not change the server. */
             204: {
                 headers: {
                     [name: string]: unknown;
