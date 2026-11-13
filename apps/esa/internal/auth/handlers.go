@@ -59,7 +59,6 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 	})
 
 	if a.Password {
-		limits := newLoginLimits()
 		// Ten sign-up attempts per client an hour, successful or not.
 		signups := newFailureLimiter(10, time.Hour)
 		mux.HandleFunc("POST /auth/password/login", func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +67,7 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				email = strings.ToLower(strings.TrimSpace(r.FormValue("email")))
 			}
 			ip := clientIP(r)
-			if code := limits.blocked(email, ip); code != "" {
+			if code := fl.SignInBlocked(email, ip); code != "" {
 				loginError(w, r, code)
 				return
 			}
@@ -88,11 +87,11 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				if !errors.Is(err, fleet.ErrBadCredentials) {
 					log.Error("password sign in", "err", err)
 				}
-				limits.fail(email, ip)
+				fl.SignInFail(email, ip)
 				loginError(w, r, "bad_password")
 				return
 			}
-			limits.succeed(email, ip)
+			fl.SignInSucceed(email, ip)
 			start(w, r, res)
 		})
 		mux.HandleFunc("POST /auth/password/signup", func(w http.ResponseWriter, r *http.Request) {

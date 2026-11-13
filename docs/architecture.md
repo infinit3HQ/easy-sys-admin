@@ -75,7 +75,7 @@ All packages are under `apps/esa/internal`.
 | --------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `api`           | Serves `/api/v1` through handlers generated from the OpenAPI file, plus the public `/enroll/{token}` endpoints.    |
 | `apiclient`     | Typed API client for the CLI, generated from the OpenAPI file.                                                     |
-| `auth`          | Sign-in (password, OIDC, Google, dev mode), session cookies, bearer tokens, and sign-in rate limits.               |
+| `auth`          | Sign-in (password, OIDC, Google, dev mode), session cookies, and bearer tokens. Password sign-in failures are counted in PostgreSQL. |
 | `cli`           | The `esa` command tree, including `serve`.                                                                         |
 | `config`        | Reads and validates `ESA_*` environment variables.                                                                 |
 | `crypto`        | `Box`, which seals secrets at rest with AES-256-GCM under `ESA_MASTER_KEY`.                                        |
