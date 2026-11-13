@@ -128,6 +128,32 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	return ex
 }
 
+// foldListen keeps the last good socket list when this check could not read
+// sockets. A failed read does not become an empty baseline, so the board
+// does not treat "ss failed" as nothing listening.
+func foldListen(prev, ex Exposure) Exposure {
+	listenOK := !hasGap(ex.Gaps, "listening sockets")
+	if !listenOK && prev.BaselineSeeded {
+		ex.PublicPorts = append([]string{}, prev.PublicPorts...)
+		ex.ListeningOnAllInterfaces = append([]string{}, prev.ListeningOnAllInterfaces...)
+	}
+	if !listenOK && prev.BaselineBindsSeeded {
+		ex.SpecificBinds = append([]string{}, prev.SpecificBinds...)
+	}
+	if listenOK {
+		ex.BaselineSeeded = true
+		ex.BaselinePorts = append([]string{}, ex.PublicPorts...)
+		ex.BaselineBinds = append([]string{}, ex.SpecificBinds...)
+		ex.BaselineBindsSeeded = true
+		return ex
+	}
+	ex.BaselineSeeded = prev.BaselineSeeded
+	ex.BaselinePorts = append([]string{}, prev.BaselinePorts...)
+	ex.BaselineBinds = append([]string{}, prev.BaselineBinds...)
+	ex.BaselineBindsSeeded = prev.BaselineBindsSeeded
+	return ex
+}
+
 // exposureStaleAfter is two expected collection intervals. Older evidence
 // is shown as stale, never as the current state.
 const exposureStaleAfter = 2 * exposureEvery
@@ -217,6 +243,9 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 	if accessRev >= proto.ReportRevision {
 		s.syncKeyOccurrences(ctx, srv, keys, now)
 	}
+	if ex.Ready {
+		ex = foldListen(prev, ex)
+	}
 	if exposureChanged(prev, ex) {
 		s.audit(ctx, nil, System(srv.AccountID), "server.exposure", srv.Name, map[string]any{
 			"publicPorts": ex.PublicPorts, "passwordAuth": ex.PasswordAuth,
@@ -225,32 +254,12 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 		})
 	}
 	if ex.Ready {
-		listenOK := !hasGap(ex.Gaps, "listening sockets")
-		ports := ex.PublicPorts
-		if !listenOK && prev.BaselineSeeded {
-			ex.PublicPorts = prev.PublicPorts
-			ex.ListeningOnAllInterfaces = prev.ListeningOnAllInterfaces
-			ports = prev.BaselinePorts
-		}
-		binds := ex.SpecificBinds
-		if !listenOK && prev.BaselineBindsSeeded {
-			ex.SpecificBinds = prev.SpecificBinds
-			binds = prev.BaselineBinds
-		}
 		if prev.Ready && prev.BaselineSeeded {
-			prevBinds := binds
+			prevBinds := ex.SpecificBinds
 			if prev.BaselineBindsSeeded {
 				prevBinds = prev.BaselineBinds
 			}
-			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ports), binds...), prev.BaselineKeys, keys)
-		}
-		ex.BaselineSeeded = true
-		if listenOK {
-			ex.BaselinePorts = ex.PublicPorts
-			ex.BaselineBinds, ex.BaselineBindsSeeded = ex.SpecificBinds, true
-		} else {
-			ex.BaselinePorts = prev.BaselinePorts
-			ex.BaselineBinds, ex.BaselineBindsSeeded = prev.BaselineBinds, prev.BaselineBindsSeeded
+			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ex.PublicPorts), ex.SpecificBinds...), prev.BaselineKeys, keys)
 		}
 		ex.BaselineKeys = keyIDs(keys)
 	}

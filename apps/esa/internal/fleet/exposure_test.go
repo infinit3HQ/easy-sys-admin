@@ -85,3 +85,25 @@ func TestSummarizeExposure(t *testing.T) {
 		t.Fatalf("conditions: %+v", conds)
 	}
 }
+
+func TestFailedSocketReadDoesNotSeedAnEmptyBaseline(t *testing.T) {
+	failed := Exposure{Ready: true, Gaps: []string{"listening sockets"}}
+	got := foldListen(Exposure{}, failed)
+	if got.BaselineSeeded || len(got.BaselinePorts) != 0 {
+		t.Fatalf("a failed socket read became the empty baseline: %+v", got)
+	}
+	prev := Exposure{
+		Ready: true, BaselineSeeded: true, BaselineBindsSeeded: true,
+		PublicPorts: []string{"22/tcp"}, ListeningOnAllInterfaces: []string{"22/tcp"},
+		BaselinePorts: []string{"22/tcp"}, SpecificBinds: []string{"203.0.113.5 443/tcp"},
+		BaselineBinds: []string{"203.0.113.5 443/tcp"},
+	}
+	got = foldListen(prev, failed)
+	if !got.BaselineSeeded || len(got.PublicPorts) != 1 || got.PublicPorts[0] != "22/tcp" || len(got.SpecificBinds) != 1 {
+		t.Fatalf("the last good socket list was dropped: %+v", got)
+	}
+	ok := foldListen(Exposure{}, Exposure{Ready: true, PublicPorts: []string{"22/tcp"}, SpecificBinds: []string{"203.0.113.5 443/tcp"}})
+	if !ok.BaselineSeeded || len(ok.BaselinePorts) != 1 || !ok.BaselineBindsSeeded {
+		t.Fatalf("a successful read was not kept: %+v", ok)
+	}
+}
