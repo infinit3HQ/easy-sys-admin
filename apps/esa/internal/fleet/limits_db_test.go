@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -176,5 +178,46 @@ func TestNotificationsOffThePollPath(t *testing.T) {
 	var un *UnavailableError
 	if !errors.As(err, &un) || un.Message != "timed out" {
 		t.Fatalf("TestChannel: %v", err)
+	}
+}
+
+type countNotifier struct {
+	n atomic.Int32
+}
+
+func (c *countNotifier) Send(context.Context, store.NotifyChannel, []byte, Message) error {
+	c.n.Add(1)
+	return nil
+}
+
+func TestTwoProcessesSendOneDelivery(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "one-send")
+	ch, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/once"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := &countNotifier{}
+	s.notifier = n
+	other := &Service{db: s.db, log: s.log, now: s.now, box: s.box, notifier: n}
+	row := store.NotifyDelivery{AccountID: a.AccountID, ChannelID: ch.ID, Title: "t", Body: "b", Severity: "warning", State: "queued", CreatedAt: s.now()}
+	if err := s.db.Omit("Account", "Channel").Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); s.deliver(ctx, row.ID) }()
+	go func() { defer wg.Done(); other.deliver(ctx, row.ID) }()
+	wg.Wait()
+	if got := n.n.Load(); got != 1 {
+		t.Fatalf("sends: %d", got)
+	}
+	var saved store.NotifyDelivery
+	if err := s.db.First(&saved, row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.State != "sent" {
+		t.Fatalf("state: %s %s", saved.State, saved.LastError)
 	}
 }
