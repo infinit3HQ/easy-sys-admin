@@ -53,6 +53,7 @@ Every token has `read`, so these tools are always listed. The control plane stil
 | `list_alerts`             | `includeResolved` (default false)                                   | Open alerts, or recent ones including resolved.                                         |
 | `list_security_incidents` | `includeReviewed` (default false)                                   | Open security notices, or all of them.                                                  |
 | `get_security_incident`   | `incidentId`                                                        | One notice with its history.                                                            |
+| `get_offboarding_report`  | `owner`                                                             | Where an owner's known keys were last seen, and what could not be checked.              |
 | `list_updates`            | `server`                                                            | Pending packages, and which are security updates.                                       |
 | `list_services`           | `server`, `onlyFailed`                                              | systemd services.                                                                       |
 | `list_containers`         | `server`                                                            | Docker containers.                                                                      |

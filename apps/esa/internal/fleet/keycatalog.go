@@ -17,6 +17,9 @@ type KeyOccurrenceView struct {
 	User       string
 	Comment    string
 	From       string
+	// HasCommand is this login's restriction. The same key can be
+	// unrestricted on another login.
+	HasCommand bool
 	ObservedAt time.Time
 }
 
@@ -101,15 +104,38 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 	}
 }
 
-// ApproveKeyBaseline stores the keys currently recorded for the server.
+// BaselineVersionView is one approval of a server's keys.
+type BaselineVersionView struct {
+	Version    int
+	Keys       int
+	Reason     string
+	ApprovedAt time.Time
+	ApprovedBy string
+}
+
+// ApproveKeyBaseline stores the keys currently recorded for the server as
+// a new baseline version, with an optional reason. It is refused when the
+// recorded keys are not current: an old helper, a stale report, or key
+// files the helper could not read. Unknown is never approved as expected.
 // It does not change the server.
-func (s *Service) ApproveKeyBaseline(ctx context.Context, a Actor, serverID int64) error {
+func (s *Service) ApproveKeyBaseline(ctx context.Context, a Actor, serverID int64, reason string) error {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return err
+	}
+	reason = strings.TrimSpace(reason)
+	if utf8.RuneCountInString(reason) > 200 {
+		return invalid("reason", "must be at most 200 characters")
 	}
 	srv, err := s.loadServer(ctx, a, serverID)
 	if err != nil {
 		return err
+	}
+	view, err := s.GetServer(ctx, a, serverID)
+	if err != nil {
+		return err
+	}
+	if why := keyCoverage(view, s.now()); why != "" {
+		return invalid("server", "the recorded keys are not current (%s), so they cannot be approved", why)
 	}
 	var rows []store.KeyOccurrence
 	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Find(&rows).Error; err != nil {
@@ -119,32 +145,60 @@ func (s *Service) ApproveKeyBaseline(ctx context.Context, a Actor, serverID int6
 	for _, r := range rows {
 		items = append(items, baselineKey{User: r.User, Fingerprint: r.Fingerprint, From: r.From, HasCommand: r.HasCommand})
 	}
-	row := store.KeyBaseline{ServerID: srv.ID, AccountID: srv.AccountID, Items: store.MustJSON(items), ApprovedAt: s.now(), ApprovedBy: a.UserID}
-	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
+	now := s.now()
+	err = s.db.WithContext(ctx).Transaction(func(tx *gormDB) error {
+		var last int
+		if err := tx.Model(&store.KeyBaselineVersion{}).Where("server_id = ?", srv.ID).Select("COALESCE(MAX(version), 0)").Scan(&last).Error; err != nil {
+			return err
+		}
+		ver := store.KeyBaselineVersion{ServerID: srv.ID, AccountID: srv.AccountID, Version: last + 1, Items: store.MustJSON(items), Reason: reason, ApprovedAt: now, ApprovedBy: a.UserID}
+		if err := tx.Omit("Server").Create(&ver).Error; err != nil {
+			return err
+		}
+		row := store.KeyBaseline{ServerID: srv.ID, AccountID: srv.AccountID, Items: store.MustJSON(items), ApprovedAt: now, ApprovedBy: a.UserID}
+		return tx.Omit("Server").Save(&row).Error
+	})
+	if err != nil {
 		return err
 	}
-	s.audit(ctx, nil, a, "key.baseline", srv.Name, map[string]any{"keys": len(items)})
+	s.audit(ctx, nil, a, "key.baseline", srv.Name, map[string]any{"keys": len(items), "reason": reason})
 	return nil
 }
 
-// Offboarding lists keys with this name. It only covers standard
-// authorized_keys files that a current helper has read.
-func (s *Service) Offboarding(ctx context.Context, a Actor, label string) (string, []KeyView, error) {
-	label = strings.Join(strings.Fields(label), " ")
-	if label == "" {
-		return "", nil, invalid("label", "is required")
+// BaselineVersions lists a server's key approvals, newest first.
+func (s *Service) BaselineVersions(ctx context.Context, a Actor, serverID int64) ([]BaselineVersionView, error) {
+	if err := a.can(RoleViewer, ScopeRead); err != nil {
+		return nil, err
 	}
-	all, err := s.ListKeys(ctx, a)
+	srv, _, err := s.loadVisibleServer(ctx, a, serverID)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	var matched []KeyView
-	for _, k := range all {
-		if k.Label == label {
-			matched = append(matched, k)
+	var rows []store.KeyBaselineVersion
+	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Order("version desc").Limit(50).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	names := map[int64]string{}
+	if srv.AccountID == a.AccountID {
+		ids := make([]int64, 0, len(rows))
+		for _, r := range rows {
+			ids = append(ids, r.ApprovedBy)
+		}
+		if names, err = s.userNames(ctx, ids); err != nil {
+			return nil, err
 		}
 	}
-	return "These are keys you named in this space, from standard authorized_keys files on servers a current helper has read. A key that is absent here is not proof that access was removed.", matched, nil
+	out := make([]BaselineVersionView, 0, len(rows))
+	for _, r := range rows {
+		var items []baselineKey
+		_ = r.Items.Decode(&items)
+		by := names[r.ApprovedBy]
+		if by == "" {
+			by = "a member of the owning space"
+		}
+		out = append(out, BaselineVersionView{Version: r.Version, Keys: len(items), Reason: r.Reason, ApprovedAt: r.ApprovedAt, ApprovedBy: by})
+	}
+	return out, nil
 }
 
 // ListKeys returns fingerprints seen on servers the actor can see.
@@ -192,7 +246,7 @@ func (s *Service) ListKeys(ctx context.Context, a Actor) ([]KeyView, error) {
 		}
 		v.Uses = append(v.Uses, KeyOccurrenceView{
 			ServerID: r.ServerID, ServerName: names[r.ServerID], User: r.User,
-			Comment: r.Comment, From: r.From, ObservedAt: r.ObservedAt,
+			Comment: r.Comment, From: r.From, HasCommand: r.HasCommand, ObservedAt: r.ObservedAt,
 		})
 	}
 	out := make([]KeyView, 0, len(order))

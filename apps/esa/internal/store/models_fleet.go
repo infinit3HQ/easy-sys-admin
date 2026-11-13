@@ -131,6 +131,37 @@ type KeyLabel struct {
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// AccessIdentity is who a key label stands for: a person, a service, or a
+// key several people share. A label with no row is an active person. The
+// name is the label on KeyLabel rows; ownership is an operator's
+// statement, not proof of identity.
+type AccessIdentity struct {
+	ID        int64     `gorm:"primaryKey"`
+	AccountID int64     `gorm:"not null;uniqueIndex:access_identities_name,priority:1"`
+	Name      string    `gorm:"not null;size:80;uniqueIndex:access_identities_name,priority:2"`
+	Kind      string    `gorm:"not null;default:'person';check:access_identities_kind_check,kind IN ('person','service','shared')"`
+	Status    string    `gorm:"not null;default:'active';check:access_identities_status_check,status IN ('active','leaving','left')"`
+	Note      string    `gorm:"not null;default:''"`
+	UpdatedAt time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyBaselineVersion is one approval of a server's keys. KeyBaseline holds
+// the current one; these rows keep every earlier approval and why.
+type KeyBaselineVersion struct {
+	ID         int64     `gorm:"primaryKey"`
+	ServerID   int64     `gorm:"not null;uniqueIndex:key_baseline_versions_server,priority:1"`
+	Version    int       `gorm:"not null;uniqueIndex:key_baseline_versions_server,priority:2"`
+	AccountID  int64     `gorm:"not null;index"`
+	Items      JSON      `gorm:"type:jsonb;not null"`
+	Reason     string    `gorm:"not null;default:''"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // KeyBaseline is the approved set of keys on one server. Later scans do not
 // change it. Drift is reported, not applied.
 type KeyBaseline struct {

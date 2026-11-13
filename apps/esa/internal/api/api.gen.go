@@ -329,6 +329,90 @@ func (e HealthCheckMethod) Valid() bool {
 	}
 }
 
+// Defines values for IdentityKind.
+const (
+	IdentityKindPerson  IdentityKind = "person"
+	IdentityKindService IdentityKind = "service"
+	IdentityKindShared  IdentityKind = "shared"
+)
+
+// Valid indicates whether the value is a known member of the IdentityKind enum.
+func (e IdentityKind) Valid() bool {
+	switch e {
+	case IdentityKindPerson:
+		return true
+	case IdentityKindService:
+		return true
+	case IdentityKindShared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityStatus.
+const (
+	IdentityStatusActive  IdentityStatus = "active"
+	IdentityStatusLeaving IdentityStatus = "leaving"
+	IdentityStatusLeft    IdentityStatus = "left"
+)
+
+// Valid indicates whether the value is a known member of the IdentityStatus enum.
+func (e IdentityStatus) Valid() bool {
+	switch e {
+	case IdentityStatusActive:
+		return true
+	case IdentityStatusLeaving:
+		return true
+	case IdentityStatusLeft:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityInputKind.
+const (
+	IdentityInputKindPerson  IdentityInputKind = "person"
+	IdentityInputKindService IdentityInputKind = "service"
+	IdentityInputKindShared  IdentityInputKind = "shared"
+)
+
+// Valid indicates whether the value is a known member of the IdentityInputKind enum.
+func (e IdentityInputKind) Valid() bool {
+	switch e {
+	case IdentityInputKindPerson:
+		return true
+	case IdentityInputKindService:
+		return true
+	case IdentityInputKindShared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityInputStatus.
+const (
+	IdentityInputStatusActive  IdentityInputStatus = "active"
+	IdentityInputStatusLeaving IdentityInputStatus = "leaving"
+	IdentityInputStatusLeft    IdentityInputStatus = "left"
+)
+
+// Valid indicates whether the value is a known member of the IdentityInputStatus enum.
+func (e IdentityInputStatus) Valid() bool {
+	switch e {
+	case IdentityInputStatusActive:
+		return true
+	case IdentityInputStatusLeaving:
+		return true
+	case IdentityInputStatusLeft:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IncidentState.
 const (
 	IncidentStateAccepted     IncidentState = "accepted"
@@ -878,6 +962,20 @@ type AuthorizedKey = proto.AuthorizedKey
 // BanJail defines model for BanJail.
 type BanJail = proto.BanJail
 
+// BaselineVersion defines model for BaselineVersion.
+type BaselineVersion struct {
+	ApprovedAt time.Time `json:"approvedAt"`
+	ApprovedBy string    `json:"approvedBy"`
+	Keys       int       `json:"keys"`
+	Reason     string    `json:"reason"`
+	Version    int       `json:"version"`
+}
+
+// BaselineVersionList defines model for BaselineVersionList.
+type BaselineVersionList struct {
+	Items []BaselineVersion `json:"items"`
+}
+
 // Cert defines model for Cert.
 type Cert struct {
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
@@ -1269,6 +1367,45 @@ type HealthCheckMethod string
 // HostStatus defines model for HostStatus.
 type HostStatus = proto.Status
 
+// Identity defines model for Identity.
+type Identity struct {
+	// Grants Logins that carry those keys on servers you can see.
+	Grants int `json:"grants"`
+
+	// Keys Keys named for this owner.
+	Keys    int            `json:"keys"`
+	Kind    IdentityKind   `json:"kind"`
+	Name    string         `json:"name"`
+	Note    string         `json:"note"`
+	Servers int            `json:"servers"`
+	Status  IdentityStatus `json:"status"`
+}
+
+// IdentityKind defines model for Identity.Kind.
+type IdentityKind string
+
+// IdentityStatus defines model for Identity.Status.
+type IdentityStatus string
+
+// IdentityInput defines model for IdentityInput.
+type IdentityInput struct {
+	Kind   IdentityInputKind   `json:"kind"`
+	Name   string              `json:"name"`
+	Note   *string             `json:"note,omitempty"`
+	Status IdentityInputStatus `json:"status"`
+}
+
+// IdentityInputKind defines model for IdentityInput.Kind.
+type IdentityInputKind string
+
+// IdentityInputStatus defines model for IdentityInput.Status.
+type IdentityInputStatus string
+
+// IdentityList defines model for IdentityList.
+type IdentityList struct {
+	Items []Identity `json:"items"`
+}
+
 // ImageCheck defines model for ImageCheck.
 type ImageCheck = proto.ImageCheck
 
@@ -1402,8 +1539,11 @@ type KeyList struct {
 
 // KeyOccurrence defines model for KeyOccurrence.
 type KeyOccurrence struct {
-	Comment    string    `json:"comment"`
-	From       string    `json:"from"`
+	Comment string `json:"comment"`
+	From    string `json:"from"`
+
+	// HasCommand This login's key line has a forced command. The same key can be unrestricted on another login.
+	HasCommand bool      `json:"hasCommand"`
 	ObservedAt time.Time `json:"observedAt"`
 	ServerId   int64     `json:"serverId"`
 	ServerName string    `json:"serverName"`
@@ -1520,10 +1660,43 @@ type NetIf = proto.NetIf
 
 // Offboarding defines model for Offboarding.
 type Offboarding struct {
+	// Complete True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed.
+	Complete    bool      `json:"complete"`
+	GeneratedAt time.Time `json:"generatedAt"`
+	Grants      []struct {
+		Fingerprint string    `json:"fingerprint"`
+		From        string    `json:"from"`
+		HasCommand  bool      `json:"hasCommand"`
+		KeyType     string    `json:"keyType"`
+		ObservedAt  time.Time `json:"observedAt"`
+		Server      string    `json:"server"`
+		ServerId    int64     `json:"serverId"`
+
+		// Unchecked Why this server's key list is not current. Empty when it is.
+		Unchecked string `json:"unchecked"`
+		User      string `json:"user"`
+	} `json:"grants"`
+	Identity Identity `json:"identity"`
+
+	// Items The owner's keys.
 	Items []Key `json:"items"`
 
-	// Statement What this list does not prove.
+	// Markdown The report as Markdown, to keep or send.
+	Markdown string `json:"markdown"`
+
+	// Partial True when some servers belong to another organization.
+	Partial bool `json:"partial"`
+
+	// SharedKeys The owner's fingerprints that open more than one login.
+	SharedKeys []string `json:"sharedKeys"`
+
+	// Statement What this report does not prove.
 	Statement string `json:"statement"`
+	Unchecked []struct {
+		Reason   string `json:"reason"`
+		Server   string `json:"server"`
+		ServerId int64  `json:"serverId"`
+	} `json:"unchecked"`
 }
 
 // Organization defines model for Organization.
@@ -2116,6 +2289,11 @@ type DeleteServerParams struct {
 	Uninstall *bool `form:"uninstall,omitempty" json:"uninstall,omitempty"`
 }
 
+// ApproveKeyBaselineJSONBody defines parameters for ApproveKeyBaseline.
+type ApproveKeyBaselineJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // GetServerLogsParams defines parameters for GetServerLogs.
 type GetServerLogsParams struct {
 	Unit      *string `form:"unit,omitempty" json:"unit,omitempty"`
@@ -2161,6 +2339,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
+
+// SaveIdentityJSONRequestBody defines body for SaveIdentity for application/json ContentType.
+type SaveIdentityJSONRequestBody = IdentityInput
 
 // AcceptIncidentJSONRequestBody defines body for AcceptIncident for application/json ContentType.
 type AcceptIncidentJSONRequestBody = IncidentHold
@@ -2227,6 +2408,9 @@ type ReinstallHelperJSONRequestBody = ReinstallRequest
 
 // AcceptHostKeyJSONRequestBody defines body for AcceptHostKey for application/json ContentType.
 type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
+
+// ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
+type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -2320,6 +2504,12 @@ type ServerInterface interface {
 	// ListGroupShares Teams this group is shared with (admins of the owning team)
 	// (GET /groups/{groupId}/shares)
 	ListGroupShares(w http.ResponseWriter, r *http.Request, groupId GroupId)
+	// ListIdentities Owners of keys in this space, with how many grants carry their keys
+	// (GET /identities)
+	ListIdentities(w http.ResponseWriter, r *http.Request)
+	// SaveIdentity Record what an owner is and their status. The name is the key label. This does not change a server.
+	// (PUT /identities)
+	SaveIdentity(w http.ResponseWriter, r *http.Request)
 	// ListIncidents Security notices that still need a person to look at them
 	// (GET /incidents)
 	ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams)
@@ -2488,9 +2678,12 @@ type ServerInterface interface {
 	// GetServerJobs Cron entries and systemd timers
 	// (GET /servers/{serverId}/jobs)
 	GetServerJobs(w http.ResponseWriter, r *http.Request, serverId ServerId)
-	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	// ApproveKeyBaseline Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
 	// (POST /servers/{serverId}/key-baseline)
 	ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// ListBaselineVersions Earlier key approvals of this server, newest first
+	// (GET /servers/{serverId}/key-baseline/versions)
+	ListBaselineVersions(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerLogsParams)
@@ -3165,6 +3358,34 @@ func (siw *ServerInterfaceWrapper) ListGroupShares(w http.ResponseWriter, r *htt
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListGroupShares(w, r, groupId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListIdentities operation middleware
+func (siw *ServerInterfaceWrapper) ListIdentities(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SaveIdentity operation middleware
+func (siw *ServerInterfaceWrapper) SaveIdentity(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SaveIdentity(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4548,6 +4769,32 @@ func (siw *ServerInterfaceWrapper) ApproveKeyBaseline(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// ListBaselineVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListBaselineVersions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBaselineVersions(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetServerLogs operation middleware
 func (siw *ServerInterfaceWrapper) GetServerLogs(w http.ResponseWriter, r *http.Request) {
 
@@ -5168,6 +5415,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/execute", wrapper.ExecutePlan)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/key-baseline", wrapper.ApproveKeyBaseline)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/key-baseline/versions", wrapper.ListBaselineVersions)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/identities", wrapper.ListIdentities)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/identities", wrapper.SaveIdentity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/offboarding", wrapper.Offboarding)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/maintenance", wrapper.ListMaintenance)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/maintenance", wrapper.CreateMaintenance)
@@ -6246,6 +6496,83 @@ type ListGroupSharesdefaultJSONResponse struct {
 }
 
 func (response ListGroupSharesdefaultJSONResponse) VisitListGroupSharesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIdentitiesRequestObject struct {
+}
+
+type ListIdentitiesResponseObject interface {
+	VisitListIdentitiesResponse(w http.ResponseWriter) error
+}
+
+type ListIdentities200JSONResponse IdentityList
+
+func (response ListIdentities200JSONResponse) VisitListIdentitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIdentitiesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListIdentitiesdefaultJSONResponse) VisitListIdentitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveIdentityRequestObject struct {
+	Body *SaveIdentityJSONRequestBody
+}
+
+type SaveIdentityResponseObject interface {
+	VisitSaveIdentityResponse(w http.ResponseWriter) error
+}
+
+type SaveIdentity200JSONResponse Identity
+
+func (response SaveIdentity200JSONResponse) VisitSaveIdentityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SaveIdentitydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SaveIdentitydefaultJSONResponse) VisitSaveIdentityResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8402,6 +8729,7 @@ func (response GetServerJobsdefaultJSONResponse) VisitGetServerJobsResponse(w ht
 
 type ApproveKeyBaselineRequestObject struct {
 	ServerId ServerId `json:"serverId"`
+	Body     *ApproveKeyBaselineJSONRequestBody
 }
 
 type ApproveKeyBaselineResponseObject interface {
@@ -8422,6 +8750,45 @@ type ApproveKeyBaselinedefaultJSONResponse struct {
 }
 
 func (response ApproveKeyBaselinedefaultJSONResponse) VisitApproveKeyBaselineResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBaselineVersionsRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type ListBaselineVersionsResponseObject interface {
+	VisitListBaselineVersionsResponse(w http.ResponseWriter) error
+}
+
+type ListBaselineVersions200JSONResponse BaselineVersionList
+
+func (response ListBaselineVersions200JSONResponse) VisitListBaselineVersionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBaselineVersionsdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListBaselineVersionsdefaultJSONResponse) VisitListBaselineVersionsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9056,6 +9423,12 @@ type StrictServerInterface interface {
 	// ListGroupShares Teams this group is shared with (admins of the owning team)
 	// (GET /groups/{groupId}/shares)
 	ListGroupShares(ctx context.Context, request ListGroupSharesRequestObject) (ListGroupSharesResponseObject, error)
+	// ListIdentities Owners of keys in this space, with how many grants carry their keys
+	// (GET /identities)
+	ListIdentities(ctx context.Context, request ListIdentitiesRequestObject) (ListIdentitiesResponseObject, error)
+	// SaveIdentity Record what an owner is and their status. The name is the key label. This does not change a server.
+	// (PUT /identities)
+	SaveIdentity(ctx context.Context, request SaveIdentityRequestObject) (SaveIdentityResponseObject, error)
 	// ListIncidents Security notices that still need a person to look at them
 	// (GET /incidents)
 	ListIncidents(ctx context.Context, request ListIncidentsRequestObject) (ListIncidentsResponseObject, error)
@@ -9224,9 +9597,12 @@ type StrictServerInterface interface {
 	// GetServerJobs Cron entries and systemd timers
 	// (GET /servers/{serverId}/jobs)
 	GetServerJobs(ctx context.Context, request GetServerJobsRequestObject) (GetServerJobsResponseObject, error)
-	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	// ApproveKeyBaseline Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
 	// (POST /servers/{serverId}/key-baseline)
 	ApproveKeyBaseline(ctx context.Context, request ApproveKeyBaselineRequestObject) (ApproveKeyBaselineResponseObject, error)
+	// ListBaselineVersions Earlier key approvals of this server, newest first
+	// (GET /servers/{serverId}/key-baseline/versions)
+	ListBaselineVersions(ctx context.Context, request ListBaselineVersionsRequestObject) (ListBaselineVersionsResponseObject, error)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(ctx context.Context, request GetServerLogsRequestObject) (GetServerLogsResponseObject, error)
@@ -10072,6 +10448,61 @@ func (sh *strictHandler) ListGroupShares(w http.ResponseWriter, r *http.Request,
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListGroupSharesResponseObject); ok {
 		if err := validResponse.VisitListGroupSharesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListIdentities operation middleware
+func (sh *strictHandler) ListIdentities(w http.ResponseWriter, r *http.Request) {
+	var request ListIdentitiesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListIdentities(ctx, request.(ListIdentitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListIdentities")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListIdentitiesResponseObject); ok {
+		if err := validResponse.VisitListIdentitiesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SaveIdentity operation middleware
+func (sh *strictHandler) SaveIdentity(w http.ResponseWriter, r *http.Request) {
+	var request SaveIdentityRequestObject
+
+	var body SaveIdentityJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SaveIdentity(ctx, request.(SaveIdentityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SaveIdentity")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SaveIdentityResponseObject); ok {
+		if err := validResponse.VisitSaveIdentityResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -11663,6 +12094,16 @@ func (sh *strictHandler) ApproveKeyBaseline(w http.ResponseWriter, r *http.Reque
 
 	request.ServerId = serverId
 
+	var body ApproveKeyBaselineJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ApproveKeyBaseline(ctx, request.(ApproveKeyBaselineRequestObject))
 	}
@@ -11676,6 +12117,32 @@ func (sh *strictHandler) ApproveKeyBaseline(w http.ResponseWriter, r *http.Reque
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApproveKeyBaselineResponseObject); ok {
 		if err := validResponse.VisitApproveKeyBaselineResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListBaselineVersions operation middleware
+func (sh *strictHandler) ListBaselineVersions(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request ListBaselineVersionsRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBaselineVersions(ctx, request.(ListBaselineVersionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBaselineVersions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBaselineVersionsResponseObject); ok {
+		if err := validResponse.VisitListBaselineVersionsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

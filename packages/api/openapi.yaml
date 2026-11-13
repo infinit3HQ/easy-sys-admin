@@ -1137,11 +1137,63 @@ paths:
       - $ref: '#/components/parameters/ServerId'
     post:
       operationId: approveKeyBaseline
-      summary: Approve the keys currently recorded on this server
+      summary: Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
       tags: [fleet]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 200 }
       responses:
         '204':
           description: Saved. Later scans report drift. This does not change the server.
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/key-baseline/versions:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: listBaselineVersions
+      summary: Earlier key approvals of this server, newest first
+      tags: [fleet]
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BaselineVersionList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /identities:
+    get:
+      operationId: listIdentities
+      summary: Owners of keys in this space, with how many grants carry their keys
+      tags: [fleet]
+      responses:
+        '200':
+          description: Owners
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityList' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: saveIdentity
+      summary: Record what an owner is and their status. The name is the key label. This does not change a server.
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityInput' }
+      responses:
+        '200':
+          description: The owner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
         default: { $ref: '#/components/responses/Error' }
 
   /offboarding:
@@ -2072,13 +2124,14 @@ components:
 
     KeyOccurrence:
       type: object
-      required: [serverId, serverName, user, comment, from, observedAt]
+      required: [serverId, serverName, user, comment, from, hasCommand, observedAt]
       properties:
         serverId: { type: integer, format: int64 }
         serverName: { type: string }
         user: { type: string }
         comment: { type: string }
         from: { type: string }
+        hasCommand: { type: boolean, description: This login's key line has a forced command. The same key can be unrestricted on another login. }
         observedAt: { type: string, format: date-time }
 
     Key:
@@ -2103,10 +2156,86 @@ components:
 
     Offboarding:
       type: object
-      required: [statement, items]
+      required: [statement, items, identity, generatedAt, complete, partial, grants, unchecked, sharedKeys, markdown]
       properties:
-        statement: { type: string, description: What this list does not prove. }
-        items: { type: array, items: { $ref: '#/components/schemas/Key' } }
+        statement: { type: string, description: 'What this report does not prove.' }
+        items: { type: array, items: { $ref: '#/components/schemas/Key' }, description: 'The owner''s keys.' }
+        identity: { $ref: '#/components/schemas/Identity' }
+        generatedAt: { type: string, format: date-time }
+        complete: { type: boolean, description: 'True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed.' }
+        partial: { type: boolean, description: 'True when some servers belong to another organization.' }
+        grants:
+          type: array
+          items:
+            type: object
+            required: [serverId, server, user, fingerprint, keyType, from, hasCommand, observedAt, unchecked]
+            properties:
+              serverId: { type: integer, format: int64 }
+              server: { type: string }
+              user: { type: string }
+              fingerprint: { type: string }
+              keyType: { type: string }
+              from: { type: string }
+              hasCommand: { type: boolean }
+              observedAt: { type: string, format: date-time }
+              unchecked: { type: string, description: 'Why this server''s key list is not current. Empty when it is.' }
+        unchecked:
+          type: array
+          items:
+            type: object
+            required: [serverId, server, reason]
+            properties:
+              serverId: { type: integer, format: int64 }
+              server: { type: string }
+              reason: { type: string }
+        sharedKeys: { type: array, items: { type: string }, description: 'The owner''s fingerprints that open more than one login.' }
+        markdown: { type: string, description: 'The report as Markdown, to keep or send.' }
+
+    Identity:
+      type: object
+      required: [name, kind, status, note, keys, grants, servers]
+      properties:
+        name: { type: string, maxLength: 80 }
+        kind: { type: string, enum: [person, service, shared] }
+        status: { type: string, enum: [active, leaving, left] }
+        note: { type: string, maxLength: 500 }
+        keys: { type: integer, description: Keys named for this owner. }
+        grants: { type: integer, description: Logins that carry those keys on servers you can see. }
+        servers: { type: integer }
+
+    IdentityInput:
+      type: object
+      required: [name, kind, status]
+      properties:
+        name: { type: string, maxLength: 80 }
+        kind: { type: string, enum: [person, service, shared] }
+        status: { type: string, enum: [active, leaving, left] }
+        note: { type: string, maxLength: 500 }
+
+    IdentityList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Identity' } }
+
+    BaselineVersion:
+      type: object
+      required: [version, keys, reason, approvedAt, approvedBy]
+      properties:
+        version: { type: integer }
+        keys: { type: integer }
+        reason: { type: string }
+        approvedAt: { type: string, format: date-time }
+        approvedBy: { type: string }
+
+    BaselineVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/BaselineVersion' }
 
     MaintenanceWindow:
       type: object

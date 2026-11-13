@@ -26,7 +26,10 @@ Paths marked Public do not need a session or a token.
 | GET | `/fleet/overview` | Session or token | Every server in the current account with its latest status, worst first |
 | GET | `/keys` | Session or token | SSH key fingerprints seen in standard authorized_keys files |
 | PUT | `/keys` | Session or token | Name a fingerprint in this space, or clear the name |
-| POST | `/servers/{serverId}/key-baseline` | Session or token | Approve the keys currently recorded on this server |
+| POST | `/servers/{serverId}/key-baseline` | Session or token | Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current. |
+| GET | `/servers/{serverId}/key-baseline/versions` | Session or token | Earlier key approvals of this server, newest first |
+| GET | `/identities` | Session or token | Owners of keys in this space, with how many grants carry their keys |
+| PUT | `/identities` | Session or token | Record what an owner is and their status. The name is the key label. This does not change a server. |
 | GET | `/offboarding` | Session or token | Keys with this name from the files a current helper has read |
 
 ## servers

@@ -9,6 +9,7 @@ import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
 import { Input } from '#/components/ui/input'
 import { useRole } from './route'
+import { KeyOwners } from '#/components/key-owners'
 
 export const Route = createFileRoute('/app/keys')({
   loader: ({ context }) => context.queryClient.ensureQueryData(q.keys()),
@@ -18,12 +19,7 @@ export const Route = createFileRoute('/app/keys')({
 
 function Keys() {
   const r = useQuery(q.keys())
-  const [name, setName] = useState('')
-  const [asked, setAsked] = useState('')
-  const off = useQuery({
-    ...q.offboarding(asked),
-    enabled: asked !== '',
-  })
+  const { canAct } = useRole()
   const items = r.data?.items ?? []
   return (
     <div>
@@ -32,46 +28,9 @@ function Keys() {
         title="Keys"
         description="Fingerprints found in the standard authorized_keys files of accounts with a login shell. A key stored anywhere else is not on this list. Naming a key does not change the server."
       />
-      <Card className="mb-6 p-4">
-        <form
-          className="flex flex-col gap-2 sm:flex-row"
-          onSubmit={(e) => {
-            e.preventDefault()
-            setAsked(name.trim())
-          }}
-        >
-          <Input
-            value={name}
-            maxLength={80}
-            placeholder="Name to look up"
-            aria-label="Name to look up"
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Button type="submit" variant="outline">
-            Where this name still appears
-          </Button>
-        </form>
-        {off.data && (
-          <div className="mt-3 text-sm text-ink-2">
-            <p>{off.data.statement}</p>
-            {off.data.items.length === 0 ? (
-              <p className="mt-2 text-muted-foreground">
-                No recorded key has this name.
-              </p>
-            ) : (
-              <ul className="mt-2 space-y-1 font-mono text-[11px]">
-                {off.data.items.map((k) => (
-                  <li key={k.fingerprint}>
-                    {k.fingerprint}
-                    {k.uses.map((u) => ` · ${u.serverName}/${u.user}`)}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        {off.error && <ErrorBanner error={off.error} />}
-      </Card>
+      <div className="mb-6">
+        <KeyOwners canEdit={canAct} />
+      </div>
       {r.isLoading ? (
         <Loading />
       ) : r.error ? (
@@ -102,6 +61,7 @@ function Keys() {
                         {' '}
                         · {u.user}
                         {u.from ? ` · from ${u.from}` : ''}
+                        {u.hasCommand ? ' · forced command' : ''}
                         {u.comment ? ` · ${u.comment}` : ''} ·{' '}
                         <Ago iso={u.observedAt} />
                       </span>
@@ -147,7 +107,7 @@ function KeyHead({
         </div>
         <div className="mt-1 font-mono text-[11px] break-all text-faint">
           {k.keyType} · {k.fingerprint}
-          {k.hasCommand ? ' · forced command' : ''}
+          {k.hasCommand ? ' · forced command on some logins' : ''}
         </div>
       </div>
       {canAct && (

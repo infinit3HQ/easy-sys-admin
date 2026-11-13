@@ -1003,8 +1003,45 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Approve the keys currently recorded on this server */
+        /** Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current. */
         post: operations["approveKeyBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-baseline/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Earlier key approvals of this server, newest first */
+        get: operations["listBaselineVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owners of keys in this space, with how many grants carry their keys */
+        get: operations["listIdentities"];
+        /** Record what an owner is and their status. The name is the key label. This does not change a server. */
+        put: operations["saveIdentity"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1768,6 +1805,8 @@ export interface components {
             user: string;
             comment: string;
             from: string;
+            /** @description This login's key line has a forced command. The same key can be unrestricted on another login. */
+            hasCommand: boolean;
             /** Format: date-time */
             observedAt: string;
         };
@@ -1785,9 +1824,76 @@ export interface components {
             items: components["schemas"]["Key"][];
         };
         Offboarding: {
-            /** @description What this list does not prove. */
+            /** @description What this report does not prove. */
             statement: string;
+            /** @description The owner's keys. */
             items: components["schemas"]["Key"][];
+            identity: components["schemas"]["Identity"];
+            /** Format: date-time */
+            generatedAt: string;
+            /** @description True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed. */
+            complete: boolean;
+            /** @description True when some servers belong to another organization. */
+            partial: boolean;
+            grants: {
+                /** Format: int64 */
+                serverId: number;
+                server: string;
+                user: string;
+                fingerprint: string;
+                keyType: string;
+                from: string;
+                hasCommand: boolean;
+                /** Format: date-time */
+                observedAt: string;
+                /** @description Why this server's key list is not current. Empty when it is. */
+                unchecked: string;
+            }[];
+            unchecked: {
+                /** Format: int64 */
+                serverId: number;
+                server: string;
+                reason: string;
+            }[];
+            /** @description The owner's fingerprints that open more than one login. */
+            sharedKeys: string[];
+            /** @description The report as Markdown, to keep or send. */
+            markdown: string;
+        };
+        Identity: {
+            name: string;
+            /** @enum {string} */
+            kind: "person" | "service" | "shared";
+            /** @enum {string} */
+            status: "active" | "leaving" | "left";
+            note: string;
+            /** @description Keys named for this owner. */
+            keys: number;
+            /** @description Logins that carry those keys on servers you can see. */
+            grants: number;
+            servers: number;
+        };
+        IdentityInput: {
+            name: string;
+            /** @enum {string} */
+            kind: "person" | "service" | "shared";
+            /** @enum {string} */
+            status: "active" | "leaving" | "left";
+            note?: string;
+        };
+        IdentityList: {
+            items: components["schemas"]["Identity"][];
+        };
+        BaselineVersion: {
+            version: number;
+            keys: number;
+            reason: string;
+            /** Format: date-time */
+            approvedAt: string;
+            approvedBy: string;
+        };
+        BaselineVersionList: {
+            items: components["schemas"]["BaselineVersion"][];
         };
         MaintenanceWindow: {
             /** Format: int64 */
@@ -4489,7 +4595,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
         responses: {
             /** @description Saved. Later scans report drift. This does not change the server. */
             204: {
@@ -4497,6 +4609,75 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listBaselineVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineVersionList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listIdentities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owners */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    saveIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityInput"];
+            };
+        };
+        responses: {
+            /** @description The owner */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Identity"];
+                };
             };
             default: components["responses"]["Error"];
         };

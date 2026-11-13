@@ -328,6 +328,90 @@ func (e HealthCheckMethod) Valid() bool {
 	}
 }
 
+// Defines values for IdentityKind.
+const (
+	IdentityKindPerson  IdentityKind = "person"
+	IdentityKindService IdentityKind = "service"
+	IdentityKindShared  IdentityKind = "shared"
+)
+
+// Valid indicates whether the value is a known member of the IdentityKind enum.
+func (e IdentityKind) Valid() bool {
+	switch e {
+	case IdentityKindPerson:
+		return true
+	case IdentityKindService:
+		return true
+	case IdentityKindShared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityStatus.
+const (
+	IdentityStatusActive  IdentityStatus = "active"
+	IdentityStatusLeaving IdentityStatus = "leaving"
+	IdentityStatusLeft    IdentityStatus = "left"
+)
+
+// Valid indicates whether the value is a known member of the IdentityStatus enum.
+func (e IdentityStatus) Valid() bool {
+	switch e {
+	case IdentityStatusActive:
+		return true
+	case IdentityStatusLeaving:
+		return true
+	case IdentityStatusLeft:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityInputKind.
+const (
+	IdentityInputKindPerson  IdentityInputKind = "person"
+	IdentityInputKindService IdentityInputKind = "service"
+	IdentityInputKindShared  IdentityInputKind = "shared"
+)
+
+// Valid indicates whether the value is a known member of the IdentityInputKind enum.
+func (e IdentityInputKind) Valid() bool {
+	switch e {
+	case IdentityInputKindPerson:
+		return true
+	case IdentityInputKindService:
+		return true
+	case IdentityInputKindShared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IdentityInputStatus.
+const (
+	IdentityInputStatusActive  IdentityInputStatus = "active"
+	IdentityInputStatusLeaving IdentityInputStatus = "leaving"
+	IdentityInputStatusLeft    IdentityInputStatus = "left"
+)
+
+// Valid indicates whether the value is a known member of the IdentityInputStatus enum.
+func (e IdentityInputStatus) Valid() bool {
+	switch e {
+	case IdentityInputStatusActive:
+		return true
+	case IdentityInputStatusLeaving:
+		return true
+	case IdentityInputStatusLeft:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IncidentState.
 const (
 	IncidentStateAccepted     IncidentState = "accepted"
@@ -877,6 +961,20 @@ type AuthorizedKey = proto.AuthorizedKey
 // BanJail defines model for BanJail.
 type BanJail = proto.BanJail
 
+// BaselineVersion defines model for BaselineVersion.
+type BaselineVersion struct {
+	ApprovedAt time.Time `json:"approvedAt"`
+	ApprovedBy string    `json:"approvedBy"`
+	Keys       int       `json:"keys"`
+	Reason     string    `json:"reason"`
+	Version    int       `json:"version"`
+}
+
+// BaselineVersionList defines model for BaselineVersionList.
+type BaselineVersionList struct {
+	Items []BaselineVersion `json:"items"`
+}
+
 // Cert defines model for Cert.
 type Cert struct {
 	CheckedAt *time.Time `json:"checkedAt,omitempty"`
@@ -1268,6 +1366,45 @@ type HealthCheckMethod string
 // HostStatus defines model for HostStatus.
 type HostStatus = proto.Status
 
+// Identity defines model for Identity.
+type Identity struct {
+	// Grants Logins that carry those keys on servers you can see.
+	Grants int `json:"grants"`
+
+	// Keys Keys named for this owner.
+	Keys    int            `json:"keys"`
+	Kind    IdentityKind   `json:"kind"`
+	Name    string         `json:"name"`
+	Note    string         `json:"note"`
+	Servers int            `json:"servers"`
+	Status  IdentityStatus `json:"status"`
+}
+
+// IdentityKind defines model for Identity.Kind.
+type IdentityKind string
+
+// IdentityStatus defines model for Identity.Status.
+type IdentityStatus string
+
+// IdentityInput defines model for IdentityInput.
+type IdentityInput struct {
+	Kind   IdentityInputKind   `json:"kind"`
+	Name   string              `json:"name"`
+	Note   *string             `json:"note,omitempty"`
+	Status IdentityInputStatus `json:"status"`
+}
+
+// IdentityInputKind defines model for IdentityInput.Kind.
+type IdentityInputKind string
+
+// IdentityInputStatus defines model for IdentityInput.Status.
+type IdentityInputStatus string
+
+// IdentityList defines model for IdentityList.
+type IdentityList struct {
+	Items []Identity `json:"items"`
+}
+
 // ImageCheck defines model for ImageCheck.
 type ImageCheck = proto.ImageCheck
 
@@ -1401,8 +1538,11 @@ type KeyList struct {
 
 // KeyOccurrence defines model for KeyOccurrence.
 type KeyOccurrence struct {
-	Comment    string    `json:"comment"`
-	From       string    `json:"from"`
+	Comment string `json:"comment"`
+	From    string `json:"from"`
+
+	// HasCommand This login's key line has a forced command. The same key can be unrestricted on another login.
+	HasCommand bool      `json:"hasCommand"`
 	ObservedAt time.Time `json:"observedAt"`
 	ServerId   int64     `json:"serverId"`
 	ServerName string    `json:"serverName"`
@@ -1519,10 +1659,43 @@ type NetIf = proto.NetIf
 
 // Offboarding defines model for Offboarding.
 type Offboarding struct {
+	// Complete True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed.
+	Complete    bool      `json:"complete"`
+	GeneratedAt time.Time `json:"generatedAt"`
+	Grants      []struct {
+		Fingerprint string    `json:"fingerprint"`
+		From        string    `json:"from"`
+		HasCommand  bool      `json:"hasCommand"`
+		KeyType     string    `json:"keyType"`
+		ObservedAt  time.Time `json:"observedAt"`
+		Server      string    `json:"server"`
+		ServerId    int64     `json:"serverId"`
+
+		// Unchecked Why this server's key list is not current. Empty when it is.
+		Unchecked string `json:"unchecked"`
+		User      string `json:"user"`
+	} `json:"grants"`
+	Identity Identity `json:"identity"`
+
+	// Items The owner's keys.
 	Items []Key `json:"items"`
 
-	// Statement What this list does not prove.
+	// Markdown The report as Markdown, to keep or send.
+	Markdown string `json:"markdown"`
+
+	// Partial True when some servers belong to another organization.
+	Partial bool `json:"partial"`
+
+	// SharedKeys The owner's fingerprints that open more than one login.
+	SharedKeys []string `json:"sharedKeys"`
+
+	// Statement What this report does not prove.
 	Statement string `json:"statement"`
+	Unchecked []struct {
+		Reason   string `json:"reason"`
+		Server   string `json:"server"`
+		ServerId int64  `json:"serverId"`
+	} `json:"unchecked"`
 }
 
 // Organization defines model for Organization.
@@ -2115,6 +2288,11 @@ type DeleteServerParams struct {
 	Uninstall *bool `form:"uninstall,omitempty" json:"uninstall,omitempty"`
 }
 
+// ApproveKeyBaselineJSONBody defines parameters for ApproveKeyBaseline.
+type ApproveKeyBaselineJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // GetServerLogsParams defines parameters for GetServerLogs.
 type GetServerLogsParams struct {
 	Unit      *string `form:"unit,omitempty" json:"unit,omitempty"`
@@ -2160,6 +2338,9 @@ type UpdateGroupJSONRequestBody = GroupInput
 
 // CreateShareLinkJSONRequestBody defines body for CreateShareLink for application/json ContentType.
 type CreateShareLinkJSONRequestBody = CreateShareLinkRequest
+
+// SaveIdentityJSONRequestBody defines body for SaveIdentity for application/json ContentType.
+type SaveIdentityJSONRequestBody = IdentityInput
 
 // AcceptIncidentJSONRequestBody defines body for AcceptIncident for application/json ContentType.
 type AcceptIncidentJSONRequestBody = IncidentHold
@@ -2226,6 +2407,9 @@ type ReinstallHelperJSONRequestBody = ReinstallRequest
 
 // AcceptHostKeyJSONRequestBody defines body for AcceptHostKey for application/json ContentType.
 type AcceptHostKeyJSONRequestBody = AcceptHostKeyRequest
+
+// ApproveKeyBaselineJSONRequestBody defines body for ApproveKeyBaseline for application/json ContentType.
+type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 
 // AcceptShareLinkJSONRequestBody defines body for AcceptShareLink for application/json ContentType.
 type AcceptShareLinkJSONRequestBody = AcceptShareRequest
@@ -2527,6 +2711,25 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 	ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListIdentities Owners of keys in this space, with how many grants carry their keys
+	//
+	// Corresponds with GET /identities (the `ListIdentities` operationId).
+	ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SaveIdentityWithBody Record what an owner is and their status. The name is the key label. This does not change a server.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+	SaveIdentityWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SaveIdentity Record what an owner is and their status. The name is the key label. This does not change a server.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+	SaveIdentity(ctx context.Context, body SaveIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListIncidents Security notices that still need a person to look at them
 	//
@@ -3014,10 +3217,24 @@ type ClientInterface interface {
 	// Corresponds with GET /servers/{serverId}/jobs (the `GetServerJobs` operationId).
 	GetServerJobs(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ApproveKeyBaseline Approve the keys currently recorded on this server
+	// ApproveKeyBaselineWithBody Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+	//
+	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-	ApproveKeyBaseline(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ApproveKeyBaselineWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ApproveKeyBaseline Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+	ApproveKeyBaseline(ctx context.Context, serverId ServerId, body ApproveKeyBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListBaselineVersions Earlier key approvals of this server, newest first
+	//
+	// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
+	ListBaselineVersions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -3689,6 +3906,55 @@ func (c *Client) CreateShareLink(ctx context.Context, groupId GroupId, body Crea
 // Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 func (c *Client) ListGroupShares(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListGroupSharesRequest(c.Server, groupId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListIdentities Owners of keys in this space, with how many grants carry their keys
+//
+// Corresponds with GET /identities (the `ListIdentities` operationId).
+func (c *Client) ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIdentitiesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SaveIdentityWithBody Record what an owner is and their status. The name is the key label. This does not change a server.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+func (c *Client) SaveIdentityWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSaveIdentityRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SaveIdentity Record what an owner is and their status. The name is the key label. This does not change a server.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+func (c *Client) SaveIdentity(ctx context.Context, body SaveIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSaveIdentityRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4965,11 +5231,45 @@ func (c *Client) GetServerJobs(ctx context.Context, serverId ServerId, reqEditor
 	return c.Client.Do(req)
 }
 
-// ApproveKeyBaseline Approve the keys currently recorded on this server
+// ApproveKeyBaselineWithBody Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+//
+// Takes any type of body and a specified content type.
 //
 // Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewApproveKeyBaselineRequest(c.Server, serverId)
+func (c *Client) ApproveKeyBaselineWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveKeyBaselineRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ApproveKeyBaseline Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId ServerId, body ApproveKeyBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewApproveKeyBaselineRequest(c.Server, serverId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListBaselineVersions Earlier key approvals of this server, newest first
+//
+// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
+func (c *Client) ListBaselineVersions(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBaselineVersionsRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
 	}
@@ -6288,6 +6588,73 @@ func NewListGroupSharesRequest(server string, groupId GroupId) (*http.Request, e
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListIdentitiesRequest constructs an http.Request for the ListIdentities method
+func NewListIdentitiesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/identities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSaveIdentityRequest calls the generic SaveIdentity builder with application/json body
+func NewSaveIdentityRequest(server string, body SaveIdentityJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSaveIdentityRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSaveIdentityRequestWithBody constructs an http.Request for the SaveIdentity method, with any body, and a specified content type
+func NewSaveIdentityRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/identities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -8517,8 +8884,19 @@ func NewGetServerJobsRequest(server string, serverId ServerId) (*http.Request, e
 	return req, nil
 }
 
-// NewApproveKeyBaselineRequest constructs an http.Request for the ApproveKeyBaseline method
-func NewApproveKeyBaselineRequest(server string, serverId ServerId) (*http.Request, error) {
+// NewApproveKeyBaselineRequest calls the generic ApproveKeyBaseline builder with application/json body
+func NewApproveKeyBaselineRequest(server string, serverId ServerId, body ApproveKeyBaselineJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewApproveKeyBaselineRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewApproveKeyBaselineRequestWithBody constructs an http.Request for the ApproveKeyBaseline method, with any body, and a specified content type
+func NewApproveKeyBaselineRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8543,7 +8921,43 @@ func NewApproveKeyBaselineRequest(server string, serverId ServerId) (*http.Reque
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListBaselineVersionsRequest constructs an http.Request for the ListBaselineVersions method
+func NewListBaselineVersionsRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/key-baseline/versions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -9451,6 +9865,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /groups/{groupId}/shares (the `ListGroupShares` operationId).
 	ListGroupSharesWithResponse(ctx context.Context, groupId GroupId, reqEditors ...RequestEditorFn) (*ListGroupSharesResponse, error)
 
+	// ListIdentitiesWithResponse Owners of keys in this space, with how many grants carry their keys
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /identities (the `ListIdentities` operationId).
+	ListIdentitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIdentitiesResponse, error)
+
+	// SaveIdentityWithBodyWithResponse Record what an owner is and their status. The name is the key label. This does not change a server.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+	SaveIdentityWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SaveIdentityResponse, error)
+
+	// SaveIdentityWithResponse Record what an owner is and their status. The name is the key label. This does not change a server.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+	SaveIdentityWithResponse(ctx context.Context, body SaveIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*SaveIdentityResponse, error)
+
 	// ListIncidentsWithResponse Security notices that still need a person to look at them
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -10005,12 +10440,26 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /servers/{serverId}/jobs (the `GetServerJobs` operationId).
 	GetServerJobsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerJobsResponse, error)
 
-	// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server
+	// ApproveKeyBaselineWithBodyWithResponse Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+	ApproveKeyBaselineWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
+
+	// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+	ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, body ApproveKeyBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
+
+	// ListBaselineVersionsWithResponse Earlier key approvals of this server, newest first
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
-	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-	ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
+	// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
+	ListBaselineVersionsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListBaselineVersionsResponse, error)
 
 	// GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -11421,6 +11870,102 @@ func (r ListGroupSharesResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListGroupSharesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListIdentitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *IdentityList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListIdentitiesResponse) GetJSON200() *IdentityList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListIdentitiesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListIdentitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIdentitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListIdentitiesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SaveIdentityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Identity
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SaveIdentityResponse) GetJSON200() *Identity {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SaveIdentityResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SaveIdentityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SaveIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SaveIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SaveIdentityResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -14100,6 +14645,54 @@ func (r ApproveKeyBaselineResponse) ContentType() string {
 	return ""
 }
 
+type ListBaselineVersionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BaselineVersionList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListBaselineVersionsResponse) GetJSON200() *BaselineVersionList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListBaselineVersionsResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListBaselineVersionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListBaselineVersionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListBaselineVersionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListBaselineVersionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type GetServerLogsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -15239,6 +15832,45 @@ func (c *ClientWithResponses) ListGroupSharesWithResponse(ctx context.Context, g
 	return ParseListGroupSharesResponse(rsp)
 }
 
+// ListIdentitiesWithResponse Owners of keys in this space, with how many grants carry their keys
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /identities (the `ListIdentities` operationId).
+func (c *ClientWithResponses) ListIdentitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIdentitiesResponse, error) {
+	rsp, err := c.ListIdentities(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIdentitiesResponse(rsp)
+}
+
+// SaveIdentityWithBodyWithResponse Record what an owner is and their status. The name is the key label. This does not change a server.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+func (c *ClientWithResponses) SaveIdentityWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SaveIdentityResponse, error) {
+	rsp, err := c.SaveIdentityWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSaveIdentityResponse(rsp)
+}
+
+// SaveIdentityWithResponse Record what an owner is and their status. The name is the key label. This does not change a server.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /identities (the `SaveIdentity` operationId).
+func (c *ClientWithResponses) SaveIdentityWithResponse(ctx context.Context, body SaveIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*SaveIdentityResponse, error) {
+	rsp, err := c.SaveIdentity(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSaveIdentityResponse(rsp)
+}
+
 // ListIncidentsWithResponse Security notices that still need a person to look at them
 //
 // Returns a wrapper object for the known response body format(s).
@@ -16261,17 +16893,43 @@ func (c *ClientWithResponses) GetServerJobsWithResponse(ctx context.Context, ser
 	return ParseGetServerJobsResponse(rsp)
 }
 
-// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server
+// ApproveKeyBaselineWithBodyWithResponse Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
 //
-// Returns a wrapper object for the known response body format(s).
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-func (c *ClientWithResponses) ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
-	rsp, err := c.ApproveKeyBaseline(ctx, serverId, reqEditors...)
+func (c *ClientWithResponses) ApproveKeyBaselineWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
+	rsp, err := c.ApproveKeyBaselineWithBody(ctx, serverId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseApproveKeyBaselineResponse(rsp)
+}
+
+// ApproveKeyBaselineWithResponse Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
+func (c *ClientWithResponses) ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, body ApproveKeyBaselineJSONRequestBody, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
+	rsp, err := c.ApproveKeyBaseline(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseApproveKeyBaselineResponse(rsp)
+}
+
+// ListBaselineVersionsWithResponse Earlier key approvals of this server, newest first
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/key-baseline/versions (the `ListBaselineVersions` operationId).
+func (c *ClientWithResponses) ListBaselineVersionsWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ListBaselineVersionsResponse, error) {
+	rsp, err := c.ListBaselineVersions(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListBaselineVersionsResponse(rsp)
 }
 
 // GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
@@ -17365,6 +18023,72 @@ func ParseListGroupSharesResponse(rsp *http.Response) (*ListGroupSharesResponse,
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest GroupShareList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListIdentitiesResponse parses an HTTP response from a ListIdentitiesWithResponse call
+func ParseListIdentitiesResponse(rsp *http.Response) (*ListIdentitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIdentitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest IdentityList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSaveIdentityResponse parses an HTTP response from a SaveIdentityWithResponse call
+func ParseSaveIdentityResponse(rsp *http.Response) (*SaveIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SaveIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Identity
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -19214,6 +19938,39 @@ func ParseApproveKeyBaselineResponse(rsp *http.Response) (*ApproveKeyBaselineRes
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListBaselineVersionsResponse parses an HTTP response from a ListBaselineVersionsWithResponse call
+func ParseListBaselineVersionsResponse(rsp *http.Response) (*ListBaselineVersionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListBaselineVersionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BaselineVersionList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

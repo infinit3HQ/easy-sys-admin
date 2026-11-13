@@ -167,9 +167,14 @@ export const q = {
       queryKey: ['keys'],
       queryFn: () => call(api().GET('/keys')),
     }),
+  identities: () =>
+    queryOptions({
+      queryKey: ['keys', 'identities'],
+      queryFn: () => call(api().GET('/identities')),
+    }),
   offboarding: (label: string) =>
     queryOptions({
-      queryKey: ['offboarding', label],
+      queryKey: ['keys', 'offboarding', label],
       queryFn: () =>
         call(api().GET('/offboarding', { params: { query: { label } } })),
     }),

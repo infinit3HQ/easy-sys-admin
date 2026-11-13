@@ -29,6 +29,8 @@ func Models() []any {
 		&SecurityIncident{},
 		&IncidentEvent{},
 		&HeldWarning{},
+		&AccessIdentity{},
+		&KeyBaselineVersion{},
 		&KeyOccurrence{},
 		&KeyLabel{},
 		&KeyBaseline{},

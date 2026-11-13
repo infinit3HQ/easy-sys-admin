@@ -301,6 +301,14 @@ function buildServer(token: string, me: Me): McpServer {
   )
 
   tool(
+    'get_offboarding_report',
+    'Where the known keys of one owner (a key label) were last seen, which servers could not be checked, and a Markdown copy. It never proves access was removed, and it cannot change a server.',
+    { owner: z.string().min(1).max(80) },
+    async ({ owner }) =>
+      call(api.GET('/offboarding', { params: { query: { label: owner } } })),
+  )
+
+  tool(
     'get_security_incident',
     'One security notice with its history. Resolved means a fresh check no longer saw it; missing data never resolves a notice.',
     { incidentId: z.number().int() },
