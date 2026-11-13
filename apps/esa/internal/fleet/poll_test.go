@@ -88,6 +88,42 @@ func TestOnlyOneProcessPolls(t *testing.T) {
 	}
 }
 
+func TestSecondProcessResumesADeadRun(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "resume-dead")
+	srv := addTestServer(t, s, a, nil, "r1")
+	run := store.Run{AccountID: a.AccountID, Kind: "clean", Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs := store.RunServer{RunID: run.ID, ServerID: srv.ID, Status: "running", Detail: store.JSON("{}")}
+	if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+		t.Fatal(err)
+	}
+	unlock, ok := s.tryRunLock(ctx, run.ID)
+	if !ok {
+		t.Fatal("lock")
+	}
+	other := &Service{db: s.db, log: s.log, now: s.now, publicURL: s.publicURL}
+	other.ResumeRuns(ctx)
+	var still store.RunServer
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "running" {
+		t.Fatalf("a live holder was interrupted: %s %s", still.Status, still.Error)
+	}
+	unlock()
+	other.ResumeRuns(ctx)
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "failed" || !strings.Contains(still.Error, "interrupted") {
+		t.Fatalf("after the holder died: %s %s", still.Status, still.Error)
+	}
+}
+
 // A dead server is marked unreachable after 3 missed polls, then deferred.
 // Its alert still fires on the next poll after the rule's 3 minutes, and
 // resolves on the first poll that succeeds, which also ends the back-off.

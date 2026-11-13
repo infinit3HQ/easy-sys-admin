@@ -844,9 +844,11 @@ func runOutcome(ok, failed int, aborted bool) string {
 	}
 }
 
-// ResumeRuns handles runs left "running" by a previous process. Upgrades
-// keep running on the servers, so those are followed again and the run goes
-// on with its next batches; other runs are marked failed.
+// ResumeRuns handles runs left "running" when their worker is gone. It runs
+// at startup and every minute. Upgrades keep running on the servers, so
+// those are followed again and the run goes on with its next batches; other
+// runs are marked failed. A run whose worker still holds the lock is left
+// alone.
 func (s *Service) ResumeRuns(ctx context.Context) {
 	var runs []store.Run
 	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("status = 'running'").Find(&runs).Error; err != nil {
@@ -862,7 +864,7 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 		if RunKind(run.Kind) != RunUpdate {
 			for i := range run.Servers {
 				if rs := &run.Servers[i]; rs.Status == "queued" || rs.Status == "running" {
-					s.setRunServer(ctx, rs, "failed", "interrupted: the control plane restarted", nil, 0)
+					s.setRunServer(ctx, rs, "failed", "interrupted: the worker that started this run is gone", nil, 0)
 				}
 			}
 			s.finishRun(ctx, run.ID)

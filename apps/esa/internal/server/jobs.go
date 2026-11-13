@@ -12,12 +12,13 @@ import (
 
 // startJobs launches the control plane's background loops.
 //
-//	every minute   poll servers, start due scheduled runs
+//	every minute   poll servers, resume a run whose worker is gone, start due scheduled runs
 //	every hour     roll up metrics, delete expired sessions, send the Monday summary
 //	every 12 hours check TLS certificates
 func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, log *slog.Logger) {
 	fl.ResumeRuns(ctx)
 	go every(ctx, log, "poll", time.Minute, 5*time.Second, fl.PollAll)
+	go every(ctx, log, "resume", time.Minute, 20*time.Second, fl.ResumeRuns)
 	go every(ctx, log, "deliver", time.Minute, 10*time.Second, fl.DrainDeliveries)
 	go every(ctx, log, "schedule", time.Minute, 15*time.Second, fl.Tick)
 	go every(ctx, log, "rollup", time.Hour, 2*time.Minute, fl.Rollup)
