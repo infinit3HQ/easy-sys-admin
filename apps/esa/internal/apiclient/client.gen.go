@@ -1570,7 +1570,16 @@ type PatchServer struct {
 
 	// Health Set when status got worse after the upgrade.
 	Health string `json:"health"`
-	Name   string `json:"name"`
+
+	// Held Pending packages left alone because they are held.
+	Held []string `json:"held"`
+
+	// Installed Packages the helper upgraded.
+	Installed []string `json:"installed"`
+	Name      string   `json:"name"`
+
+	// NotApproved Pending packages left alone because the plan did not list them, often found by apt after the approval.
+	NotApproved []string `json:"notApproved"`
 
 	// Packages Packages the helper recorded as upgraded. 0 when the detail has no package list.
 	Packages int    `json:"packages"`

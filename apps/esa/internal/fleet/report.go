@@ -10,7 +10,13 @@ type PatchServer struct {
 	Error    string
 	Canary   bool
 	Packages int
-	Health   string
+	// Installed, Held, and NotApproved name what the helper did with each
+	// pending package. NotApproved are left out because a plan did not
+	// list them, often because apt found them after the approval.
+	Installed   []string
+	Held        []string
+	NotApproved []string
+	Health      string
 	Checks   []CheckResult
 }
 
@@ -53,16 +59,28 @@ func reportFrom(run RunView) PatchReport {
 			Health  string        `json:"health"`
 			Checks  []CheckResult `json:"checks"`
 			Upgrade struct {
-				Packages []string `json:"packages"`
+				Packages    []string `json:"packages"`
+				Skipped     []string `json:"skipped"`
+				NotApproved []string `json:"notApproved"`
 			} `json:"upgrade"`
 		}
 		_ = rs.Detail.Decode(&detail)
 		item.Health = detail.Health
 		item.Packages = len(detail.Upgrade.Packages)
+		item.Installed = nonEmpty(detail.Upgrade.Packages)
+		item.Held = nonEmpty(detail.Upgrade.Skipped)
+		item.NotApproved = nonEmpty(detail.Upgrade.NotApproved)
 		if detail.Checks != nil {
 			item.Checks = detail.Checks
 		}
 		out.Servers = append(out.Servers, item)
 	}
 	return out
+}
+
+func nonEmpty(xs []string) []string {
+	if xs == nil {
+		return []string{}
+	}
+	return xs
 }

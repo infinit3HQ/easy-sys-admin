@@ -2490,6 +2490,12 @@ export interface components {
             canary: boolean;
             /** @description Packages the helper recorded as upgraded. 0 when the detail has no package list. */
             packages: number;
+            /** @description Packages the helper upgraded. */
+            installed: string[];
+            /** @description Pending packages left alone because they are held. */
+            held: string[];
+            /** @description Pending packages left alone because the plan did not list them, often found by apt after the approval. */
+            notApproved: string[];
             /** @description Set when status got worse after the upgrade. */
             health: string;
             checks: {

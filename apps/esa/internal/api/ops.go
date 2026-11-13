@@ -192,6 +192,7 @@ func toPatchReport(v fleet.PatchReport) PatchReport {
 		item := PatchServer{
 			ServerId: s.ServerID, Name: s.Name, Status: s.Status, Error: s.Error,
 			Canary: s.Canary, Packages: s.Packages, Health: s.Health,
+			Installed: nonNil(s.Installed), Held: nonNil(s.Held), NotApproved: nonNil(s.NotApproved),
 		}
 		item.Checks = make([]struct {
 			Blocking bool    `json:"blocking"`

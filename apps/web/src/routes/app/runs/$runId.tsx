@@ -77,6 +77,21 @@ function RunPage() {
                 {s.packages > 0 ? `, ${s.packages} packages` : ''}
                 {s.health ? `, ${s.health}` : ''}
                 {s.error ? `, ${s.error}` : ''}
+                {s.installed.length > 0 && (
+                  <div className="text-ink-2">
+                    Installed: {s.installed.join(', ')}
+                  </div>
+                )}
+                {s.held.length > 0 && (
+                  <div className="text-muted-foreground">
+                    Held: {s.held.join(', ')}
+                  </div>
+                )}
+                {s.notApproved.length > 0 && (
+                  <div className="text-warn">
+                    Not in the plan, left alone: {s.notApproved.join(', ')}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

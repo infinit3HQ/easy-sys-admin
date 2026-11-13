@@ -2971,7 +2971,7 @@ components:
 
     PatchServer:
       type: object
-      required: [serverId, name, status, error, canary, packages, health, checks]
+      required: [serverId, name, status, error, canary, packages, installed, held, notApproved, health, checks]
       properties:
         serverId: { type: integer, format: int64 }
         name: { type: string }
@@ -2979,6 +2979,9 @@ components:
         error: { type: string }
         canary: { type: boolean }
         packages: { type: integer, description: Packages the helper recorded as upgraded. 0 when the detail has no package list. }
+        installed: { type: array, items: { type: string }, description: Packages the helper upgraded. }
+        held: { type: array, items: { type: string }, description: Pending packages left alone because they are held. }
+        notApproved: { type: array, items: { type: string }, description: 'Pending packages left alone because the plan did not list them, often found by apt after the approval.' }
         health: { type: string, description: Set when status got worse after the upgrade. }
         checks:
           type: array
