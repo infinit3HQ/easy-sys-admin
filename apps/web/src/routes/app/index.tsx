@@ -1,11 +1,20 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { Server } from '@esa/api'
 import { q } from '#/lib/queries'
 import { duration, pct, plural } from '#/lib/format'
 import { Ago } from '#/components/time'
-import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
+import {
+  Empty,
+  Meter,
+  PageHeader,
+  Stat,
+  StatusDot,
+  Toggle,
+  cn,
+} from '#/components/kit'
 import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
@@ -25,21 +34,40 @@ export const Route = createFileRoute('/app/')({
   component: Board,
 })
 
+function needsReinstall(s: Server) {
+  return (
+    (s.helperMissing?.length ?? 0) > 0 ||
+    (s.exposure != null && !s.exposure.ready)
+  )
+}
+
 function Board() {
   const { data } = useSuspenseQuery(q.overview())
   const { canAct } = useRole()
+  const [onlyReinstall, setOnlyReinstall] = useState(false)
   const t = data.totals
+  const reinstall = data.servers.filter(needsReinstall)
+  const servers = onlyReinstall ? reinstall : data.servers
 
   return (
     <div>
       <PageHeader kicker="Fleet" title="The board">
-        {canAct && (
-          <Button asChild>
-            <Link to="/app/servers/new">
-              <PlusIcon /> Add server
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {data.servers.length > 0 && (
+            <Toggle
+              checked={onlyReinstall}
+              onChange={setOnlyReinstall}
+              label="Needs reinstall"
+            />
+          )}
+          {canAct && (
+            <Button asChild>
+              <Link to="/app/servers/new">
+                <PlusIcon /> Add server
+              </Link>
+            </Button>
+          )}
+        </div>
       </PageHeader>
 
       <Card
@@ -70,14 +98,15 @@ function Board() {
         <Stat label="Pending" value={t.pending} />
       </Card>
 
-      {data.servers.some((s) => s.exposure && !s.exposure.ready) && (
+      {reinstall.length > 0 && (
         <p className="mb-6 text-sm text-warn">
           {plural(
-            data.servers.filter((s) => s.exposure && !s.exposure.ready).length,
+            reinstall.length,
             'server needs a helper reinstall',
             'servers need a helper reinstall',
-          )}{' '}
-          before the exposure summary includes them.
+          )}
+          . The helper is missing an action this control plane uses, or it is
+          too old for the exposure summary.
         </p>
       )}
 
@@ -98,11 +127,15 @@ function Board() {
           it. The control plane installs a small helper and starts watching it
           within a minute.
         </Empty>
+      ) : servers.length === 0 ? (
+        <Empty title="No server needs a reinstall">
+          Every installed helper has the actions this control plane uses.
+        </Empty>
       ) : (
         <div className="animate-rise" style={{ animationDelay: '120ms' }}>
           {/* Phones and tablets: one card per server. */}
           <ul className="grid gap-3 md:grid-cols-2 xl:hidden">
-            {data.servers.map((s) => (
+            {servers.map((s) => (
               <li key={s.id}>
                 <ServerCard s={s} />
               </li>
@@ -133,7 +166,7 @@ function Board() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.servers.map((s) => (
+                {servers.map((s) => (
                   <Row key={s.id} s={s} />
                 ))}
               </TableBody>
@@ -221,7 +254,8 @@ function ExposureCell({ s, className }: { s: Server; className?: string }) {
 function Updates({ s }: { s: Server }) {
   if (!s.updates) return <span className="text-faint">—</span>
   const { security, other, stale } = s.updates
-  if (!security && !other && !stale) return <span className="text-faint">none</span>
+  if (!security && !other && !stale)
+    return <span className="text-faint">none</span>
   return (
     <span
       title={
@@ -235,7 +269,9 @@ function Updates({ s }: { s: Server }) {
       ) : (
         <>
           <span className="text-ink-2">{security + other}</span>
-          {security > 0 && <span className="text-warn"> · {security} security</span>}
+          {security > 0 && (
+            <span className="text-warn"> · {security} security</span>
+          )}
         </>
       )}
       {stale && <span className="text-warn"> · stale</span>}
