@@ -11,6 +11,29 @@ import (
 
 const signInWindow = 15 * time.Minute
 
+// authKeep is the longest shared auth window. Older rows are deleted.
+// Each check still counts only its own window.
+const authKeep = time.Hour
+
+// AuthLimited reports whether key has already been used max times inside window.
+// A database error counts as limited, so a second process cannot spend a quota
+// the shared count cannot show.
+func (s *Service) AuthLimited(key string, max int, window time.Duration) bool {
+	n, err := s.countHit(signInKeyPart(key), window)
+	if err != nil {
+		s.log.Error("auth limit", "err", err)
+		return true
+	}
+	return n >= int64(max)
+}
+
+// AuthHit records one use of key for the shared auth quotas.
+func (s *Service) AuthHit(key string) {
+	if err := s.recordHits([]string{signInKeyPart(key)}); err != nil {
+		s.log.Error("record auth limit", "err", err)
+	}
+}
+
 // SignInBlocked reports why this password attempt must stop, or "" when it
 // may go ahead. A database error stops the attempt, so a second process
 // cannot guess while the shared count is unreadable.
@@ -33,19 +56,8 @@ func (s *Service) SignInBlocked(email, ip string) string {
 // SignInFail records one failed password sign-in on the shared rows.
 func (s *Service) SignInFail(email, ip string) {
 	email, ip = signInKeyPart(email), signInKeyPart(ip)
-	now := s.now()
 	keys := []string{signInPair(email, ip), "email\n" + email, "client\n" + ip, "global"}
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("at < ?", now.Add(-signInWindow)).Delete(&store.SignInHit{}).Error; err != nil {
-			return err
-		}
-		rows := make([]store.SignInHit, len(keys))
-		for i, key := range keys {
-			rows[i] = store.SignInHit{Key: key, At: now}
-		}
-		return tx.Create(&rows).Error
-	})
-	if err != nil {
+	if err := s.recordHits(keys); err != nil {
 		s.log.Error("record sign-in failure", "err", err)
 	}
 }
@@ -91,6 +103,26 @@ func (s *Service) signInCounts(email, ip string) (signInCount, error) {
 		}
 	}
 	return c, nil
+}
+
+func (s *Service) countHit(key string, window time.Duration) (int64, error) {
+	var n int64
+	err := s.db.Model(&store.SignInHit{}).Where("key = ? AND at >= ?", key, s.now().Add(-window)).Count(&n).Error
+	return n, err
+}
+
+func (s *Service) recordHits(keys []string) error {
+	now := s.now()
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("at < ?", now.Add(-authKeep)).Delete(&store.SignInHit{}).Error; err != nil {
+			return err
+		}
+		rows := make([]store.SignInHit, len(keys))
+		for i, key := range keys {
+			rows[i] = store.SignInHit{Key: key, At: now}
+		}
+		return tx.Create(&rows).Error
+	})
 }
 
 func signInPair(email, ip string) string { return "pair\n" + email + "\n" + ip }

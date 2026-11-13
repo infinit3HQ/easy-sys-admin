@@ -160,7 +160,10 @@ The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `
 | Password sign-in, per email                                                                                                                                                       | 100 failures per 15 minutes                | same                                                 |
 | Password sign-in, per client address                                                                                                                                              | 30 failures per 15 minutes                 | same                                                 |
 | Password sign-in, whole install                                                                                                                                                   | 1000 failures per 15 minutes               | same                                                 |
-| Password sign-up, per client address                                                                                                                                              | 10 attempts per hour, successful or not    | `apps/esa/internal/auth/handlers.go`                     |
+| Password sign-up, per client address | 10 attempts per hour, successful or not | shared rows in PostgreSQL (`sign_in_hits`) |
+| Confirmation or reset mail, per address | 3 an hour, including sends that fail | same |
+| Confirmation or reset mail, per client address | 10 an hour | same |
+| Confirmation or reset link submission, per client address | 20 an hour | same |
 | Probing a host key, adding a server, reinstalling a helper, adding a certificate, testing a channel, creating an organization, creating an extra team, an invite, or a share link | 20 per minute per account, for each action | `limitRate` in `apps/esa/internal/fleet/limits_state.go` |
 
 A successful sign-in clears the per-pair and per-email counters only. The per-client and global budgets stay, so signing in to your own account does not buy more guesses at others. Scheduled work done by the system is not rate limited.

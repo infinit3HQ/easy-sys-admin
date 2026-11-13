@@ -76,8 +76,9 @@ type JobLease struct {
 
 func (JobLease) TableName() string { return "job_leases" }
 
-// SignInHit is one failed password sign-in, kept for 15 minutes. Every
-// control plane process counts the same rows, so each does not get its own quota.
+// SignInHit is one counted auth attempt: a failed password sign-in, a sign-up,
+// or a mail send. Rows older than an hour are deleted. Every control plane
+// process counts the same rows.
 type SignInHit struct {
 	ID  int64     `gorm:"primaryKey"`
 	Key string    `gorm:"not null;size:300;index"`

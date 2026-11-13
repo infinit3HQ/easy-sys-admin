@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"testing"
+	"time"
 )
 
 func TestSignInLimitIsSharedByTwoProcesses(t *testing.T) {
@@ -26,5 +27,11 @@ func TestSignInLimitIsSharedByTwoProcesses(t *testing.T) {
 	s.SignInSucceed(email, ip)
 	if got := other.SignInBlocked(email, ip); got != "" {
 		t.Fatalf("after a successful sign-in: %q", got)
+	}
+	for range 10 {
+		s.AuthHit("signup\n9.9.9.9")
+	}
+	if !other.AuthLimited("signup\n9.9.9.9", 10, time.Hour) {
+		t.Fatal("a second process got its own sign-up quota")
 	}
 }

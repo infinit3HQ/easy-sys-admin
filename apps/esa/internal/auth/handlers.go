@@ -59,8 +59,6 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 	})
 
 	if a.Password {
-		// Ten sign-up attempts per client an hour, successful or not.
-		signups := newFailureLimiter(10, time.Hour)
 		mux.HandleFunc("POST /auth/password/login", func(w http.ResponseWriter, r *http.Request) {
 			email, err := fleet.NormalizeEmail(r.FormValue("email"))
 			if err != nil {
@@ -96,11 +94,11 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 		})
 		mux.HandleFunc("POST /auth/password/signup", func(w http.ResponseWriter, r *http.Request) {
 			ip := clientIP(r)
-			if signups.Blocked(ip) {
+			if fl.AuthLimited("signup\n"+ip, 10, time.Hour) {
 				signupError(w, r, "rate_limited")
 				return
 			}
-			signups.Fail(ip)
+			fl.AuthHit("signup\n" + ip)
 			// Without ESA_SIGNUP the fleet service still lets the first
 			// user of an empty database sign up.
 			res, err := fl.SignUpPassword(r.Context(), r.FormValue("name"), r.FormValue("email"), r.FormValue("password"))
@@ -141,21 +139,15 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			start(w, r, res)
 		})
 		if a.Mail {
-			// Confirmation and reset mail. The counts include successful
-			// sends: 3 an hour per address, 10 an hour per client, and 20
-			// link submissions an hour per client.
-			sendEmail := newFailureLimiter(3, time.Hour)
-			sendIP := newFailureLimiter(10, time.Hour)
-			submitIP := newFailureLimiter(20, time.Hour)
 			mux.HandleFunc("POST /auth/password/forgot", func(w http.ResponseWriter, r *http.Request) {
 				email := formEmail(r)
 				ip := clientIP(r)
-				if sendEmail.Blocked(email) || sendIP.Blocked(ip) {
+				if fl.AuthLimited("mail\n"+email, 3, time.Hour) || fl.AuthLimited("mail-ip\n"+ip, 10, time.Hour) {
 					http.Redirect(w, r, "/login?mode=forgot&error=rate_limited", http.StatusSeeOther)
 					return
 				}
-				sendEmail.Fail(email)
-				sendIP.Fail(ip)
+				fl.AuthHit("mail\n" + email)
+				fl.AuthHit("mail-ip\n" + ip)
 				if err := fl.RequestPasswordReset(r.Context(), r.FormValue("email")); err != nil {
 					var verr *fleet.ValidationError
 					if errors.As(err, &verr) {
@@ -171,12 +163,12 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			mux.HandleFunc("POST /auth/email/resend", func(w http.ResponseWriter, r *http.Request) {
 				email := formEmail(r)
 				ip := clientIP(r)
-				if sendEmail.Blocked("confirm:"+email) || sendIP.Blocked("confirm:"+ip) {
+				if fl.AuthLimited("mail\nconfirm:"+email, 3, time.Hour) || fl.AuthLimited("mail-ip\nconfirm:"+ip, 10, time.Hour) {
 					http.Redirect(w, r, verifyRedirect(email, "rate_limited", ""), http.StatusSeeOther)
 					return
 				}
-				sendEmail.Fail("confirm:" + email)
-				sendIP.Fail("confirm:" + ip)
+				fl.AuthHit("mail\nconfirm:" + email)
+				fl.AuthHit("mail-ip\nconfirm:" + ip)
 				if err := fl.ResendConfirmation(r.Context(), r.FormValue("email")); err != nil {
 					var verr *fleet.ValidationError
 					if errors.As(err, &verr) {
@@ -191,11 +183,11 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			})
 			mux.HandleFunc("POST /auth/email/confirm", func(w http.ResponseWriter, r *http.Request) {
 				ip := clientIP(r)
-				if submitIP.Blocked("confirm:" + ip) {
+				if fl.AuthLimited("submit\nconfirm:"+ip, 20, time.Hour) {
 					http.Redirect(w, r, "/login?mode=confirm&error=rate_limited", http.StatusSeeOther)
 					return
 				}
-				submitIP.Fail("confirm:" + ip)
+				fl.AuthHit("submit\nconfirm:" + ip)
 				if err := fl.ConfirmEmail(r.Context(), r.FormValue("token")); err != nil {
 					http.Redirect(w, r, "/login?mode=confirm&error=confirm_invalid", http.StatusSeeOther)
 					return
@@ -204,11 +196,11 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 			})
 			mux.HandleFunc("POST /auth/password/reset", func(w http.ResponseWriter, r *http.Request) {
 				ip := clientIP(r)
-				if submitIP.Blocked("reset:" + ip) {
+				if fl.AuthLimited("submit\nreset:"+ip, 20, time.Hour) {
 					http.Redirect(w, r, "/login?mode=reset&error=rate_limited", http.StatusSeeOther)
 					return
 				}
-				submitIP.Fail("reset:" + ip)
+				fl.AuthHit("submit\nreset:" + ip)
 				err := fl.ResetPassword(r.Context(), r.FormValue("token"), r.FormValue("password"))
 				var verr *fleet.ValidationError
 				switch {
