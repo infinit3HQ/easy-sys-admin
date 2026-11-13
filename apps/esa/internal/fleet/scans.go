@@ -430,18 +430,42 @@ func retainUnverifiedImages(prev, next []VulnMatch, imagesRead bool, digests []s
 }
 
 // reportScanIncidents opens one notice per known-exploited advisory. Aliases
-// of that advisory do not open another. An idle kernel, an exception, and a
-// stale report do not. The match stays in the scan either way.
+// of that advisory do not open another. An idle kernel and an exception do
+// not open one. A fresh report that no longer lists an advisory resolves
+// that notice. The caller must not use a stale report: a missing advisory
+// there is not evidence it is gone.
 func (s *Service) reportScanIncidents(ctx context.Context, srv store.Server, matches []VulnMatch) {
-	seen := map[string]bool{}
+	present := map[string]bool{}
 	for _, m := range matches {
-		if m.Tier != 1 || m.NotRunningKernel || m.ExceptedUntil != nil || m.ID == "" || seen[m.ID] {
+		if m.ID != "" {
+			present[m.ID] = true
+		}
+		for _, al := range m.Aliases {
+			if al != "" {
+				present[al] = true
+			}
+		}
+	}
+	opened := map[string]bool{}
+	for _, m := range matches {
+		if m.Tier != 1 || m.NotRunningKernel || m.ExceptedUntil != nil || m.ID == "" || opened[m.ID] {
 			continue
 		}
-		seen[m.ID] = true
+		opened[m.ID] = true
 		for _, al := range m.Aliases {
-			seen[al] = true
+			opened[al] = true
 		}
 		s.openIncident(ctx, srv.AccountID, srv.ID, "vuln", m.ID, srv.Name+": "+m.ID+" on "+m.Package+" "+m.Version+" is listed as known exploited", false)
+	}
+	var rows []store.SecurityIncident
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, "vuln", "resolved").Find(&rows).Error; err != nil {
+		s.log.Error("list vulnerability notices", "err", err)
+		return
+	}
+	for _, row := range rows {
+		if present[row.Subject] {
+			continue
+		}
+		s.resolveIncident(ctx, srv.AccountID, srv.ID, "vuln", row.Subject)
 	}
 }

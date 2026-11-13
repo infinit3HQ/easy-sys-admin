@@ -225,6 +225,27 @@ func TestKnownExploitedScanOpensOneNotice(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("known exploited notices: %d", n)
 	}
+	staleGone := `{"matches":[],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"2026-10-01T00:00:00Z"}}}`
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(staleGone)); err != nil {
+		t.Fatal(err)
+	}
+	var open int64
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "vuln", "resolved").Count(&open).Error; err != nil {
+		t.Fatal(err)
+	}
+	if open != 1 {
+		t.Fatal("a stale report resolved the notice")
+	}
+	freshGone := `{"matches":[],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"` + s.now().UTC().Format(time.RFC3339) + `"}}}`
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(freshGone)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "vuln", "resolved").Count(&open).Error; err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 {
+		t.Fatal("a fresh report that no longer lists the advisory left the notice open")
+	}
 	s.reportScanIncidents(ctx, srv, []VulnMatch{
 		{ID: "CVE-1", Aliases: []string{"USN-1"}, Package: "openssl", Version: "1", Tier: 1},
 		{ID: "USN-1", Package: "openssl", Version: "1", Tier: 1},
