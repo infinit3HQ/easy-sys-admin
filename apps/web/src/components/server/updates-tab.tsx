@@ -1,5 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  useQuery,
   useMutation,
   useQueryClient,
   useSuspenseQuery,
@@ -41,6 +42,10 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
   const [confirm, setConfirm] = useState<'update' | 'reboot' | null>(null)
   const [picked, setPicked] = useState<string[] | null>(null)
   const navigate = useNavigate()
+  const recovery = useQuery({
+    ...q.recovery(serverId),
+    enabled: confirm === 'update',
+  })
   const own = data.server.access === 'own'
   const eligible = (upd?.packages ?? []).filter(
     (p) =>
@@ -266,7 +271,19 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       <ConfirmDialog
         open={confirm === 'update'}
         title="Install updates"
-        body={`Installs ${mode === 'security' ? 'security updates' : 'all pending updates'} on ${data.server.name}${reboot ? ', then reboots if required' : ''}.`}
+        body={
+          <div className="space-y-3">
+            <p>
+              Installs{' '}
+              {mode === 'security' ? 'security updates' : 'all pending updates'}{' '}
+              on {data.server.name}
+              {reboot ? ', then reboots if required' : ''}.
+            </p>
+            <p>
+              {backupNote(recovery.data, recovery.isPending, recovery.isError)}
+            </p>
+          </div>
+        }
         actionLabel="Start"
         busy={run.isPending}
         error={run.error}
@@ -291,4 +308,27 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       />
     </div>
   )
+}
+
+function backupNote(
+  report:
+    | {
+        sources?: { backupState?: string; freshness?: string }[]
+      }
+    | undefined,
+  pending: boolean,
+  failed: boolean,
+) {
+  if (pending)
+    return 'Reading the backup result files. The update can still start.'
+  if (failed || !report) {
+    return 'The backup result files could not be read. The update can still start. That is not proof a backup exists.'
+  }
+  const current = report.sources?.some(
+    (s) => s.backupState === 'success' && s.freshness === 'current',
+  )
+  if (current) {
+    return 'A backup result file says success in the last 7 days. That file is not proof the data can be restored.'
+  }
+  return 'No backup result file shows a success from the last 7 days. The update can still start. A file is not proof the data can be restored.'
 }

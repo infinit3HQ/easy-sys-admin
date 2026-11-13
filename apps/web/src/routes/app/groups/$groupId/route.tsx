@@ -230,6 +230,12 @@ function GroupLayout() {
                 {g.updates.rebootIfRequired ? ', rebooting where required' : ''}
                 .
               </p>
+              <p>
+                Backup result files are not read for the whole group. Open a
+                server to see whether a success from the last 7 days is on file.
+                This does not stop the update, and a file is not proof the data
+                can be restored.
+              </p>
               {members.length > 1 && (
                 <fieldset className="space-y-1">
                   <legend className="text-xs text-muted-foreground">
