@@ -130,6 +130,9 @@ export function ScanPanel({
                 {' '}
                 · {tierLabel[m.tier] ?? m.reason}
                 {m.notRunningKernel ? ' · not the running kernel' : ''}
+                {m.imageDigest || m.imageTag
+                  ? ' · image, not cleared by a tag change'
+                  : ''}
                 {m.exceptedUntil ? ' · excepted, not a fix' : ''}
               </span>
               {m.exceptedUntil && (

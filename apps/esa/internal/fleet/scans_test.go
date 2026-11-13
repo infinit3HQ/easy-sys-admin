@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -199,5 +200,56 @@ func TestLatestScanStates(t *testing.T) {
 	viewer.Role = RoleViewer
 	if _, err := s.ImportScan(ctx, viewer, srv.ID, []byte(grypeFixture)); err == nil {
 		t.Fatal("a viewer imported a scan")
+	}
+}
+
+func imageGrype(digest, tag, built string) string {
+	return fmt.Sprintf(`{"matches":[{"vulnerability":{"id":"CVE-IMG","severity":"High","fix":{"state":"fixed","versions":["2"]}},"artifact":{"name":"openssl","version":"1","type":"deb","metadata":{"imageID":"%s","userInput":"%s"}}}],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"%s"}}}`, digest, tag, built)
+}
+
+func TestTagChangeDoesNotClearAnImageMatch(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "images")
+	srv := addTestServer(t, s, a, nil, "mail")
+	if err := s.db.Create(&store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]")}).Error; err != nil {
+		t.Fatal(err)
+	}
+	built := s.now().UTC().Format(time.RFC3339)
+	empty := `{"matches":[],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"` + built + `"}}}`
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(imageGrype("sha256:abc", "nginx:1", built))); err != nil {
+		t.Fatal(err)
+	}
+	// The image is still on disk under a new tag. The digest is unchanged.
+	if err := s.db.Model(&store.ServerState{}).Where("server_id = ?", srv.ID).Updates(map[string]any{
+		"images_read": true, "image_digests": store.MustJSON([]string{"sha256:abc"}),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.ImportScan(ctx, a, srv.ID, []byte(empty))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Matches) != 1 || v.Matches[0].ImageDigest != "sha256:abc" || !strings.Contains(v.Coverage, "tag change") {
+		t.Fatalf("same digest was cleared: %+v %s", v.Matches, v.Coverage)
+	}
+	// No digest was recorded, so a tag-only match cannot be cleared.
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(imageGrype("", "nginx:1", built))); err != nil {
+		t.Fatal(err)
+	}
+	v, err = s.ImportScan(ctx, a, srv.ID, []byte(empty))
+	if err != nil || len(v.Matches) != 1 || v.Matches[0].ImageTag != "nginx:1" {
+		t.Fatalf("tag-only match was cleared: %+v %v", v.Matches, err)
+	}
+	other := addTestServer(t, s, a, nil, "other")
+	if err := s.db.Create(&store.ServerState{ServerID: other.ID, Status: "ok", Reasons: store.JSON("[]"), ImagesRead: true, ImageDigests: store.MustJSON([]string{})}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ImportScan(ctx, a, other.ID, []byte(imageGrype("sha256:gone", "nginx:1", built))); err != nil {
+		t.Fatal(err)
+	}
+	v, err = s.ImportScan(ctx, a, other.ID, []byte(empty))
+	if err != nil || len(v.Matches) != 0 {
+		t.Fatalf("a digest missing from a read image list stayed: %+v %v", v.Matches, err)
 	}
 }

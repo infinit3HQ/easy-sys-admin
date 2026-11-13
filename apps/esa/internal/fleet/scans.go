@@ -35,6 +35,11 @@ type VulnMatch struct {
 	FixedIn        []string `json:"fixedIn,omitempty"`
 	KnownExploited bool     `json:"knownExploited,omitempty"`
 	EPSS           float64  `json:"epss,omitempty"`
+	// ImageDigest is the image this match was found in. Empty means the
+	// report did not give one. ImageTag is the name the report used.
+	// A later report that only changes the tag does not drop the match.
+	ImageDigest string `json:"imageDigest,omitempty"`
+	ImageTag    string `json:"imageTag,omitempty"`
 	// NotRunningKernel is a kernel package that is installed but is not the
 	// kernel the server is running. The match is kept: the package is still
 	// on disk.
@@ -80,9 +85,13 @@ type grypeReport struct {
 			ID string `json:"id"`
 		} `json:"relatedVulnerabilities"`
 		Artifact struct {
-			Name    string `json:"name"`
-			Version string `json:"version"`
-			Type    string `json:"type"`
+			Name     string `json:"name"`
+			Version  string `json:"version"`
+			Type     string `json:"type"`
+			Metadata struct {
+				ImageID   string `json:"imageID"`
+				UserInput string `json:"userInput"`
+			} `json:"metadata"`
 		} `json:"artifact"`
 	} `json:"matches"`
 	Descriptor struct {
@@ -135,6 +144,8 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 			ID: v.ID, Aliases: aliases, Package: m.Artifact.Name, Version: m.Artifact.Version,
 			Severity: strings.ToLower(v.Severity), FixState: v.Fix.State, FixedIn: v.Fix.Versions,
 			KnownExploited: len(v.KnownExploited) > 0,
+			ImageDigest:    m.Artifact.Metadata.ImageID,
+			ImageTag:       m.Artifact.Metadata.UserInput,
 		}
 		for _, e := range v.EPSS {
 			vm.EPSS = max(vm.EPSS, e.EPSS)
@@ -235,12 +246,23 @@ func (s *Service) ImportScan(ctx context.Context, a Actor, serverID int64, raw [
 	if matches == nil {
 		matches = []VulnMatch{}
 	}
+	var prev []VulnMatch
+	var old store.ScanImport
+	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Order("imported_at desc, id desc").Take(&old).Error; err == nil {
+		_ = old.Matches.Decode(&prev)
+	}
+	var state store.ServerState
+	_ = s.db.WithContext(ctx).Select("images_read", "image_digests").Where("server_id = ?", srv.ID).Take(&state).Error
+	var digests []string
+	_ = state.ImageDigests.Decode(&digests)
+	kept := 0
+	matches, kept = retainUnverifiedImages(prev, matches, state.ImagesRead, digests)
 	row := store.ScanImport{AccountID: srv.AccountID, ServerID: srv.ID, Scanner: scanner, ScannerVersion: ver, DBBuilt: built,
 		Matches: store.MustJSON(matches), ImportedAt: s.now(), ImportedBy: a.UserID}
 	if err := s.db.WithContext(ctx).Omit("Account", "Server").Create(&row).Error; err != nil {
 		return ScanView{}, err
 	}
-	s.audit(ctx, nil, a, "scan.import", srv.Name, map[string]any{"scanner": scanner, "version": ver, "matches": len(matches)})
+	s.audit(ctx, nil, a, "scan.import", srv.Name, map[string]any{"scanner": scanner, "version": ver, "matches": len(matches), "keptImages": kept})
 	return s.LatestScan(ctx, a, serverID)
 }
 
@@ -284,6 +306,12 @@ func (s *Service) LatestScan(ctx context.Context, a Actor, serverID int64) (Scan
 	sortMatches(v.Matches)
 	if excepted > 0 {
 		v.Coverage += fmt.Sprintf(" %d matches are excepted until a date. An exception is not a fix.", excepted)
+	}
+	for _, m := range v.Matches {
+		if m.ImageDigest != "" || m.ImageTag != "" {
+			v.Coverage += " An image match stays until a read of the local images shows that digest is gone. A tag change does not clear it."
+			break
+		}
 	}
 	switch {
 	case idle == 1:
@@ -357,4 +385,37 @@ func kernelPackages(ms []VulnMatch) int {
 		}
 	}
 	return n
+}
+
+// retainUnverifiedImages keeps an image finding that a new report dropped
+// when the drop is not backed by a local image list. A tag change, a missing
+// digest, or an unread image list does not clear it. A digest that the last
+// local list does not contain is not kept.
+func retainUnverifiedImages(prev, next []VulnMatch, imagesRead bool, digests []string) ([]VulnMatch, int) {
+	have := map[string]bool{}
+	for _, m := range next {
+		have[m.Package+"\n"+m.ID] = true
+	}
+	present := map[string]bool{}
+	for _, d := range digests {
+		present[d] = true
+	}
+	n := 0
+	for _, m := range prev {
+		if m.ImageDigest == "" && m.ImageTag == "" {
+			continue
+		}
+		if have[m.Package+"\n"+m.ID] {
+			continue
+		}
+		if m.ImageDigest != "" && imagesRead && !present[m.ImageDigest] {
+			continue
+		}
+		if len(next) >= maxScanMatches {
+			break
+		}
+		next = append(next, m)
+		n++
+	}
+	return next, n
 }

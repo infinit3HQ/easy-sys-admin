@@ -3508,6 +3508,8 @@ components:
               tier: { type: integer, description: '1 known exploited, 2 high or critical with a fix, 3 the rest.' }
               reason: { type: string }
               notRunningKernel: { type: boolean, description: 'This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.' }
+              imageDigest: { type: string, description: 'The image this match was found in. Empty when the report did not give one.' }
+              imageTag: { type: string, description: 'The image name the report used. A later tag change does not drop the match.' }
               exceptedUntil: { type: string, format: date-time, nullable: true, description: 'Set when a person has set this match aside until this date. The match stays. An exception is not a fix.' }
 
     CheckOverride:

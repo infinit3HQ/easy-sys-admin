@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/version"
 )
 
@@ -72,6 +73,13 @@ func (s *Service) ServerSBOM(ctx context.Context, a Actor, serverID int64) (SBOM
 	if len(inv.Gaps) > 0 {
 		return SBOM{}, &UnavailableError{Message: srv.Name + ": the package list is incomplete (" + strings.Join(inv.Gaps, ", ") + "), so no SBOM was made"}
 	}
+	digests := []string{}
+	for _, img := range inv.Images {
+		digests = append(digests, img.Digests...)
+	}
+	s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", srv.ID).Updates(map[string]any{
+		"images_read": inv.ImagesRead, "image_digests": store.MustJSON(digests),
+	})
 	return buildSBOM(srv.Name, inv, s.now(), version.Version), nil
 }
 
@@ -92,6 +100,26 @@ func buildSBOM(server string, inv proto.PackageInventory, now time.Time, version
 		bom.Components = append(bom.Components, SBOMComponent{
 			Type: "library", Name: p.Name, Version: p.Version, Purl: debPurl(distro, inv.Release, p), BOMRef: p.Name + ":" + p.Arch,
 		})
+	}
+	for i, img := range inv.Images {
+		name := img.ID
+		if len(img.Tags) > 0 {
+			name = img.Tags[0]
+		}
+		version := ""
+		if len(img.Digests) > 0 {
+			version = img.Digests[0]
+		}
+		props := []SBOMProperty{{Name: "esa:image-id", Value: img.ID}}
+		if len(img.Digests) == 0 {
+			props = append(props, SBOMProperty{Name: "esa:image-digest", Value: "missing"})
+		}
+		bom.Components = append(bom.Components, SBOMComponent{
+			Type: "container", Name: name, Version: version, BOMRef: fmt.Sprintf("image-%d", i), Properties: props,
+		})
+	}
+	if !inv.ImagesRead {
+		bom.Metadata.Component.Properties = append(bom.Metadata.Component.Properties, SBOMProperty{Name: "esa:images", Value: "not read"})
 	}
 	return bom
 }

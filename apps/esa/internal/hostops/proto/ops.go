@@ -334,6 +334,19 @@ type PackageInventory struct {
 	Release  string             `json:"release"`
 	Packages []InstalledPackage `json:"packages"`
 	Gaps     []string           `json:"gaps"`
+	// ImagesRead is true when the local Docker image list was read. False
+	// is not an empty image list: image findings cannot be closed from it.
+	ImagesRead bool         `json:"imagesRead"`
+	Images     []LocalImage `json:"images,omitempty"`
+}
+
+// LocalImage is one image on the server. ID is the local image id. Digests
+// are registry digests already stored on the image. Reading this list does
+// not contact a registry. A tag without a digest is not a verified identity.
+type LocalImage struct {
+	ID      string   `json:"id"`
+	Tags    []string `json:"tags,omitempty"`
+	Digests []string `json:"digests,omitempty"`
 }
 
 // InstalledPackage is one installed deb.

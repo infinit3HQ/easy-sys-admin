@@ -253,6 +253,11 @@ type ServerState struct {
 	// It is not the user list. ExposureAt is when it was last attempted.
 	Exposure   JSON `gorm:"type:jsonb"`
 	ExposureAt *time.Time
+	// ImagesRead is true when a local Docker image list was stored.
+	// ImageDigests are the registry digests from that list. A tag is not stored
+	// as an identity. An unread list is not an empty one.
+	ImagesRead   bool `gorm:"not null;default:false"`
+	ImageDigests JSON `gorm:"type:jsonb"`
 	// AccessFacts is the last complete-enough access check: SSH settings,
 	// login accounts without their keys, and sudo rules. It is not a baseline
 	// until someone approves it.

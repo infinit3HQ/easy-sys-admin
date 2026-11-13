@@ -28,6 +28,13 @@ func (h *Host) Inventory(ctx context.Context) (proto.PackageInventory, error) {
 	if truncated {
 		rep.Gaps = append(rep.Gaps, "truncated")
 	}
+	if h.Docker != nil {
+		imgs, err := h.Docker.localImages(ctx)
+		if err == nil {
+			rep.ImagesRead = true
+			rep.Images = imgs
+		}
+	}
 	return rep, nil
 }
 

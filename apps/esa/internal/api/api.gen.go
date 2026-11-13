@@ -2074,11 +2074,17 @@ type ScanReport struct {
 		Epss    *float32  `json:"epss,omitempty"`
 
 		// ExceptedUntil Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
-		ExceptedUntil  *time.Time `json:"exceptedUntil,omitempty"`
-		FixState       string     `json:"fixState"`
-		FixedIn        *[]string  `json:"fixedIn,omitempty"`
-		Id             string     `json:"id"`
-		KnownExploited *bool      `json:"knownExploited,omitempty"`
+		ExceptedUntil *time.Time `json:"exceptedUntil,omitempty"`
+		FixState      string     `json:"fixState"`
+		FixedIn       *[]string  `json:"fixedIn,omitempty"`
+		Id            string     `json:"id"`
+
+		// ImageDigest The image this match was found in. Empty when the report did not give one.
+		ImageDigest *string `json:"imageDigest,omitempty"`
+
+		// ImageTag The image name the report used. A later tag change does not drop the match.
+		ImageTag       *string `json:"imageTag,omitempty"`
+		KnownExploited *bool   `json:"knownExploited,omitempty"`
 
 		// NotRunningKernel This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.
 		NotRunningKernel *bool  `json:"notRunningKernel,omitempty"`

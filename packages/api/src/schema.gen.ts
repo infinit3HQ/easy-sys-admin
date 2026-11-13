@@ -2939,6 +2939,10 @@ export interface components {
                 reason: string;
                 /** @description This package is a kernel build that is installed but is not the kernel the server is running. The match is kept. */
                 notRunningKernel?: boolean;
+                /** @description The image this match was found in. Empty when the report did not give one. */
+                imageDigest?: string;
+                /** @description The image name the report used. A later tag change does not drop the match. */
+                imageTag?: string;
                 /**
                  * Format: date-time
                  * @description Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
