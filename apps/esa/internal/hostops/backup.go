@@ -136,7 +136,65 @@ func parseRecovery(buf []byte) (proto.RecoverySource, error) {
 	if raw.Smoke != nil {
 		src.SmokeState = oneOf(raw.Smoke.State, "not run", "not run", "success", "failed", "unknown")
 	}
+	src.Freshness, src.Note = recoveryNote(src, time.Now())
 	return src, nil
+}
+
+const recoveryStaleAfter = 7 * 24 * time.Hour
+
+// recoveryNote separates a backup result from a repository check and a
+// restore test. A success is not marked current when it has no time, is
+// older than 7 days, or is in the future.
+func recoveryNote(src proto.RecoverySource, now time.Time) (string, string) {
+	var notes []string
+	freshness := "unknown"
+	if src.BackupState == "success" || src.BackupState == "warning" {
+		switch {
+		case src.BackupAt == nil:
+			notes = append(notes, "The backup has no time, so it is not current.")
+		case src.BackupAt.After(now.Add(2 * time.Minute)):
+			freshness = "future"
+			notes = append(notes, "The backup time is in the future.")
+		case now.Sub(*src.BackupAt) > recoveryStaleAfter:
+			freshness = "stale"
+			notes = append(notes, "The backup time is more than 7 days ago.")
+		default:
+			freshness = "current"
+		}
+	}
+	if src.CheckAt != nil && src.CheckAt.After(now.Add(2*time.Minute)) && freshness != "future" {
+		freshness = "future"
+		notes = append(notes, "The check time is in the future.")
+	}
+	switch src.CheckKind {
+	case "sampled":
+		notes = append(notes, "A sampled check does not read the whole repository.")
+	case "structural":
+		notes = append(notes, "A structural check does not read file contents.")
+	case "full":
+		if src.CheckState == "failed" || src.CheckState == "warning" {
+			notes = append(notes, "The full check did not succeed.")
+		}
+	}
+	if src.Snapshot == "" {
+		notes = append(notes, "No snapshot id was recorded.")
+	}
+	if src.SmokeState == "failed" {
+		notes = append(notes, "The smoke test failed.")
+	}
+	if src.RestoreState != "success" {
+		notes = append(notes, "No successful restore test was recorded.")
+	}
+	return freshness, strings.Join(notes, " ")
+}
+
+// AnnotateRecovery fills freshness and notes from the times in the report.
+// The control plane runs this after the helper returns, so an older helper
+// still gets the same reading.
+func AnnotateRecovery(rep *proto.RecoveryReport, now time.Time) {
+	for i := range rep.Sources {
+		rep.Sources[i].Freshness, rep.Sources[i].Note = recoveryNote(rep.Sources[i], now)
+	}
 }
 
 func cleanToken(s string) (string, bool) {

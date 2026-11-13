@@ -320,8 +320,10 @@ export function SecurityTab({ serverId }: { serverId: number }) {
         <ul className="mt-2 space-y-1 font-mono text-xs">
           {recovery.data?.sources.map((s) => (
             <li key={`${s.tool}-${s.dataset}`}>
-              {s.tool} {s.dataset}: backup {s.backupState}, check {s.checkKind}{' '}
+              {s.tool} {s.dataset}: backup {s.backupState}
+              {s.freshness ? ` (${s.freshness})` : ''}, check {s.checkKind}{' '}
               {s.checkState}, restore {s.restoreState}, smoke {s.smokeState}
+              {s.note ? `. ${s.note}` : ''}
             </li>
           ))}
         </ul>

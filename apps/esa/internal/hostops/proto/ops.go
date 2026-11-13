@@ -319,6 +319,10 @@ type RecoverySource struct {
 	CheckAt      *time.Time `json:"checkAt,omitempty"`
 	RestoreState string     `json:"restoreState"`
 	SmokeState   string     `json:"smokeState"`
+	// Freshness is current, stale, unknown, or future. Stale means the
+	// backup time is more than 7 days ago. Unknown is not a current success.
+	Freshness string `json:"freshness"`
+	Note      string `json:"note"`
 }
 
 // PackageInventory is the deb packages dpkg reports. It is not a vulnerability scan.

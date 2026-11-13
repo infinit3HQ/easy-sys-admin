@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -256,6 +257,7 @@ func (s *Service) Recovery(ctx context.Context, a Actor, serverID int64) (proto.
 	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
 		out.Gaps = append(out.Gaps, "helper")
 	}
+	hostops.AnnotateRecovery(&out, time.Now())
 	return out, err
 }
 

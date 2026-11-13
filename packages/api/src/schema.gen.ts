@@ -2452,6 +2452,10 @@ export interface components {
                 checkAt?: string | null;
                 restoreState: string;
                 smokeState: string;
+                /** @description current, stale, unknown, or future. Unknown is not a current success. Stale means the backup time is more than 7 days ago. */
+                freshness?: string;
+                /** @description What this file does not prove. A sampled check is not a full read, and a backup success is not a restore. */
+                note?: string;
             }[];
             gaps: string[];
         };
