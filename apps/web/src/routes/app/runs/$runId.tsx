@@ -183,10 +183,17 @@ function ServerResult({ s, kind }: { s: RunServer; kind: string }) {
                   phase: string
                   state: string
                   detail?: string
+                  overridden?: boolean
                 }) => (
                   <li key={`${c.phase}-${c.name}`}>
                     {c.phase} {c.name}: {c.state}
                     {c.detail ? ` (${c.detail})` : ''}
+                    {c.overridden && (
+                      <span className="text-warn">
+                        {' '}
+                        · overridden by a person for this run
+                      </span>
+                    )}
                   </li>
                 ),
               )}

@@ -3085,6 +3085,7 @@ components:
           readOnly: true
           description: Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request.
         waitAfterCanaries: { type: boolean, description: The run pauses after its canaries until a person decides. }
+        override: { $ref: '#/components/schemas/CheckOverride' }
 
     StartRunRequest:
       type: object
@@ -3105,6 +3106,7 @@ components:
         waitAfterCanaries:
           type: boolean
           description: 'Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.'
+        override: { $ref: '#/components/schemas/CheckOverride' }
         options:
           type: object
           allOf: [{ $ref: '#/components/schemas/RunOptions' }]
@@ -3144,6 +3146,16 @@ components:
         bytesFreed: { type: integer, format: int64 }
         servers: { type: array, items: { $ref: '#/components/schemas/RunServer' } }
         gate: { $ref: '#/components/schemas/RunGate' }
+
+    CheckOverride:
+      type: object
+      nullable: true
+      description: 'Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it.'
+      required: [checks, reason]
+      properties:
+        checks: { type: array, items: { type: string } }
+        reason: { type: string, maxLength: 200 }
+        by: { type: integer, format: int64, readOnly: true }
 
     RunGate:
       type: object
@@ -3198,6 +3210,7 @@ components:
               state: { type: string }
               detail: { type: string }
               blocking: { type: boolean }
+              overridden: { type: boolean, description: A failed check before the upgrade that a person let pass for this run. }
 
     PlanBody:
       type: object

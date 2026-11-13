@@ -1063,6 +1063,13 @@ type ChannelList struct {
 	Items []Channel `json:"items"`
 }
 
+// CheckOverride Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it.
+type CheckOverride struct {
+	By     *int64   `json:"by,omitempty"`
+	Checks []string `json:"checks"`
+	Reason string   `json:"reason"`
+}
+
 // CleanPolicy defines model for CleanPolicy.
 type CleanPolicy struct {
 	// BuildCache Prune idle Docker build cache.
@@ -1782,8 +1789,11 @@ type PatchServer struct {
 		Detail   *string `json:"detail,omitempty"`
 		Kind     string  `json:"kind"`
 		Name     string  `json:"name"`
-		Phase    string  `json:"phase"`
-		State    string  `json:"state"`
+
+		// Overridden A failed check before the upgrade that a person let pass for this run.
+		Overridden *bool  `json:"overridden,omitempty"`
+		Phase      string `json:"phase"`
+		State      string `json:"state"`
 	} `json:"checks"`
 	Error string `json:"error"`
 
@@ -2119,8 +2129,11 @@ type StartRunRequest struct {
 	ObserveSeconds *int `json:"observeSeconds,omitempty"`
 
 	// Options Overrides the group's settings. Omit to use them.
-	Options   *RunOptions `json:"options,omitempty"`
-	ServerIds *[]int64    `json:"serverIds,omitempty"`
+	Options *RunOptions `json:"options,omitempty"`
+
+	// Override Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it.
+	Override  *CheckOverride `json:"override,omitempty"`
+	ServerIds *[]int64       `json:"serverIds,omitempty"`
 
 	// WaitAfterCanaries Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.
 	WaitAfterCanaries *bool `json:"waitAfterCanaries,omitempty"`

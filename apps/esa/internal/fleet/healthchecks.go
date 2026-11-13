@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -42,6 +43,44 @@ type CheckResult struct {
 	State    string `json:"state"`
 	Detail   string `json:"detail,omitempty"`
 	Blocking bool   `json:"blocking"`
+	// Overridden is set on a failed check before the upgrade that a
+	// person let the run pass, with a reason, for this run only.
+	Overridden bool `json:"overridden,omitempty"`
+}
+
+// CheckOverride lets named blocking checks fail before the upgrade for
+// one run. A failure after the upgrade still stops the server.
+type CheckOverride struct {
+	Checks []string `json:"checks"`
+	Reason string   `json:"reason"`
+	By     int64    `json:"by"`
+}
+
+// beforeChecks returns the checks for the "before" phase with overridden
+// ones made advisory, and marks their failed results.
+func beforeChecks(checks []HealthCheck, o *CheckOverride) []HealthCheck {
+	if o == nil {
+		return checks
+	}
+	out := make([]HealthCheck, len(checks))
+	for i, c := range checks {
+		if slices.Contains(o.Checks, c.Name) {
+			c.Blocking = false
+		}
+		out[i] = c
+	}
+	return out
+}
+
+func markOverridden(results []CheckResult, o *CheckOverride) {
+	if o == nil {
+		return
+	}
+	for i := range results {
+		if results[i].State != "pass" && slices.Contains(o.Checks, results[i].Name) {
+			results[i].Overridden, results[i].Blocking = true, true
+		}
+	}
 }
 
 const maxHealthChecks = 8

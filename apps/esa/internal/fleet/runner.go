@@ -508,7 +508,8 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 		s.setRunServer(ctx, rs, "failed", "could not read status before the upgrade: "+err.Error(), nil, 0)
 		return false
 	}
-	pre, block := s.runHealthChecks(ctx, rs.Server, ep, o.Checks, "before")
+	pre, block := s.runHealthChecks(ctx, rs.Server, ep, beforeChecks(o.Checks, o.Override), "before")
+	markOverridden(pre, o.Override)
 	saved := map[string]any{"healthBefore": before}
 	if len(pre) > 0 {
 		saved["checks"] = pre

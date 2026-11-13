@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -56,6 +57,9 @@ type RunOptions struct {
 	// WaitAfterCanaries pauses the run once the canaries and their watch
 	// pass, until a person continues or stops it on the run page.
 	WaitAfterCanaries bool `json:"waitAfterCanaries,omitempty"`
+	// Override lets named blocking checks fail before the upgrade, with a
+	// person's reason. Set only from a request by a person in the web app.
+	Override *CheckOverride `json:"override,omitempty"`
 }
 
 // Limits on a group's rolling update settings.
@@ -94,6 +98,8 @@ type RunRequest struct {
 	ObserveSeconds int
 	// WaitAfterCanaries pauses before the other servers until a person decides.
 	WaitAfterCanaries bool
+	// Override, from a person, lets named blocking checks fail before the upgrade.
+	Override *CheckOverride
 	// FromPlan is set only by ExecutePlan. A group that requires a plan
 	// refuses every other start, scheduled runs included. With a GroupID,
 	// ServerIDs then limits the run to the servers the plan pinned.
@@ -301,8 +307,16 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if opts.WaitAfterCanaries && len(opts.CanaryServerIDs) == 0 {
 			return RunView{}, invalid("waitAfterCanaries", "pick a canary to wait after")
 		}
+		opts.Override = nil
+		if req.Override != nil {
+			ov, err := validOverride(a, *req.Override, opts.Checks)
+			if err != nil {
+				return RunView{}, err
+			}
+			opts.Override = &ov
+		}
 	} else {
-		opts.Checks, opts.CanaryServerIDs, opts.WaitAfterCanaries = nil, nil, false
+		opts.Checks, opts.CanaryServerIDs, opts.WaitAfterCanaries, opts.Override = nil, nil, false, nil
 		opts.ObserveSeconds = 0
 	}
 
@@ -350,7 +364,11 @@ func (s *Service) createRun(ctx context.Context, a Actor, ownerID int64, kind Ru
 		if group != nil {
 			target = group.Name
 		}
-		s.auditOn(ctx, q, a, ownerID, "run.start", target, map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)})
+		detail := map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)}
+		if opts.Override != nil {
+			detail["override_checks"], detail["override_reason"] = opts.Override.Checks, opts.Override.Reason
+		}
+		s.auditOn(ctx, q, a, ownerID, "run.start", target, detail)
 		return nil
 	})
 	return run, err
@@ -536,4 +554,32 @@ func unionNames(a, b []string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// validOverride checks an override: a person in the web app, a reason,
+// and only blocking checks this run has.
+func validOverride(a Actor, in CheckOverride, checks []HealthCheck) (CheckOverride, error) {
+	if !a.isPerson() {
+		return CheckOverride{}, invalid("override", "only a person signed in to the web app can override a check")
+	}
+	reason := strings.TrimSpace(in.Reason)
+	if reason == "" || len([]rune(reason)) > 200 {
+		return CheckOverride{}, invalid("override", "say why, in at most 200 characters")
+	}
+	names := cleanList(in.Checks)
+	if len(names) == 0 {
+		return CheckOverride{}, invalid("override", "name the checks to override")
+	}
+	for _, n := range names {
+		ok := false
+		for _, c := range checks {
+			if c.Name == n && c.Blocking {
+				ok = true
+			}
+		}
+		if !ok {
+			return CheckOverride{}, invalid("override", "%q is not a blocking check of this run", n)
+		}
+	}
+	return CheckOverride{Checks: names, Reason: reason, By: a.UserID}, nil
 }

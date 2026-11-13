@@ -47,6 +47,9 @@ function GroupLayout() {
   const [canaries, setCanaries] = useState<number[]>([])
   const [watch, setWatch] = useState(0)
   const [gate, setGate] = useState(false)
+  const [override, setOverride] = useState<string[]>([])
+  const [overrideReason, setOverrideReason] = useState('')
+  const blocking = g.checks.filter((c) => c.blocking)
   const fleet = useQuery(q.overview())
   const members = (fleet.data?.servers ?? []).filter(
     (s) => s.groupId === groupId,
@@ -106,6 +109,10 @@ function GroupLayout() {
               kind === 'update' && canaries.length > 0 && gate
                 ? true
                 : undefined,
+            override:
+              kind === 'update' && override.length > 0
+                ? { checks: override, reason: overrideReason.trim() }
+                : undefined,
           },
         }),
       ),
@@ -149,6 +156,8 @@ function GroupLayout() {
                     setCanaries([])
                     setWatch(0)
                     setGate(false)
+                    setOverride([])
+                    setOverrideReason('')
                     setConfirm('update')
                   }}
                   disabled={empty}
@@ -246,6 +255,44 @@ function GroupLayout() {
                       {s.name}
                     </label>
                   ))}
+                </fieldset>
+              )}
+              {blocking.length > 0 && !needsPlan && (
+                <fieldset className="space-y-1">
+                  <legend className="text-xs text-muted-foreground">
+                    Let a check that already fails pass before the upgrade, for
+                    this run only. A failure after the upgrade still stops the
+                    server.
+                  </legend>
+                  {blocking.map((c) => (
+                    <label
+                      key={c.name}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={override.includes(c.name)}
+                        onChange={(e) =>
+                          setOverride(
+                            e.target.checked
+                              ? [...override, c.name]
+                              : override.filter((n) => n !== c.name),
+                          )
+                        }
+                      />
+                      {c.name}
+                    </label>
+                  ))}
+                  {override.length > 0 && (
+                    <input
+                      aria-label="Why override"
+                      placeholder="Why"
+                      maxLength={200}
+                      value={overrideReason}
+                      onChange={(e) => setOverrideReason(e.target.value)}
+                      className="w-full rounded border bg-transparent px-2 py-1 text-sm"
+                    />
+                  )}
                 </fieldset>
               )}
               {canaries.length > 0 && !needsPlan && (

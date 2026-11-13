@@ -2572,6 +2572,7 @@ export interface components {
             readonly approved?: string[];
             /** @description The run pauses after its canaries until a person decides. */
             waitAfterCanaries?: boolean;
+            override?: components["schemas"]["CheckOverride"];
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];
@@ -2584,6 +2585,7 @@ export interface components {
             observeSeconds?: number;
             /** @description Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours. */
             waitAfterCanaries?: boolean;
+            override?: components["schemas"]["CheckOverride"];
             /** @description Overrides the group's settings. Omit to use them. */
             options?: components["schemas"]["RunOptions"] | null;
         };
@@ -2627,6 +2629,13 @@ export interface components {
             servers: components["schemas"]["RunServer"][];
             gate?: components["schemas"]["RunGate"];
         };
+        /** @description Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it. */
+        CheckOverride: {
+            checks: string[];
+            reason: string;
+            /** Format: int64 */
+            readonly by?: number;
+        } | null;
         /** @description Set when the run waits for a person after its canaries. */
         RunGate: {
             /** @enum {string} */
@@ -2673,6 +2682,8 @@ export interface components {
                 state: string;
                 detail?: string;
                 blocking: boolean;
+                /** @description A failed check before the upgrade that a person let pass for this run. */
+                overridden?: boolean;
             }[];
         };
         PlanBody: {

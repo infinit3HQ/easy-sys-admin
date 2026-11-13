@@ -152,6 +152,9 @@ func (h *Handlers) StartRun(ctx context.Context, req StartRunRequestObject) (Sta
 		r.ObserveSeconds = *b.ObserveSeconds
 	}
 	r.WaitAfterCanaries = deref(b.WaitAfterCanaries)
+	if b.Override != nil {
+		r.Override = &fleet.CheckOverride{Checks: b.Override.Checks, Reason: b.Override.Reason}
+	}
 	run, err := h.fleet.StartRun(ctx, a, r)
 	if err != nil {
 		return nil, err
@@ -197,12 +200,13 @@ func toPatchReport(v fleet.PatchReport) PatchReport {
 			Versions: patchVersions(s.Versions),
 		}
 		item.Checks = make([]struct {
-			Blocking bool    `json:"blocking"`
-			Detail   *string `json:"detail,omitempty"`
-			Kind     string  `json:"kind"`
-			Name     string  `json:"name"`
-			Phase    string  `json:"phase"`
-			State    string  `json:"state"`
+			Blocking   bool    `json:"blocking"`
+			Detail     *string `json:"detail,omitempty"`
+			Kind       string  `json:"kind"`
+			Name       string  `json:"name"`
+			Overridden *bool   `json:"overridden,omitempty"`
+			Phase      string  `json:"phase"`
+			State      string  `json:"state"`
 		}, 0, len(s.Checks))
 		for _, c := range s.Checks {
 			var detail *string
@@ -210,14 +214,19 @@ func toPatchReport(v fleet.PatchReport) PatchReport {
 				d := c.Detail
 				detail = &d
 			}
+			var overridden *bool
+			if c.Overridden {
+				overridden = ptrTo(true)
+			}
 			item.Checks = append(item.Checks, struct {
-				Blocking bool    `json:"blocking"`
-				Detail   *string `json:"detail,omitempty"`
-				Kind     string  `json:"kind"`
-				Name     string  `json:"name"`
-				Phase    string  `json:"phase"`
-				State    string  `json:"state"`
-			}{Blocking: c.Blocking, Detail: detail, Kind: c.Kind, Name: c.Name, Phase: c.Phase, State: c.State})
+				Blocking   bool    `json:"blocking"`
+				Detail     *string `json:"detail,omitempty"`
+				Kind       string  `json:"kind"`
+				Name       string  `json:"name"`
+				Overridden *bool   `json:"overridden,omitempty"`
+				Phase      string  `json:"phase"`
+				State      string  `json:"state"`
+			}{Blocking: c.Blocking, Detail: detail, Kind: c.Kind, Name: c.Name, Overridden: overridden, Phase: c.Phase, State: c.State})
 		}
 		out.Servers = append(out.Servers, item)
 	}
