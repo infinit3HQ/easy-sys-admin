@@ -111,6 +111,9 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 			return PlanView{}, err
 		}
 		body.Packages = names
+		if len(names) == 0 {
+			return PlanView{}, invalid("packages", "no %s updates are pending on these servers, so there is nothing to approve", modeWord(body.UpdateMode))
+		}
 	}
 	fp, err := planFingerprint(body)
 	if err != nil {
@@ -460,4 +463,11 @@ func toPlan(row store.FixPlan, body PlanBody) PlanView {
 		ID: row.ID, Status: row.Status, Fingerprint: row.Fingerprint, Body: body,
 		ExpiresAt: row.ExpiresAt, RunID: row.RunID, Reason: row.Reason, CreatedAt: row.CreatedAt,
 	}
+}
+
+func modeWord(mode string) string {
+	if mode == "all" {
+		return "package"
+	}
+	return "security"
 }

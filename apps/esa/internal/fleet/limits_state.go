@@ -180,9 +180,7 @@ func (s *Service) DrainDeliveries(ctx context.Context) {
 		}
 		s.deliver(ctx, id)
 	}
-	s.db.WithContext(ctx).Model(&store.SecurityIncident{}).
-		Where("state = ? AND snooze_until IS NOT NULL AND snooze_until <= ?", "snoozed", s.now()).
-		Updates(map[string]any{"state": "open", "snooze_until": nil, "snooze_reason": ""})
+	s.returnExpired(ctx)
 }
 
 func (s *Service) deliver(ctx context.Context, id int64) {

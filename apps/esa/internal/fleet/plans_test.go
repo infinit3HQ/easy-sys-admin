@@ -19,7 +19,7 @@ func TestPlanApprovalIsABrowserSession(t *testing.T) {
 	if err := s.db.Omit("Account", "Group").Create(&srv).Error; err != nil {
 		t.Fatal(err)
 	}
-	state := store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), Updates: store.MustJSON(map[string]any{"packages": []any{}})}
+	state := store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), Updates: store.MustJSON(map[string]any{"packages": []map[string]any{{"name": "openssl", "security": true}}})}
 	if err := s.db.Create(&state).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -47,8 +47,8 @@ func TestPlanApprovalIsABrowserSession(t *testing.T) {
 	if err != nil || run.ID == 0 {
 		t.Fatalf("execute: %+v %v", run, err)
 	}
-	if run.Options.Approved == nil || len(*run.Options.Approved) != 0 {
-		t.Fatalf("a plan run must carry its approved list (empty here): %+v", run.Options.Approved)
+	if run.Options.Approved == nil || len(*run.Options.Approved) != 1 || (*run.Options.Approved)[0] != "openssl" {
+		t.Fatalf("a plan run must carry its approved list: %+v", run.Options.Approved)
 	}
 	again, err := s.ExecutePlan(ctx, exec, plan.ID)
 	if err != nil || again.ID != run.ID {
@@ -102,4 +102,23 @@ func TestDirectRunStopsWhenAPlanIsRequired(t *testing.T) {
 		t.Fatal("a changed package list must invalidate the approval")
 	}
 	s.Wait()
+}
+
+func TestEmptyUpdatePlanIsRefused(t *testing.T) {
+	s := newTestService(t)
+	owner := signIn(t, s, "plan-empty")
+	srv := store.Server{AccountID: owner.AccountID, Name: "web", Host: "10.0.0.7", Port: 22, Username: "esa", Enrollment: "pending", ProtectedContainers: store.JSON("[]"), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&srv).Error; err != nil {
+		t.Fatal(err)
+	}
+	upd := store.MustJSON(map[string]any{"packages": []map[string]any{{"name": "vim", "security": false}}})
+	if err := s.db.Create(&store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), Updates: upd}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ProposePlan(context.Background(), owner, PlanBody{Kind: RunUpdate, ServerIDs: []int64{srv.ID}, UpdateMode: "security"}); err == nil {
+		t.Fatal("a security plan with no security updates was stored")
+	}
+	if _, err := s.ProposePlan(context.Background(), owner, PlanBody{Kind: RunUpdate, ServerIDs: []int64{srv.ID}, UpdateMode: "all"}); err != nil {
+		t.Fatalf("a full plan with one pending package: %v", err)
+	}
 }

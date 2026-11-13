@@ -44,12 +44,7 @@ function NeedsReview() {
   })
   const items = incidents.data?.items ?? []
   if (incidents.error) {
-    return (
-      <ErrorBanner
-        error={incidents.error}
-        className="mb-6"
-      />
-    )
+    return <ErrorBanner error={incidents.error} className="mb-6" />
   }
   if (items.length === 0) return null
   const busy = (m: typeof ack, id: number) => m.isPending && m.variables === id
@@ -66,8 +61,16 @@ function NeedsReview() {
             className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center"
           >
             <div className="min-w-0 flex-1">
-              <div className="text-sm break-words text-ink">{item.message}</div>
-              <div className="mt-1 text-xs text-muted-foreground">{item.nextStep}</div>
+              <Link
+                to="/app/alerts/notices/$incidentId"
+                params={{ incidentId: item.id }}
+                className="text-sm break-words text-ink hover:text-amber"
+              >
+                {item.message}
+              </Link>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {item.nextStep}
+              </div>
               <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
                 {item.kind} · {item.serverName} · <Ago iso={item.lastSeen} />
               </div>
@@ -100,8 +103,8 @@ function NeedsReview() {
       <p className="px-4 pb-4 text-xs text-muted-foreground">
         Reviewed means you have seen it. It opens again if the same thing
         happens again. Tomorrow hides it for one day, then it comes back.
-        Neither changes the server. Notices about shared servers are reviewed
-        by their owner.
+        Neither changes the server. Notices about shared servers are reviewed by
+        their owner.
       </p>
     </Card>
   )

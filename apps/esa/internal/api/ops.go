@@ -228,7 +228,7 @@ func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestOb
 	if err != nil {
 		return nil, err
 	}
-	items, err := h.fleet.ListIncidents(ctx, a, deref(req.Params.IncludeAcknowledged))
+	items, err := h.fleet.ListIncidents(ctx, a, fleet.IncidentFilter{All: deref(req.Params.IncludeAcknowledged)})
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,11 @@ func (h *Handlers) AcknowledgeIncident(ctx context.Context, req AcknowledgeIncid
 	if err != nil {
 		return nil, err
 	}
-	v, err := h.fleet.AcknowledgeIncident(ctx, a, req.IncidentId)
+	note := ""
+	if req.Body != nil {
+		note = deref(req.Body.Note)
+	}
+	v, err := h.fleet.AcknowledgeIncident(ctx, a, req.IncidentId, note)
 	if err != nil {
 		return nil, err
 	}
@@ -526,4 +530,31 @@ func (h *Handlers) GetSSHKey(ctx context.Context, _ GetSSHKeyRequestObject) (Get
 		return nil, err
 	}
 	return GetSSHKey200JSONResponse{PublicKey: pub, Fingerprint: fp}, nil
+}
+
+func (h *Handlers) GetIncident(ctx context.Context, req GetIncidentRequestObject) (GetIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := h.fleet.GetIncident(ctx, a, req.IncidentId)
+	if err != nil {
+		return nil, err
+	}
+	return GetIncident200JSONResponse(toIncident(v)), nil
+}
+
+func (h *Handlers) AcceptIncident(ctx context.Context, req AcceptIncidentRequestObject) (AcceptIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.AcceptIncident(ctx, a, req.IncidentId, req.Body.Until, req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return AcceptIncident200JSONResponse(toIncident(v)), nil
 }

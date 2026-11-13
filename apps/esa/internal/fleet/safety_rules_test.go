@@ -252,8 +252,8 @@ func TestReviewedNoticeOpensAgainOnANewEvent(t *testing.T) {
 	if !s.openIncident(ctx, owner.AccountID, srv.ID, "new_key", "SHA256:a on deploy", "key on deploy", false) {
 		t.Fatal("first notice not opened")
 	}
-	list, _ := s.ListIncidents(ctx, owner, false)
-	if _, err := s.AcknowledgeIncident(ctx, owner, list[0].ID); err != nil {
+	list, _ := s.ListIncidents(ctx, owner, IncidentFilter{})
+	if _, err := s.AcknowledgeIncident(ctx, owner, list[0].ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if s.openIncident(ctx, owner.AccountID, srv.ID, "new_key", "SHA256:a on deploy", "key on deploy", false) {
@@ -262,11 +262,11 @@ func TestReviewedNoticeOpensAgainOnANewEvent(t *testing.T) {
 	if !s.openIncident(ctx, owner.AccountID, srv.ID, "new_key", "SHA256:a on deploy", "key on deploy, now unrestricted", false) {
 		t.Fatal("a changed message did not open the reviewed notice")
 	}
-	list, _ = s.ListIncidents(ctx, owner, false)
+	list, _ = s.ListIncidents(ctx, owner, IncidentFilter{})
 	if len(list) != 1 || list[0].State != "open" || !list[0].CanReview {
 		t.Fatalf("reopened: %+v", list)
 	}
-	if _, err := s.AcknowledgeIncident(ctx, owner, list[0].ID); err != nil {
+	if _, err := s.AcknowledgeIncident(ctx, owner, list[0].ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	if !s.openIncident(ctx, owner.AccountID, srv.ID, "host_key", "host key", "key changed again", true) {

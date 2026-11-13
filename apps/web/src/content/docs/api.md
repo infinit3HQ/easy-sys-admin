@@ -96,8 +96,10 @@ Live data read from a server through esa-helper.
 | POST | `/maintenance` | Session or token | Quiet ordinary notifications for at most 7 days |
 | DELETE | `/maintenance/{windowId}` | Session or token | Remove a maintenance window |
 | GET | `/incidents` | Session or token | Security notices that still need a person to look at them |
-| POST | `/incidents/{incidentId}/snooze` | Session or token | Hide a notice until a time within 7 days. A host key change cannot be snoozed. |
-| POST | `/incidents/{incidentId}/acknowledge` | Session or token | Record that a person has reviewed this notice. This does not change the server. |
+| GET | `/incidents/{incidentId}` | Session or token | One security notice with its history |
+| POST | `/incidents/{incidentId}/accept` | Session or token | Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes. |
+| POST | `/incidents/{incidentId}/snooze` | Session or token | Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed. |
+| POST | `/incidents/{incidentId}/acknowledge` | Session or token | Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server. |
 | GET | `/alerts` | Session or token | Open alerts, or recent alerts including resolved ones |
 | GET | `/alerts/rules` | Session or token | Alert rules of the account |
 | PUT | `/alerts/rules/{kind}` | Session or token | Change one alert rule |

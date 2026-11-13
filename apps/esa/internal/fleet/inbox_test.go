@@ -54,7 +54,7 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 	if alerts != 2 {
 		t.Fatalf("alert rows = %d, want one per server", alerts)
 	}
-	views, err := s.ListIncidents(ctx, a, false)
+	views, err := s.ListIncidents(ctx, a, IncidentFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 		t.Fatalf("next step missing: %+v", views)
 	}
 
-	if _, err := s.AcknowledgeIncident(ctx, a, incidents[0].ID); err != nil {
+	if _, err := s.AcknowledgeIncident(ctx, a, incidents[0].ID, ""); err != nil {
 		t.Fatal(err)
 	}
 	s.oneShot(ctx, one, rules[AlertNewPort], AlertNewPort, port, "new socket on all interfaces")

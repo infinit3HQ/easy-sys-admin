@@ -1082,6 +1082,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/incidents/{incidentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        /** One security notice with its history */
+        get: operations["getIncident"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes. */
+        post: operations["acceptIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/incidents/{incidentId}/snooze": {
         parameters: {
             query?: never;
@@ -1093,7 +1131,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Hide a notice until a time within 7 days. A host key change cannot be snoozed. */
+        /** Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed. */
         post: operations["snoozeIncident"];
         delete?: never;
         options?: never;
@@ -1112,7 +1150,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record that a person has reviewed this notice. This does not change the server. */
+        /** Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server. */
         post: operations["acknowledgeIncident"];
         delete?: never;
         options?: never;
@@ -2490,11 +2528,26 @@ export interface components {
             canReview: boolean;
             kind: string;
             subject: string;
-            /** @enum {string} */
-            state: "open" | "acknowledged" | "snoozed";
-            /** Format: date-time */
+            /**
+             * @description resolved means a fresh check no longer saw it. Missing data never resolves a notice.
+             * @enum {string}
+             */
+            state: "open" | "acknowledged" | "snoozed" | "accepted" | "resolved";
+            /**
+             * Format: date-time
+             * @description When a snooze or an accepted risk ends.
+             */
             snoozeUntil?: string | null;
+            /** @description Why it was snoozed or accepted. */
             snoozeReason?: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /** @description How often it came back after being resolved. */
+            recurrences?: number;
+            /** @description The reviewer's latest note. */
+            note?: string;
+            /** @description History, oldest first. Only getIncident fills it. */
+            events?: components["schemas"]["IncidentEvent"][];
             message: string;
             /** @description What a person can do next. It does not change the server. */
             nextStep: string;
@@ -2504,6 +2557,20 @@ export interface components {
             lastSeen: string;
             /** Format: date-time */
             ackedAt?: string | null;
+        };
+        IncidentEvent: {
+            /** @enum {string} */
+            kind: "opened" | "reopened" | "recurred" | "snooze_broken" | "resolved" | "acknowledged" | "snoozed" | "accepted" | "returned";
+            /** @description esa for the control plane. People of another organization are not named. */
+            actor: string;
+            detail: string;
+            /** Format: date-time */
+            at: string;
+        };
+        IncidentHold: {
+            /** Format: date-time */
+            until: string;
+            reason: string;
         };
         IncidentList: {
             /** @description The 100 most recently seen notices. */
@@ -4435,6 +4502,7 @@ export interface operations {
     listIncidents: {
         parameters: {
             query?: {
+                /** @description Also list acknowledged, snoozed, accepted, and resolved notices. */
                 includeAcknowledged?: boolean;
             };
             header?: never;
@@ -4455,6 +4523,56 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident, with events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncidentHold"];
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     snoozeIncident: {
         parameters: {
             query?: never;
@@ -4466,11 +4584,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** Format: date-time */
-                    until: string;
-                    reason: string;
-                };
+                "application/json": components["schemas"]["IncidentHold"];
             };
         };
         responses: {
@@ -4495,7 +4609,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
         responses: {
             /** @description The incident */
             200: {

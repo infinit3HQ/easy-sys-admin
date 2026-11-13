@@ -41,6 +41,7 @@ import { Route as AppRunsIndexRouteImport } from './routes/app/runs/index'
 import { Route as AppRunsRunIdRouteImport } from './routes/app/runs/$runId'
 import { Route as AppServersServerIdRouteImport } from './routes/app/servers/$serverId'
 import { Route as AppServersNewRouteImport } from './routes/app/servers/new'
+import { Route as AppAlertsNoticesIncidentIdRouteImport } from './routes/app/alerts/notices/$incidentId'
 import { Route as AppGroupsGroupIdIndexRouteImport } from './routes/app/groups/$groupId/index'
 import { Route as AppGroupsGroupIdSettingsRouteImport } from './routes/app/groups/$groupId/settings'
 import { Route as AppGroupsGroupIdSharingRouteImport } from './routes/app/groups/$groupId/sharing'
@@ -205,6 +206,12 @@ const AppServersNewRoute = AppServersNewRouteImport.update({
   path: '/servers/new',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppAlertsNoticesIncidentIdRoute =
+  AppAlertsNoticesIncidentIdRouteImport.update({
+    id: '/alerts/notices/$incidentId',
+    path: '/alerts/notices/$incidentId',
+    getParentRoute: () => AppRouteRoute,
+  } as any)
 const AppGroupsGroupIdIndexRoute = AppGroupsGroupIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -255,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
@@ -290,6 +298,7 @@ export interface FileRoutesByTo {
   '/app/alerts': typeof AppAlertsIndexRoute
   '/app/groups': typeof AppGroupsIndexRoute
   '/app/runs': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId': typeof AppGroupsGroupIdIndexRoute
@@ -328,6 +337,7 @@ export interface FileRoutesById {
   '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId/'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/app/alerts'
     | '/app/groups'
     | '/app/runs'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId'
@@ -439,6 +451,7 @@ export interface FileRouteTypes {
     | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId/'
@@ -690,6 +703,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServersNewRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/alerts/notices/$incidentId': {
+      id: '/app/alerts/notices/$incidentId'
+      path: '/alerts/notices/$incidentId'
+      fullPath: '/app/alerts/notices/$incidentId'
+      preLoaderRoute: typeof AppAlertsNoticesIncidentIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/groups/$groupId/': {
       id: '/app/groups/$groupId/'
       path: '/'
@@ -747,6 +767,7 @@ interface AppRouteRouteChildren {
   AppAlertsIndexRoute: typeof AppAlertsIndexRoute
   AppGroupsIndexRoute: typeof AppGroupsIndexRoute
   AppRunsIndexRoute: typeof AppRunsIndexRoute
+  AppAlertsNoticesIncidentIdRoute: typeof AppAlertsNoticesIncidentIdRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
@@ -765,6 +786,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppAlertsIndexRoute: AppAlertsIndexRoute,
   AppGroupsIndexRoute: AppGroupsIndexRoute,
   AppRunsIndexRoute: AppRunsIndexRoute,
+  AppAlertsNoticesIncidentIdRoute: AppAlertsNoticesIncidentIdRoute,
 }
 
 const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(

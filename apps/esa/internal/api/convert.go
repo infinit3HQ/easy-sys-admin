@@ -223,10 +223,19 @@ func toAlert(a fleet.AlertView) Alert {
 }
 
 func toIncident(v fleet.IncidentView) Incident {
-	return Incident{
+	out := Incident{
 		Id: v.ID, ServerId: v.ServerID, ServerName: v.ServerName, Kind: v.Kind, Subject: v.Subject,
 		State: IncidentState(v.State), Message: v.Message, NextStep: v.NextStep, FirstSeen: v.FirstSeen, LastSeen: v.LastSeen, AckedAt: v.AckedAt, CanReview: v.CanReview,
+		ResolvedAt: v.ResolvedAt, Recurrences: ptrTo(v.Recurrences), Note: ptrTo(v.Note), SnoozeUntil: v.Until, SnoozeReason: ptrTo(v.Reason),
 	}
+	if v.Events != nil {
+		events := make([]IncidentEvent, 0, len(v.Events))
+		for _, e := range v.Events {
+			events = append(events, IncidentEvent{Kind: IncidentEventKind(e.Kind), Actor: e.Actor, Detail: e.Detail, At: e.At})
+		}
+		out.Events = &events
+	}
+	return out
 }
 
 func toAlertRule(r fleet.AlertRuleView) AlertRule {

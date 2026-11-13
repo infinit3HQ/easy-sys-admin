@@ -89,7 +89,9 @@ type SecurityIncident struct {
 	ServerID  int64  `gorm:"not null;uniqueIndex:security_incidents_key,priority:2"`
 	Kind      string `gorm:"not null;size:40;uniqueIndex:security_incidents_key,priority:3"`
 	Subject   string `gorm:"not null;size:200;uniqueIndex:security_incidents_key,priority:4"`
-	// State is open or acknowledged.
+	// State is open, acknowledged, snoozed, accepted (a risk accepted until
+	// SnoozeUntil, with SnoozeReason), or resolved (a fresh check no longer
+	// saw it). Missing data never resolves a notice.
 	State     string    `gorm:"not null;default:'open'"`
 	Message   string    `gorm:"not null"`
 	FirstSeen time.Time `gorm:"not null"`
@@ -100,9 +102,28 @@ type SecurityIncident struct {
 	// returns to open.
 	SnoozeUntil  *time.Time
 	SnoozeReason string `gorm:"not null;default:''"`
+	// ResolvedAt is when a fresh check stopped seeing it. Recurrences counts
+	// how often it came back after that.
+	ResolvedAt  *time.Time
+	Recurrences int `gorm:"not null;default:0"`
+	// Note is the reviewer's latest note.
+	Note string `gorm:"not null;default:''"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// IncidentEvent is one step in a notice's history: opened, reopened,
+// acknowledged, snoozed, accepted, resolved, or returned after a snooze.
+type IncidentEvent struct {
+	ID         int64     `gorm:"primaryKey"`
+	IncidentID int64     `gorm:"not null;index"`
+	Kind       string    `gorm:"not null;size:40"`
+	ActorID    *int64    // nil for the control plane itself
+	Detail     string    `gorm:"not null;default:''"`
+	At         time.Time `gorm:"not null"`
+
+	Incident SecurityIncident `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 // NotifyDelivery is one queued notification. It is written before the

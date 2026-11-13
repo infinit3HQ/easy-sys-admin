@@ -108,7 +108,27 @@ func (s *Service) evaluateAlerts(ctx context.Context, srv store.Server, state *s
 			}
 		}
 	}
-	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool { return k != AlertCertExpiry && k != AlertRunFailed })
+	blind := blindKinds(state)
+	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool {
+		return k != AlertCertExpiry && k != AlertRunFailed && !blind[k]
+	})
+}
+
+// blindKinds are the security alert kinds this check could not judge: the
+// server did not answer, its host key changed, there is no snapshot yet,
+// or the exposure report is not ready. Their alerts are left as they are,
+// because missing data must never resolve a finding.
+func blindKinds(st *store.ServerState) map[AlertKind]bool {
+	blind := map[AlertKind]bool{}
+	if st.HostKeyMismatch || st.Status == string(StatusUnreachable) || len(st.Snapshot) == 0 {
+		blind[AlertSecurityUpdate], blind[AlertExposure] = true, true
+		return blind
+	}
+	var ex Exposure
+	if st.Exposure.Decode(&ex) != nil || !ex.Ready {
+		blind[AlertExposure] = true
+	}
+	return blind
 }
 
 func serverConditions(srv store.Server, st *store.ServerState, rules map[AlertKind]store.AlertRule) []condition {
@@ -231,6 +251,7 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 		if !still {
 			al.ResolvedAt = &now
 			s.db.WithContext(ctx).Model(al).Update("resolved_at", now)
+			s.resolveSecurityIncident(ctx, accountID, al)
 			if al.FiredAt != nil {
 				s.notify(ctx, accountID, s.alertMessage(al, "Resolved: "+al.Message, true))
 			}
@@ -284,6 +305,18 @@ func (s *Service) noteSecurityIncident(ctx context.Context, accountID int64, al 
 	switch AlertKind(al.Kind) {
 	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
 		s.openIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject, al.Message, true)
+	}
+}
+
+// resolveSecurityIncident resolves the notice of a security alert whose
+// condition a fresh check no longer sees.
+func (s *Service) resolveSecurityIncident(ctx context.Context, accountID int64, al *store.Alert) {
+	if al.ServerID == nil {
+		return
+	}
+	switch AlertKind(al.Kind) {
+	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
+		s.resolveIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject)
 	}
 }
 

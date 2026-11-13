@@ -178,6 +178,16 @@ export const q = {
       queryKey: ['maintenance'],
       queryFn: () => call(api().GET('/maintenance')),
     }),
+  incident: (id: number) =>
+    queryOptions({
+      queryKey: ['incidents', 'one', id],
+      queryFn: () =>
+        call(
+          api().GET('/incidents/{incidentId}', {
+            params: { path: { incidentId: id } },
+          }),
+        ),
+    }),
   incidents: (includeAcknowledged = false) =>
     queryOptions({
       queryKey: ['incidents', includeAcknowledged],
