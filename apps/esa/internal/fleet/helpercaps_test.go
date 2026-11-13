@@ -25,6 +25,13 @@ func TestHelperGaps(t *testing.T) {
 	if got := helperGaps(runActions(RunClean), []store.Server{limited}); len(got) != 0 {
 		t.Fatalf("limited can clean: %v", got)
 	}
+	broken := store.Server{Name: "broken", HelperCapabilities: store.JSON(`{"not":"a list"}`)}
+	if proto.Supports(storedCapabilities(broken), "status") {
+		t.Fatal("malformed capabilities were treated as the legacy set")
+	}
+	if gaps := helperGaps(runActions(RunClean), []store.Server{broken}); len(gaps) != 1 {
+		t.Fatalf("a corrupt capability list was allowed to run: %v", gaps)
+	}
 }
 
 func TestServerViewListsMissingHelperActions(t *testing.T) {

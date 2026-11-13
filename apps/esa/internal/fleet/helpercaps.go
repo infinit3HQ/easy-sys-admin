@@ -20,14 +20,15 @@ const (
 )
 
 // storedCapabilities decodes what the helper last reported. nil means it
-// never listed its actions: the legacy set applies.
+// never listed its actions: the legacy set applies. Malformed JSON is not
+// that. It allows no action, so a corrupt row cannot be treated as current.
 func storedCapabilities(srv store.Server) []string {
 	if len(srv.HelperCapabilities) == 0 || string(srv.HelperCapabilities) == "null" {
 		return nil
 	}
 	var caps []string
 	if err := json.Unmarshal(srv.HelperCapabilities, &caps); err != nil {
-		return nil
+		return []string{}
 	}
 	if caps == nil {
 		caps = []string{}
