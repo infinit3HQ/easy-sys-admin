@@ -2,7 +2,7 @@
 
 What comes next, in order, and why. [status.md](status.md) says what is built today; this page says what is left. Sizes are rough engineer-weeks of focused work, not dates. Update a row in the same change that lands the work, and move finished detail to `status.md`.
 
-Last checked against the code: 13 November 2026, branch `security-watch`.
+Last checked against the code: 13 November 2026, 4:35 PM Asia/Colombo, branch `security-watch` at the commit that changed this line.
 
 ## Rules for every item
 
