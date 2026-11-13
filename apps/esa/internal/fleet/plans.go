@@ -211,6 +211,10 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 		ObserveSeconds: body.ObserveSeconds, CanaryServerIDs: body.CanaryServerIDs,
 		BuildCache: body.BuildCache, VSCode: body.VSCode, Journal: body.Journal, JournalSize: body.JournalSize,
 	}
+	if body.Kind == RunUpdate {
+		approved := append([]string{}, body.Packages...)
+		opts.Approved = &approved
+	}
 	req := RunRequest{Kind: body.Kind, GroupID: body.GroupID, ServerIDs: body.ServerIDs, Options: &opts, CanaryServerIDs: body.CanaryServerIDs, ObserveSeconds: body.ObserveSeconds, FromPlan: true}
 	if body.GroupID != nil {
 		// Run on the servers the person approved, not on servers added to

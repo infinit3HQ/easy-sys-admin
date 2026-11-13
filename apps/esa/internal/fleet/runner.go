@@ -481,6 +481,13 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 	if len(o.Hold) > 0 {
 		args = append(args, "--hold", strings.Join(o.Hold, ","))
 	}
+	if o.Approved != nil {
+		allow := proto.AllowNone
+		if len(*o.Approved) > 0 {
+			allow = strings.Join(*o.Approved, ",")
+		}
+		args = append(args, "--allow", allow)
+	}
 	before, err := s.readHealth(ctx, ep)
 	if err != nil {
 		s.setRunServer(ctx, rs, "failed", "could not read status before the upgrade: "+err.Error(), nil, 0)

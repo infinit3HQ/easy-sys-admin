@@ -97,7 +97,7 @@ The MCP server at `/mcp` runs in the web app (`apps/web/src/server/mcp.ts`). It 
 
 ### Plans
 
-A group can require an approved plan (`apps/esa/internal/fleet/plans.go`). Then every clean and update on it must come from a plan, including scheduled runs, so the group's cleanup and update schedules must be off. A token with `actions` and without `logs:read` can propose and execute a plan. Only a person signed in to the web app, with the admin role, can approve or reject one. An approval lasts 30 minutes and covers the servers and pending packages recorded when the plan was proposed; a change to either cancels it. A plan run keeps the group's held packages.
+A group can require an approved plan (`apps/esa/internal/fleet/plans.go`). Then every clean and update on it must come from a plan, including scheduled runs, so the group's cleanup and update schedules must be off. A token with `actions` and without `logs:read` can propose and execute a plan. Only a person signed in to the web app, with the admin role, can approve or reject one. An approval lasts 30 minutes and covers the servers and pending packages recorded when the plan was proposed; a change to either cancels it. A plan run keeps the group's held packages, and the helper installs only the approved packages: if apt would also upgrade anything else, it installs nothing and the server fails. A plan update is refused on a helper too old to do that.
 
 A token, even with the `admin` scope, cannot weaken the rule. Turning off "Require an approved plan", deleting such a group, and moving a server out of it (to no group or to a group without the rule) need a person in the web app. The `group.update` audit entry records the rule before and after, the held packages, and the check names.
 

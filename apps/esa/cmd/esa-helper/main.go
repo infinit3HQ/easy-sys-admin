@@ -34,7 +34,7 @@ read actions:
 
 write actions:
   clean --apply [--only buildcache,vscode,journal] [--journal-size 200M]
-  upgrade-start --run-id N --mode security|all [--hold pkg,pkg]
+  upgrade-start --run-id N --mode security|all [--hold pkg,pkg] [--allow pkg,pkg|-]
   service --unit U --action start|stop|restart
   container --name C --action start|stop|restart [--confirm NAME] [--protect a,b]
   container-update --name C [--confirm NAME] [--protect a,b]
@@ -109,6 +109,7 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 		runID       = fs.Int64("run-id", 0, "")
 		mode        = fs.String("mode", "", "")
 		hold        = fs.String("hold", "", "")
+		allow       = fs.String("allow", "", "")
 		unit        = fs.String("unit", "", "")
 		container   = fs.String("container", "", "")
 		name        = fs.String("name", "", "")
@@ -127,7 +128,7 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 	}
 
 	if action == "version" {
-		return proto.VersionInfo{Version: version.Version, Commit: version.Commit, Protocol: proto.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: proto.Actions}, nil
+		return proto.VersionInfo{Version: version.Version, Commit: version.Commit, Protocol: proto.Version, OS: runtime.GOOS, Arch: runtime.GOARCH, Capabilities: proto.Capabilities()}, nil
 	}
 	if os.Geteuid() != 0 {
 		return nil, &hostops.RefusedError{Reason: "esa-helper must run as root (through sudo)"}
@@ -153,10 +154,10 @@ func run(ctx context.Context, action string, args []string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return h.UpgradeStart(ctx, self, hostops.UpgradeOptions{RunID: *runID, Mode: proto.UpdateMode(*mode), Hold: split(*hold)})
+		return h.UpgradeStart(ctx, self, hostops.UpgradeOptions{RunID: *runID, Mode: proto.UpdateMode(*mode), Hold: split(*hold), Allow: allowList(*allow)})
 	case "upgrade-exec":
 		// Runs inside the transient systemd unit started by upgrade-start.
-		err := h.UpgradeExec(ctx, hostops.UpgradeOptions{RunID: *runID, Mode: proto.UpdateMode(*mode), Hold: split(*hold)})
+		err := h.UpgradeExec(ctx, hostops.UpgradeOptions{RunID: *runID, Mode: proto.UpdateMode(*mode), Hold: split(*hold), Allow: allowList(*allow)})
 		return map[string]bool{"done": true}, err
 	case "upgrade-status":
 		return h.UpgradeStatus(ctx, *runID)
@@ -216,4 +217,16 @@ func split(s string) []string {
 		}
 	}
 	return out
+}
+
+// allowList reads --allow. Unset means no list. "-" is an empty list:
+// nothing is approved, so nothing is installed.
+func allowList(v string) []string {
+	switch v {
+	case "":
+		return nil
+	case proto.AllowNone:
+		return []string{}
+	}
+	return split(v)
 }

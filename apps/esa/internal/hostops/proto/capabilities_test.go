@@ -23,10 +23,10 @@ func TestSupports(t *testing.T) {
 	if Supports([]string{"status"}, "clean") {
 		t.Fatal("an action the helper did not list was allowed")
 	}
-	if got := Missing(nil); !slices.Equal(got, []string{"recovery", "inventory"}) {
+	if got := Missing(nil); !slices.Equal(got, []string{"recovery", "inventory", FeatureUpgradeAllow}) {
 		t.Fatalf("missing for a legacy helper: %v", got)
 	}
-	if got := Missing(Actions); len(got) != 0 {
+	if got := Missing(Capabilities()); len(got) != 0 {
 		t.Fatalf("a current helper misses %v", got)
 	}
 }

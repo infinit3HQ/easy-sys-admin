@@ -49,6 +49,10 @@ type RunOptions struct {
 	// ObserveSeconds is how long to repeat the checks on the canaries
 	// before the other servers start. 0 runs the checks once.
 	ObserveSeconds int `json:"observeSeconds,omitempty"`
+	// Approved is set only by a plan: the packages a person approved. The
+	// helper installs nothing else and stops if apt would add more. Nil
+	// means no plan list; an empty list installs nothing.
+	Approved *[]string `json:"approved,omitempty"`
 }
 
 // Limits on a group's rolling update settings.
@@ -187,7 +191,11 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if len(servers) == 0 {
 		return RunView{}, invalid("groupId", "the group has no servers")
 	}
-	if gaps := helperGaps(req.Kind, servers); len(gaps) > 0 {
+	actions := runActions(req.Kind)
+	if req.FromPlan && req.Kind == RunUpdate {
+		actions = append(actions, proto.FeatureUpgradeAllow)
+	}
+	if gaps := helperGaps(actions, servers); len(gaps) > 0 {
 		return RunView{}, &ConflictError{Code: proto.CodeIncompatible, Message: "reinstall the helper on these servers first, or leave them out: " + joinComma(gaps)}
 	}
 	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && s.needsPlan(ctx, group, servers) {
@@ -225,6 +233,9 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if opts.Checks == nil {
 			opts.Checks = checks
 		}
+	}
+	if !req.FromPlan || req.Kind != RunUpdate {
+		opts.Approved = nil
 	}
 	if req.FromPlan && group != nil {
 		var held []string

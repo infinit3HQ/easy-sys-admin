@@ -45,17 +45,20 @@ type UpgradeStarted struct {
 // UpgradeResult is written by the detached upgrade job and read back with
 // `esa-helper upgrade-status`.
 type UpgradeResult struct {
-	RunID          int64      `json:"runId"`
-	State          string     `json:"state"` // running | succeeded | failed
-	Mode           UpdateMode `json:"mode"`
-	StartedAt      time.Time  `json:"startedAt"`
-	FinishedAt     time.Time  `json:"finishedAt,omitzero"`
-	Packages       []string   `json:"packages"`
-	Skipped        []string   `json:"skipped,omitempty"`
-	ExitCode       int        `json:"exitCode"`
-	Error          string     `json:"error,omitempty"`
-	RebootRequired bool       `json:"rebootRequired"`
-	LogTail        []string   `json:"logTail,omitempty"`
+	RunID      int64      `json:"runId"`
+	State      string     `json:"state"` // running | succeeded | failed
+	Mode       UpdateMode `json:"mode"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt time.Time  `json:"finishedAt,omitzero"`
+	Packages   []string   `json:"packages"`
+	Skipped    []string   `json:"skipped,omitempty"`
+	// NotApproved are pending packages left out because the run's --allow
+	// list did not name them.
+	NotApproved    []string `json:"notApproved,omitempty"`
+	ExitCode       int      `json:"exitCode"`
+	Error          string   `json:"error,omitempty"`
+	RebootRequired bool     `json:"rebootRequired"`
+	LogTail        []string `json:"logTail,omitempty"`
 }
 
 // ---- Cleanups --------------------------------------------------------------

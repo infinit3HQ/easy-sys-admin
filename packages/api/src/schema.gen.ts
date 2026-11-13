@@ -2330,6 +2330,8 @@ export interface components {
             canaryServerIds?: number[];
             /** @description How long the canary checks repeat before the other servers start. */
             observeSeconds?: number;
+            /** @description Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request. */
+            readonly approved?: string[];
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];

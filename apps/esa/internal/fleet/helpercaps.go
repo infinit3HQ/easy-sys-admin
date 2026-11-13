@@ -96,12 +96,12 @@ func runActions(kind RunKind) []string {
 // helperGaps names the servers whose helper lacks an action the run needs,
 // as "name (action, action)". Servers whose helper was never asked are
 // judged by the legacy set, which has every run action.
-func helperGaps(kind RunKind, servers []store.Server) []string {
+func helperGaps(actions []string, servers []store.Server) []string {
 	var out []string
 	for _, srv := range servers {
 		caps := storedCapabilities(srv)
 		var missing []string
-		for _, a := range runActions(kind) {
+		for _, a := range actions {
 			if !proto.Supports(caps, a) {
 				missing = append(missing, a)
 			}

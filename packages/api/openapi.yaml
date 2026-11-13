@@ -2796,6 +2796,11 @@ components:
           minimum: 0
           maximum: 600
           description: How long the canary checks repeat before the other servers start.
+        approved:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request.
 
     StartRunRequest:
       type: object

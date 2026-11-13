@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
@@ -13,7 +14,8 @@ func TestPlanApprovalIsABrowserSession(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
 	owner := signIn(t, s, "plan-owner")
-	srv := store.Server{AccountID: owner.AccountID, Name: "web", Host: "10.0.0.8", Port: 22, Username: "esa", Enrollment: "pending", ProtectedContainers: store.JSON("[]"), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	srv := store.Server{AccountID: owner.AccountID, Name: "web", Host: "10.0.0.8", Port: 22, Username: "esa", Enrollment: "pending", ProtectedContainers: store.JSON("[]"),
+		HelperCapabilities: store.MustJSON(proto.Capabilities()), CreatedAt: time.Now(), UpdatedAt: time.Now()}
 	if err := s.db.Omit("Account", "Group").Create(&srv).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +46,9 @@ func TestPlanApprovalIsABrowserSession(t *testing.T) {
 	run, err := s.ExecutePlan(ctx, exec, plan.ID)
 	if err != nil || run.ID == 0 {
 		t.Fatalf("execute: %+v %v", run, err)
+	}
+	if run.Options.Approved == nil || len(*run.Options.Approved) != 0 {
+		t.Fatalf("a plan run must carry its approved list (empty here): %+v", run.Options.Approved)
 	}
 	again, err := s.ExecutePlan(ctx, exec, plan.ID)
 	if err != nil || again.ID != run.ID {

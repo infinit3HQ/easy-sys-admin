@@ -149,16 +149,16 @@ An admin of the owning account accepts the new key on the server page. The reque
 
 ### Actions that change the server
 
-| Action                                                                   | Effect                                                              |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `clean --apply [--only buildcache,vscode,journal] [--journal-size 200M]` | Runs the selected cleanups.                                         |
-| `upgrade-start --run-id N --mode security\|all [--hold pkg,...]`         | Starts a package upgrade in a transient systemd unit.               |
-| `upgrade-exec`                                                           | The body of that unit. Not meant to be called directly.             |
-| `service --unit U --action start\|stop\|restart`                         | Acts on one systemd service.                                        |
-| `container --name C --action start\|stop\|restart [--confirm NAME]`      | Acts on one container.                                              |
-| `container-update --name C [--confirm NAME]`                             | Pulls a compose service's image and recreates that service.         |
-| `reboot`                                                                 | Reboots in 5 seconds.                                               |
-| `uninstall`                                                              | Removes the `esa` user, its sudo rule, and the helper in 5 seconds. |
+| Action                                                                                | Effect                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clean --apply [--only buildcache,vscode,journal] [--journal-size 200M]`              | Runs the selected cleanups.                                                                                                                                                                                                                                                       |
+| `upgrade-start --run-id N --mode security\|all [--hold pkg,...] [--allow pkg,...\|-]` | Starts a package upgrade in a transient systemd unit. With `--allow`, installs only those packages (`-` is none), lists the rest as not approved, and installs nothing if apt would also upgrade a package that is not on the list or is held. A plan run always sends `--allow`. |
+| `upgrade-exec`                                                                        | The body of that unit. Not meant to be called directly.                                                                                                                                                                                                                           |
+| `service --unit U --action start\|stop\|restart`                                      | Acts on one systemd service.                                                                                                                                                                                                                                                      |
+| `container --name C --action start\|stop\|restart [--confirm NAME]`                   | Acts on one container.                                                                                                                                                                                                                                                            |
+| `container-update --name C [--confirm NAME]`                                          | Pulls a compose service's image and recreates that service.                                                                                                                                                                                                                       |
+| `reboot`                                                                              | Reboots in 5 seconds.                                                                                                                                                                                                                                                             |
+| `uninstall`                                                                           | Removes the `esa` user, its sudo rule, and the helper in 5 seconds.                                                                                                                                                                                                               |
 
 ## Safety rules
 

@@ -220,6 +220,9 @@ type UpgradeOptions struct {
 	RunID int64
 	Mode  proto.UpdateMode
 	Hold  []string
+	// Allow, when not nil, is the only packages this upgrade may install:
+	// the list a person approved in a plan. An empty list installs nothing.
+	Allow []string
 }
 
 func (o UpgradeOptions) validate() error {
@@ -229,7 +232,7 @@ func (o UpgradeOptions) validate() error {
 	if o.Mode != proto.UpdateSecurity && o.Mode != proto.UpdateAll {
 		return &BadRequestError{Reason: "mode must be security or all"}
 	}
-	for _, p := range o.Hold {
+	for _, p := range append(append([]string{}, o.Hold...), o.Allow...) {
 		if !pkgNameRe.MatchString(p) {
 			return &BadRequestError{Reason: "invalid package name " + strconv.Quote(p)}
 		}
@@ -279,6 +282,13 @@ func (h *Host) UpgradeStart(ctx context.Context, self string, o UpgradeOptions) 
 	if len(o.Hold) > 0 {
 		args = append(args, "--hold", strings.Join(o.Hold, ","))
 	}
+	if o.Allow != nil {
+		allow := proto.AllowNone
+		if len(o.Allow) > 0 {
+			allow = strings.Join(o.Allow, ",")
+		}
+		args = append(args, "--allow", allow)
+	}
 	if _, err := h.output(ctx, 30*time.Second, "systemd-run", args...); err != nil {
 		return proto.UpgradeStarted{}, err
 	}
@@ -323,22 +333,21 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	if err != nil {
 		return finish(err, -1, nil)
 	}
-	hold := map[string]bool{}
-	for _, p := range o.Hold {
-		hold[p] = true
-	}
-	var install []string
-	for _, p := range pending {
-		switch {
-		case hold[p.Name]:
-			res.Skipped = append(res.Skipped, p.Name)
-		case o.Mode == proto.UpdateSecurity && !p.Security:
-		default:
-			install = append(install, p.Name)
-		}
-	}
+	install, skipped, notApproved := chooseUpgrades(pending, o)
+	res.Skipped, res.NotApproved = skipped, notApproved
 	if len(install) == 0 {
 		return finish(nil, 0, []byte("nothing to upgrade"))
+	}
+	if o.Allow != nil {
+		// apt can upgrade a dependency that was not asked for. With an
+		// approved list that would widen consent, so stop instead.
+		out, err := h.output(ctx, 2*time.Minute, "apt-get", append([]string{"-s", "-q", "-o", "Debug::NoLocking=1", "install", "--only-upgrade"}, install...)...)
+		if err != nil {
+			return finish(err, -1, nil)
+		}
+		if extra := unapproved(parseSimulation(out), o); len(extra) > 0 {
+			return finish(fmt.Errorf("apt would also upgrade %s, which the plan did not approve; nothing was installed", strings.Join(extra, ", ")), -1, nil)
+		}
 	}
 
 	args := append([]string{"install", "-y", "-q", "--only-upgrade"}, aptDpkgOpts...)
@@ -427,4 +436,49 @@ func (h *Host) Reboot(ctx context.Context) error {
 		"--on-active=5", "--timer-property=AccuracySec=1s",
 		"systemctl", "reboot")
 	return err
+}
+
+// chooseUpgrades picks what to install from the pending list: not held,
+// security only in security mode, and only approved packages when the
+// run carries an approved list.
+func chooseUpgrades(pending []proto.PendingPackage, o UpgradeOptions) (install, skipped, notApproved []string) {
+	hold := map[string]bool{}
+	for _, p := range o.Hold {
+		hold[p] = true
+	}
+	allowed := map[string]bool{}
+	for _, p := range o.Allow {
+		allowed[p] = true
+	}
+	for _, p := range pending {
+		switch {
+		case hold[p.Name]:
+			skipped = append(skipped, p.Name)
+		case o.Mode == proto.UpdateSecurity && !p.Security:
+		case o.Allow != nil && !allowed[p.Name]:
+			notApproved = append(notApproved, p.Name)
+		default:
+			install = append(install, p.Name)
+		}
+	}
+	return install, skipped, notApproved
+}
+
+// unapproved lists packages a simulated install would change that the
+// approved list does not name, or that are held.
+func unapproved(sim []proto.PendingPackage, o UpgradeOptions) []string {
+	ok := map[string]bool{}
+	for _, p := range o.Allow {
+		ok[p] = true
+	}
+	for _, p := range o.Hold {
+		ok[p] = false
+	}
+	var out []string
+	for _, p := range sim {
+		if !ok[p.Name] {
+			out = append(out, p.Name)
+		}
+	}
+	return out
 }
