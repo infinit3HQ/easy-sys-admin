@@ -46,3 +46,25 @@ func TestPruneAuditLeavesRecentRowsAndTheLedger(t *testing.T) {
 		t.Fatalf("second prune removed a recent row: %d %v", left, err)
 	}
 }
+
+func TestActivityShowsTheOldestKeptRow(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "audit-bound")
+	old := s.now().Add(-10 * 24 * time.Hour).UTC().Truncate(time.Second)
+	if err := s.db.Exec(`INSERT INTO audit_log (account_id, action, target, detail, source, created_at) VALUES (?, 'server.add', 'old', '{}', 'web', ?)`, a.AccountID, old).Error; err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.Activity(ctx, a, 10)
+	if err != nil || page.Earliest == nil || !page.Earliest.Equal(old) {
+		t.Fatalf("oldest %+v %v", page.Earliest, err)
+	}
+	if !page.KeptUntilDeletion || page.RetentionHours != 0 {
+		t.Fatalf("default retention %+v", page)
+	}
+	s.auditRetention = 48 * time.Hour
+	page, err = s.Activity(ctx, a, 10)
+	if err != nil || page.KeptUntilDeletion || page.RetentionHours != 48 {
+		t.Fatalf("set retention %+v %v", page, err)
+	}
+}

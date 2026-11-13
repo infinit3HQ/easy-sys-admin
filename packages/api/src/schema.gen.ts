@@ -3060,6 +3060,15 @@ export interface components {
         };
         ActivityList: {
             items: components["schemas"]["ActivityEntry"][];
+            /**
+             * Format: date-time
+             * @description Oldest audit row still kept for this account. Empty when there are none.
+             */
+            earliest?: string | null;
+            /** @description True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted. */
+            keptUntilDeletion: boolean;
+            /** @description How old a row must be before a prune can delete it. Zero when rows are kept until deletion. */
+            retentionHours: number;
         };
         SSHKey: {
             publicKey: string;
@@ -5609,6 +5618,7 @@ export interface operations {
     listActivity: {
         parameters: {
             query?: {
+                /** @description The page asks for 200. A download asks for 5000, the newest rows only. */
                 limit?: number;
             };
             header?: never;

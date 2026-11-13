@@ -894,7 +894,15 @@ type ActivityEntrySource string
 
 // ActivityList defines model for ActivityList.
 type ActivityList struct {
-	Items []ActivityEntry `json:"items"`
+	// Earliest Oldest audit row still kept for this account. Empty when there are none.
+	Earliest *time.Time      `json:"earliest,omitempty"`
+	Items    []ActivityEntry `json:"items"`
+
+	// KeptUntilDeletion True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted.
+	KeptUntilDeletion bool `json:"keptUntilDeletion"`
+
+	// RetentionHours How old a row must be before a prune can delete it. Zero when rows are kept until deletion.
+	RetentionHours int `json:"retentionHours"`
 }
 
 // AddCertRequest defines model for AddCertRequest.
@@ -2362,6 +2370,7 @@ type WindowId = int64
 
 // ListActivityParams defines parameters for ListActivity.
 type ListActivityParams struct {
+	// Limit The page asks for 200. A download asks for 5000, the newest rows only.
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 

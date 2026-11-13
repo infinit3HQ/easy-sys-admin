@@ -1,8 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { When } from '#/components/time'
 import { Empty, ErrorBanner, Loading, PageHeader, cn } from '#/components/kit'
+import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
 import {
   Table,
@@ -28,9 +31,57 @@ const sourceStyle: Record<string, string> = {
 function Activity() {
   const r = useQuery(q.activity())
   const items = r.data?.items ?? []
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<unknown>(null)
+  async function download() {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const data = await call(
+        api().GET('/activity', { params: { query: { limit: 5000 } } }),
+      )
+      const blob = new Blob([JSON.stringify(data.items, null, 2)], {
+        type: 'application/json',
+      })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'activity.json'
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      setDownloadError(e)
+    } finally {
+      setDownloading(false)
+    }
+  }
   return (
     <div>
-      <PageHeader kicker="Audit log" title="Activity" />
+      <PageHeader kicker="Audit log" title="Activity">
+        <Button
+          size="sm"
+          variant="outline"
+          busy={downloading}
+          onClick={() => void download()}
+        >
+          Download
+        </Button>
+      </PageHeader>
+      {r.data && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          {r.data.keptUntilDeletion
+            ? 'Rows are kept until this account is deleted.'
+            : `Rows older than ${r.data.retentionHours} hours are deleted.`}{' '}
+          {r.data.earliest ? (
+            <>
+              The oldest row still here is <When iso={r.data.earliest} />.
+            </>
+          ) : (
+            'There are no rows yet.'
+          )}{' '}
+          The download is the newest 5000 rows.
+        </p>
+      )}
+      {downloadError ? <ErrorBanner error={downloadError} className="mb-4" /> : null}
       {r.isLoading ? (
         <Loading />
       ) : r.error ? (

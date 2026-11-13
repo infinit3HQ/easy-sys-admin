@@ -1716,7 +1716,10 @@ paths:
       summary: Audit log of the account, newest first (admins)
       tags: [settings]
       parameters:
-        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 500 } }
+        - name: limit
+          in: query
+          description: The page asks for 200. A download asks for 5000, the newest rows only.
+          schema: { type: integer, default: 100, minimum: 1, maximum: 5000 }
       responses:
         '200':
           description: Audit entries
@@ -3628,9 +3631,12 @@ components:
 
     ActivityList:
       type: object
-      required: [items]
+      required: [items, keptUntilDeletion, retentionHours]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/ActivityEntry' } }
+        earliest: { type: string, format: date-time, nullable: true, description: Oldest audit row still kept for this account. Empty when there are none. }
+        keptUntilDeletion: { type: boolean, description: True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted. }
+        retentionHours: { type: integer, description: How old a row must be before a prune can delete it. Zero when rows are kept until deletion. }
 
     SSHKey:
       type: object
