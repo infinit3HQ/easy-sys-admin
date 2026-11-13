@@ -3638,6 +3638,7 @@ components:
         earliest: { type: string, format: date-time, nullable: true, description: Oldest audit row still kept for this account. Empty when there are none. }
         keptUntilDeletion: { type: boolean, description: True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted. }
         retentionHours: { type: integer, description: How old a row must be before a prune can delete it. Zero when rows are kept until deletion. }
+        holdUntil: { type: string, format: date-time, nullable: true, description: 'While this time is in the future, pruning deletes nothing. Only the install can set it.' }
 
     SSHKey:
       type: object

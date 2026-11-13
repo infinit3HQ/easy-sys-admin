@@ -530,7 +530,7 @@ func (h *Handlers) ListActivity(ctx context.Context, req ListActivityRequestObje
 		return nil, err
 	}
 	return ListActivity200JSONResponse{Items: mapSlice(es.Entries, toActivity), Earliest: es.Earliest,
-		KeptUntilDeletion: es.KeptUntilDeletion, RetentionHours: es.RetentionHours}, nil
+		KeptUntilDeletion: es.KeptUntilDeletion, RetentionHours: es.RetentionHours, HoldUntil: es.HoldUntil}, nil
 }
 
 func (h *Handlers) GetSSHKey(ctx context.Context, _ GetSSHKeyRequestObject) (GetSSHKeyResponseObject, error) {

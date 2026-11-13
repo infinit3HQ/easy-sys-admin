@@ -71,6 +71,11 @@ function Activity() {
           {r.data.keptUntilDeletion
             ? 'Rows are kept until this account is deleted.'
             : `Rows older than ${r.data.retentionHours} hours are deleted.`}{' '}
+          {r.data.holdUntil && (
+            <>
+              A hold stops deletion until <When iso={r.data.holdUntil} />.{' '}
+            </>
+          )}
           {r.data.earliest ? (
             <>
               The oldest row still here is <When iso={r.data.earliest} />.

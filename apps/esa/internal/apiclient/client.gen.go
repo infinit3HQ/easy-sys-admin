@@ -894,8 +894,11 @@ type ActivityEntrySource string
 // ActivityList defines model for ActivityList.
 type ActivityList struct {
 	// Earliest Oldest audit row still kept for this account. Empty when there are none.
-	Earliest *time.Time      `json:"earliest,omitempty"`
-	Items    []ActivityEntry `json:"items"`
+	Earliest *time.Time `json:"earliest,omitempty"`
+
+	// HoldUntil While this time is in the future, pruning deletes nothing. Only the install can set it.
+	HoldUntil *time.Time      `json:"holdUntil,omitempty"`
+	Items     []ActivityEntry `json:"items"`
 
 	// KeptUntilDeletion True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted.
 	KeptUntilDeletion bool `json:"keptUntilDeletion"`

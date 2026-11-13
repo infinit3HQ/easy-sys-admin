@@ -3071,6 +3071,11 @@ export interface components {
             keptUntilDeletion: boolean;
             /** @description How old a row must be before a prune can delete it. Zero when rows are kept until deletion. */
             retentionHours: number;
+            /**
+             * Format: date-time
+             * @description While this time is in the future, pruning deletes nothing. Only the install can set it.
+             */
+            holdUntil?: string | null;
         };
         SSHKey: {
             publicKey: string;

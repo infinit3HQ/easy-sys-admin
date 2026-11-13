@@ -24,6 +24,7 @@ type ActivityPage struct {
 	Earliest          *time.Time
 	KeptUntilDeletion bool
 	RetentionHours    int
+	HoldUntil         *time.Time
 }
 
 // Activity returns the newest audit entries of the account, and the oldest
@@ -51,6 +52,10 @@ func (s *Service) Activity(ctx context.Context, a Actor, limit int) (ActivityPag
 	out := ActivityPage{Entries: make([]ActivityEntry, 0, len(rows)), KeptUntilDeletion: s.auditRetention <= 0}
 	if s.auditRetention > 0 {
 		out.RetentionHours = int(s.auditRetention.Hours())
+	}
+	if !s.auditHoldUntil.IsZero() && s.now().Before(s.auditHoldUntil) {
+		until := s.auditHoldUntil
+		out.HoldUntil = &until
 	}
 	for _, r := range rows {
 		name := r.UserName

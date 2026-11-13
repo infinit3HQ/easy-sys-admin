@@ -68,6 +68,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		AdvisoryFeed:         cfg.AdvisoryFeed,
 		Scanner:              cfg.Scanner,
 		AuditRetention:       cfg.AuditRetention,
+		AuditHoldUntil:       cfg.AuditHoldUntil,
 		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)

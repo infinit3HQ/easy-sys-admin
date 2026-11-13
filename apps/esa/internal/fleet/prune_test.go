@@ -68,3 +68,33 @@ func TestActivityShowsTheOldestKeptRow(t *testing.T) {
 		t.Fatalf("set retention %+v %v", page, err)
 	}
 }
+
+func TestAuditHoldSkipsPrune(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "hold")
+	old := s.now().Add(-100 * 24 * time.Hour)
+	if err := s.db.Exec(`INSERT INTO audit_log (account_id, action, target, detail, source, created_at) VALUES (?, 'server.add', 'old', '{}', 'web', ?)`, a.AccountID, old).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.auditRetention = 48 * time.Hour
+	s.auditHoldUntil = s.now().Add(24 * time.Hour)
+	s.PruneAudit(ctx)
+	var left int64
+	if err := s.db.Model(&store.AuditEntry{}).Where("action = ?", "server.add").Count(&left).Error; err != nil || left != 1 {
+		t.Fatalf("hold removed a row: %d %v", left, err)
+	}
+	var runs int64
+	if err := s.db.Model(&store.RetentionRun{}).Count(&runs).Error; err != nil || runs != 0 {
+		t.Fatalf("hold wrote a ledger row: %d %v", runs, err)
+	}
+	page, err := s.Activity(ctx, a, 10)
+	if err != nil || page.HoldUntil == nil || !page.HoldUntil.Equal(s.auditHoldUntil) {
+		t.Fatalf("hold not shown: %+v %v", page.HoldUntil, err)
+	}
+	s.auditHoldUntil = s.now().Add(-time.Hour)
+	s.PruneAudit(ctx)
+	if err := s.db.Model(&store.AuditEntry{}).Where("action = ?", "server.add").Count(&left).Error; err != nil || left != 0 {
+		t.Fatalf("expired hold still kept the row: %d %v", left, err)
+	}
+}

@@ -66,6 +66,9 @@ type Config struct {
 	// AuditRetention is ESA_AUDIT_RETENTION. Zero keeps the audit log until
 	// the account is deleted. Hosted installs leave it zero.
 	AuditRetention time.Duration
+	// AuditHoldUntil is ESA_AUDIT_HOLD_UNTIL. While it is in the future,
+	// pruning deletes nothing. Zero means no hold.
+	AuditHoldUntil time.Time
 
 	Auth AuthConfig
 	// SMTP sends confirmation and password-reset mail. Zero value means
@@ -274,6 +277,13 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 		if cfg.AuditRetention, err = parseDuration(s, 24*time.Hour, 0); err != nil {
 			return fmt.Errorf("ESA_AUDIT_RETENTION: %w", err)
 		}
+	}
+	if s := get("ESA_AUDIT_HOLD_UNTIL", ""); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("ESA_AUDIT_HOLD_UNTIL: want a UTC time like 2026-12-01T00:00:00Z, got %q", s)
+		}
+		cfg.AuditHoldUntil = t.UTC()
 	}
 	return nil
 }
