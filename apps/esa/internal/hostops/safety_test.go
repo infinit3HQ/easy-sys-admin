@@ -399,7 +399,7 @@ func TestAuthorizedKeysSkipsFIFOAndLinks(t *testing.T) {
 	if err := os.Symlink("/etc/passwd", filepath.Join(dir, "authorized_keys2")); err != nil {
 		t.Fatal(err)
 	}
-	if got := h.authorizedKeys("/home/u/.ssh/authorized_keys2"); got != nil {
-		t.Fatalf("followed a symlink: %+v", got)
+	if got, gaps := h.authorizedKeys("/home/u/.ssh/authorized_keys2"); got != nil || len(gaps) != 1 {
+		t.Fatalf("followed a symlink: %+v %v", got, gaps)
 	}
 }

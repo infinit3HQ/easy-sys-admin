@@ -188,6 +188,25 @@ Without `--wait`, the command prints the run id and exits. With `--json`, it pri
 
 With the default batch size of 1 and failure limit of 1, a run works on one server at a time and stops at the first failure. For a group of 200 servers at about 3 minutes each, that takes about 10 hours; `--batch 10` takes about 1 hour. A larger batch spreads a bad update to more servers before the run stops, because the servers already running in a batch always finish.
 
+### esa plans
+
+A group can require an approved plan. Then `esa runs start clean` and `esa runs start update` are refused on it. Propose a plan, have a person approve it on the Plans page of the web app, then run it. There is no approve command: a token cannot approve.
+
+| Command                                                | What it does                                                                                                                                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `esa plans list`                                       | The 100 most recent plans with kind, target, status, and run.                                                                                                                                                |
+| `esa plans show <id>`                                  | One plan: its servers, update mode, held packages, reboot setting, cleanups, and the pending packages it covers.                                                                                             |
+| `esa plans propose <measure\|clean\|update> --group G` | Stores a plan with the group's settings. `--server` (repeatable) instead of `--group` targets servers. `--mode security\|all` changes the update mode. Needs `actions` and not `logs:read`. Changes nothing. |
+| `esa plans execute <id>`                               | Starts an approved plan within its 30 minutes. A repeat prints the same run.                                                                                                                                 |
+
+A plan covers the servers in the group when it was proposed. A server added to or removed from the group, or a change in the pending packages, cancels the approval.
+
+```sh
+esa plans propose update --group production
+esa plans show 12
+esa plans execute 12
+```
+
 ### esa alerts
 
 Lists open alerts with severity, kind, message, and when each one fired (or started pending). Prints `No open alerts.` when there are none.

@@ -2,6 +2,8 @@ package hostops
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -9,31 +11,44 @@ import (
 )
 
 // Inventory lists installed deb packages. It does not contact a network.
+// A failed dpkg-query is an error, not an empty list.
 func (h *Host) Inventory(ctx context.Context) (proto.PackageInventory, error) {
-	rep := proto.PackageInventory{Packages: []proto.InstalledPackage{}}
+	rep := proto.PackageInventory{Packages: []proto.InstalledPackage{}, Gaps: []string{}}
 	id, release := h.distro()
 	rep.Distro, rep.Release = id, release
-	res, err := h.Run.Run(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${Package}\t${Version}\t${Architecture}\n`)
+	out, err := h.output(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\n`)
 	if err != nil {
-		rep.Gaps = []string{"dpkg"}
-		return rep, nil
+		return rep, fmt.Errorf("dpkg-query failed: %w", err)
 	}
-	for _, line := range strings.Split(string(res.Stdout), "\n") {
-		name, rest, ok := strings.Cut(line, "\t")
-		if !ok {
-			continue
-		}
-		version, arch, ok := strings.Cut(rest, "\t")
-		if !ok || !packageName(name) {
-			continue
-		}
-		rep.Packages = append(rep.Packages, proto.InstalledPackage{Name: name, Version: version, Arch: arch})
-		if len(rep.Packages) == 20000 {
-			rep.Gaps = append(rep.Gaps, "truncated")
-			break
-		}
+	pkgs, truncated := parseDpkg(out)
+	if len(pkgs) == 0 {
+		return rep, errors.New("dpkg-query listed no installed packages")
+	}
+	rep.Packages = pkgs
+	if truncated {
+		rep.Gaps = append(rep.Gaps, "truncated")
 	}
 	return rep, nil
+}
+
+const maxPackages = 20000
+
+// parseDpkg reads status, name, version, and arch lines. Only packages in
+// the "installed" state count; removed packages that left config files
+// ("config-files") and half-installed ones do not.
+func parseDpkg(out string) (pkgs []proto.InstalledPackage, truncated bool) {
+	pkgs = []proto.InstalledPackage{}
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Split(line, "\t")
+		if len(f) != 4 || f[0] != "installed" || !packageName(f[1]) {
+			continue
+		}
+		if len(pkgs) == maxPackages {
+			return pkgs, true
+		}
+		pkgs = append(pkgs, proto.InstalledPackage{Name: f[1], Version: f[2], Arch: f[3]})
+	}
+	return pkgs, false
 }
 
 func (h *Host) distro() (id, release string) {

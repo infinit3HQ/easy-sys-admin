@@ -57,7 +57,11 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 		}
 		u := proto.LocalUser{Name: f[0], UID: uid, Home: f[5], Shell: f[6], Password: pw, AuthorizedKeys: []proto.AuthorizedKey{}}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
-			u.AuthorizedKeys = append(u.AuthorizedKeys, h.authorizedKeys(filepath.Join(f[5], ".ssh", name))...)
+			keys, gaps := h.authorizedKeys(filepath.Join(f[5], ".ssh", name))
+			u.AuthorizedKeys = append(u.AuthorizedKeys, keys...)
+			for _, g := range gaps {
+				rep.Gaps = addGap(rep.Gaps, g)
+			}
 		}
 		rep.Users = append(rep.Users, u)
 	}
@@ -121,10 +125,94 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 				if v != "" && len(rep.ListenAddresses) < 16 {
 					rep.ListenAddresses = append(rep.ListenAddresses, v)
 				}
+			case "authorizedkeysfile":
+				if !defaultAuthorizedKeysFile(v) {
+					rep.Gaps = addGap(rep.Gaps, "custom AuthorizedKeysFile")
+				}
 			}
+		}
+		// sshd -T prints the settings outside any Match block. A Match block
+		// can change them for some users or addresses, so they are not the
+		// whole picture.
+		if h.sshMatchBlocks() {
+			rep.Gaps = addGap(rep.Gaps, "ssh Match blocks")
 		}
 	}
 	return rep, nil
+}
+
+// addGap appends name once.
+func addGap(gaps []string, name string) []string {
+	for _, g := range gaps {
+		if g == name {
+			return gaps
+		}
+	}
+	return append(gaps, name)
+}
+
+// defaultAuthorizedKeysFile reports whether sshd reads keys only from the
+// files Access reads.
+func defaultAuthorizedKeysFile(v string) bool {
+	f := strings.Fields(v)
+	for i, p := range f {
+		f[i] = strings.TrimPrefix(p, "%h/")
+	}
+	switch len(f) {
+	case 1:
+		return f[0] == ".ssh/authorized_keys"
+	case 2:
+		return f[0] == ".ssh/authorized_keys" && f[1] == ".ssh/authorized_keys2"
+	}
+	return false
+}
+
+const (
+	sshdConfig     = "/etc/ssh/sshd_config"
+	sshdConfigDir  = "/etc/ssh/sshd_config.d"
+	maxSSHDConfig  = 256 << 10
+	maxSSHDConfigs = 64
+)
+
+// sshMatchBlocks reports whether sshd_config or a .conf file in
+// sshd_config.d has a Match line. It does not evaluate Match. A file that
+// cannot be read counts as true, because a Match block cannot be ruled out.
+func (h *Host) sshMatchBlocks() bool {
+	files := []string{sshdConfig}
+	if entries, err := os.ReadDir(h.path(sshdConfigDir)); err == nil {
+		names := []string{}
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".conf") {
+				names = append(names, e.Name())
+			}
+		}
+		if len(names) > maxSSHDConfigs {
+			return true
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			files = append(files, sshdConfigDir+"/"+n)
+		}
+	} else if !os.IsNotExist(err) {
+		return true
+	}
+	for _, path := range files {
+		raw, trunc, err := h.readRegular(path, maxSSHDConfig)
+		if err != nil || trunc || hasMatchLine(string(raw)) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMatchLine(text string) bool {
+	for _, line := range strings.Split(text, "\n") {
+		f := strings.FieldsFunc(line, func(r rune) bool { return r == ' ' || r == '\t' || r == '=' || r == '\r' })
+		if len(f) > 0 && strings.EqualFold(f[0], "match") {
+			return true
+		}
+	}
+	return false
 }
 
 // passwordStates classifies /etc/shadow. The hash never leaves this function.
@@ -432,21 +520,41 @@ const maxAuthorizedKeys = 1 << 20
 
 // authorizedKeys reads a user's authorized_keys. Users choose what sits at
 // that path, so it must be a regular file (not a link, FIFO, or device),
-// is opened without blocking, and only the first MiB is read.
-func (h *Host) authorizedKeys(path string) []proto.AuthorizedKey {
-	if fi, err := os.Lstat(h.path(path)); err != nil || !fi.Mode().IsRegular() {
-		return nil
+// is opened without blocking, and only the first MiB is read. gaps names
+// what could not be read, so a skipped file or line does not read as clean.
+func (h *Host) authorizedKeys(path string) (keys []proto.AuthorizedKey, gaps []string) {
+	fi, err := os.Lstat(h.path(path))
+	switch {
+	case os.IsNotExist(err):
+		return nil, nil
+	case err != nil:
+		return nil, []string{"authorized_keys unreadable"}
+	case !fi.Mode().IsRegular():
+		return nil, []string{"authorized_keys symlink"}
 	}
 	f, err := os.OpenFile(h.path(path), os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, []string{"authorized_keys symlink"}
 	}
 	defer f.Close()
-	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() {
-		return nil
+	st, err := f.Stat()
+	if err != nil || !st.Mode().IsRegular() {
+		return nil, []string{"authorized_keys symlink"}
 	}
-	var out []proto.AuthorizedKey
-	sc := bufio.NewScanner(io.LimitReader(f, maxAuthorizedKeys))
+	keys, bad := parseAuthorizedKeys(io.LimitReader(f, maxAuthorizedKeys))
+	if bad || st.Size() > maxAuthorizedKeys {
+		gaps = append(gaps, "authorized_keys unreadable lines")
+	}
+	return keys, gaps
+}
+
+// parseAuthorizedKeys reads key lines. bad is true when a line that is not
+// blank or a comment does not parse, or a line is too long to read.
+func parseAuthorizedKeys(r io.Reader) (out []proto.AuthorizedKey, bad bool) {
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 16*1024), 1<<20)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -455,6 +563,7 @@ func (h *Host) authorizedKeys(path string) []proto.AuthorizedKey {
 		}
 		pub, comment, options, _, err := ssh.ParseAuthorizedKey([]byte(line))
 		if err != nil {
+			bad = true
 			continue
 		}
 		from, hasCommand := keyRestrictions(options)
@@ -463,7 +572,10 @@ func (h *Host) authorizedKeys(path string) []proto.AuthorizedKey {
 			From: from, HasCommand: hasCommand,
 		})
 	}
-	return out
+	if sc.Err() != nil {
+		bad = true
+	}
+	return out, bad
 }
 
 // keyRestrictions reads from= and whether a command= is set. The command
@@ -537,37 +649,19 @@ func (h *Host) Security(ctx context.Context) (proto.SecurityReport, error) {
 			}
 			rep.Listening = append(rep.Listening, row.Listener)
 		}
-		published := h.publishedContainers(ctx)
-		attachContainers(rep.Listening, published)
-		rep.Listening = addMissingPublications(rep.Listening, published)
-		markDockerUnknown(rep.Listening, published)
 	}
+	// Docker publishes are added even when ss shows no socket for them, as
+	// with userland-proxy off, where the kernel forwards the port.
+	pubs, err := h.publishedPorts(ctx)
+	if err != nil {
+		rep.Gaps = append(rep.Gaps, "docker ports")
+	}
+	attachContainers(rep.Listening, pubs)
+	rep.Listening = addMissingPublications(rep.Listening, pubs)
 
-	switch {
-	case func() bool {
-		out, err := h.output(ctx, 10*time.Second, "ufw", "status")
-		if err == nil && strings.Contains(out, "Status: active") {
-			rep.Firewall = "ufw active"
-			rep.FirewallRules = ufwRules(out)
-			applyUFW(rep.Listening, rep.FirewallRules)
-			return true
-		}
-		if err == nil && strings.Contains(out, "Status: inactive") {
-			rep.Firewall = "none"
-			return true
-		}
-		return false
-	}():
-	default:
-		if out, err := h.output(ctx, 10*time.Second, "nft", "list", "ruleset"); err == nil && strings.Contains(out, "chain") {
-			rep.Firewall = "nftables rules"
-		} else if err == nil {
-			rep.Firewall = "none"
-		} else {
-			rep.Firewall = "unknown"
-			rep.Gaps = append(rep.Gaps, "firewall")
-		}
-	}
+	h.readFirewall(ctx, &rep)
+	// After ufw: a ufw rule is not protection for a port Docker publishes.
+	markDockerUnknown(rep.Listening, pubs)
 
 	rep.CrowdSec = h.serviceState(ctx, "crowdsec.service")
 	if rep.CrowdSec == "active" {
@@ -613,10 +707,11 @@ func parseSSRows(out string) []ssRow {
 		if err != nil {
 			continue
 		}
-		addr := strings.Trim(local[:i], "[]")
+		addr := local[:i]
 		if j := strings.IndexByte(addr, '%'); j >= 0 {
 			addr = addr[:j]
 		}
+		addr = strings.Trim(addr, "[]")
 		proc := ""
 		pid := 0
 		if m := ssProcRe.FindStringSubmatch(l); m != nil {
@@ -690,212 +785,6 @@ func (h *Host) userForPID(pid int, names map[int]string) string {
 		return names[uid]
 	}
 	return ""
-}
-
-// publishedContainers maps "port/proto" to container names for published ports.
-func (h *Host) publishedContainers(ctx context.Context) map[string]string {
-	if h.Docker == nil {
-		return nil
-	}
-	list, err := h.Docker.containers(ctx)
-	if err != nil {
-		return nil
-	}
-	found := map[string][]string{}
-	for _, c := range list {
-		name := ""
-		if len(c.Names) > 0 {
-			name = strings.TrimPrefix(c.Names[0], "/")
-		}
-		if name == "" || len(c.ID) < 12 {
-			continue
-		}
-		for _, p := range c.Ports {
-			if p.PublicPort == 0 || p.Type == "" {
-				continue
-			}
-			key := strconv.Itoa(int(p.PublicPort)) + "/" + p.Type
-			found[key] = appendName(found[key], name)
-		}
-	}
-	out := map[string]string{}
-	for key, names := range found {
-		if len(names) > 3 {
-			names = names[:3]
-		}
-		out[key] = strings.Join(names, ", ")
-	}
-	return out
-}
-
-func appendName(names []string, name string) []string {
-	for _, n := range names {
-		if n == name {
-			return names
-		}
-	}
-	return append(names, name)
-}
-
-// markDockerUnknown refuses to treat a ufw rule as protection for a port
-// Docker publishes. Published bridge traffic can skip ufw's input rules.
-func markDockerUnknown(ls []proto.Listener, published map[string]string) {
-	if len(published) == 0 {
-		return
-	}
-	for i := range ls {
-		p := ls[i].Proto
-		switch {
-		case strings.HasPrefix(p, "tcp"):
-			p = "tcp"
-		case strings.HasPrefix(p, "udp"):
-			p = "udp"
-		}
-		if _, ok := published[strconv.Itoa(ls[i].Port)+"/"+p]; ok {
-			ls[i].UFW = "unknown"
-		}
-	}
-}
-
-func addMissingPublications(ls []proto.Listener, published map[string]string) []proto.Listener {
-	have := map[string]bool{}
-	for _, l := range ls {
-		p := l.Proto
-		switch {
-		case strings.HasPrefix(p, "tcp"):
-			p = "tcp"
-		case strings.HasPrefix(p, "udp"):
-			p = "udp"
-		}
-		have[strconv.Itoa(l.Port)+"/"+p] = true
-	}
-	for key, name := range published {
-		if have[key] {
-			continue
-		}
-		portText, protoName, _ := strings.Cut(key, "/")
-		port, err := strconv.Atoi(portText)
-		if err != nil {
-			continue
-		}
-		ls = append(ls, proto.Listener{
-			Proto: protoName, Address: "0.0.0.0", Port: port, Process: "docker",
-			Container: name, Exposure: "all", UFW: "unknown",
-		})
-	}
-	return ls
-}
-
-func attachContainers(ls []proto.Listener, published map[string]string) {
-	if len(published) == 0 {
-		return
-	}
-	for i := range ls {
-		if ls[i].Process != "docker-proxy" {
-			continue
-		}
-		p := ls[i].Proto
-		switch {
-		case strings.HasPrefix(p, "tcp"):
-			p = "tcp"
-		case strings.HasPrefix(p, "udp"):
-			p = "udp"
-		}
-		ls[i].Container = published[strconv.Itoa(ls[i].Port)+"/"+p]
-	}
-}
-
-// ufwRules returns the rule lines of an active `ufw status`, capped at 40.
-func ufwRules(out string) []string {
-	lines := strings.Split(out, "\n")
-	start := -1
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "--") {
-			start = i + 1
-			break
-		}
-	}
-	if start < 0 {
-		return []string{}
-	}
-	rules := []string{}
-	for _, l := range lines[start:] {
-		l = strings.TrimSpace(l)
-		if l == "" {
-			continue
-		}
-		if len(l) > 160 {
-			l = l[:160]
-		}
-		rules = append(rules, l)
-		if len(rules) == 40 {
-			break
-		}
-	}
-	return rules
-}
-
-// applyUFW marks each listener allow, deny, or unmentioned from ufw rules.
-// An allow wins over a deny for the same port.
-func applyUFW(ls []proto.Listener, rules []string) {
-	for i := range ls {
-		ls[i].UFW = ufwFor(ls[i].Port, ls[i].Proto, rules)
-	}
-}
-
-func ufwFor(port int, proto string, rules []string) string {
-	p := proto
-	switch {
-	case strings.HasPrefix(p, "tcp"):
-		p = "tcp"
-	case strings.HasPrefix(p, "udp"):
-		p = "udp"
-	}
-	allow, deny := false, false
-	for _, line := range rules {
-		f := strings.Fields(line)
-		if len(f) < 2 || !ufwPortMatch(f[0], port, p) {
-			continue
-		}
-		action := ""
-		for _, field := range f[1:] {
-			switch strings.ToUpper(field) {
-			case "ALLOW", "LIMIT":
-				action = "allow"
-			case "DENY", "REJECT":
-				action = "deny"
-			}
-			if action != "" {
-				break
-			}
-		}
-		switch action {
-		case "allow":
-			allow = true
-		case "deny":
-			deny = true
-		}
-	}
-	if allow {
-		return "allow"
-	}
-	if deny {
-		return "deny"
-	}
-	return "unmentioned"
-}
-
-func ufwPortMatch(spec string, port int, proto string) bool {
-	spec = strings.TrimSuffix(spec, "(v6)")
-	left, right, ok := strings.Cut(spec, "/")
-	n, err := strconv.Atoi(left)
-	if err != nil || n != port {
-		return false
-	}
-	if !ok {
-		return true
-	}
-	return right == proto
 }
 
 var jailNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)

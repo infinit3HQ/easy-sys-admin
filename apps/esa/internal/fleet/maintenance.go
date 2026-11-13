@@ -59,7 +59,7 @@ func (s *Service) ListMaintenance(ctx context.Context, a Actor) ([]MaintenanceVi
 		return nil, err
 	}
 	var rows []store.MaintenanceWindow
-	if err := s.db.WithContext(ctx).Where("account_id = ? AND ends_at > ?", a.AccountID, s.now()).Order("starts_at").Find(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND ends_at > ?", a.AccountID, s.now()).Order("starts_at").Limit(200).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]MaintenanceView, 0, len(rows))

@@ -24,6 +24,10 @@ Paths marked Public do not need a session or a token.
 | Method | Path | Auth | Summary |
 | --- | --- | --- | --- |
 | GET | `/fleet/overview` | Session or token | Every server in the current account with its latest status, worst first |
+| GET | `/keys` | Session or token | SSH key fingerprints seen in standard authorized_keys files |
+| PUT | `/keys` | Session or token | Name a fingerprint in this space, or clear the name |
+| POST | `/servers/{serverId}/key-baseline` | Session or token | Approve the keys currently recorded on this server |
+| GET | `/offboarding` | Session or token | Keys with this name from the files a current helper has read |
 
 ## servers
 
@@ -56,6 +60,8 @@ Live data read from a server through esa-helper.
 | GET | `/servers/{serverId}/access` | Session or token | Login users, password state, sudo rules, SSH settings, recent logins |
 | GET | `/servers/{serverId}/security` | Session or token | Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades |
 | GET | `/servers/{serverId}/jobs` | Session or token | Cron entries and systemd timers |
+| GET | `/servers/{serverId}/recovery` | Session or token | Backup reports an operator wrote on the server |
+| GET | `/servers/{serverId}/advisories` | Session or token | Exact affected versions from an imported local feed |
 
 ## groups
 
@@ -74,11 +80,24 @@ Live data read from a server through esa-helper.
 | GET | `/runs` | Session or token | Maintenance runs, newest first |
 | POST | `/runs` | Session or token | Start a measure, clean, update, or reboot run on a group or on servers |
 | GET | `/runs/{runId}` | Session or token | One run with each server's result |
+| GET | `/plans` | Session or token | Typed maintenance plans waiting for a person |
+| POST | `/plans` | Session or token | Store a typed plan. This does not change a server. |
+| GET | `/plans/{planId}` | Session or token | One typed plan |
+| POST | `/plans/{planId}/approve` | Session or token | Approve a plan from a browser session. A token cannot approve. |
+| POST | `/plans/{planId}/reject` | Session or token | Reject a plan from a browser session. A token cannot reject. |
+| POST | `/plans/{planId}/execute` | Session or token | Run an approved plan once. A token that can read logs cannot execute. |
+| GET | `/runs/{runId}/report` | Session or token | Package result and checks for one update run |
 
 ## alerts
 
 | Method | Path | Auth | Summary |
 | --- | --- | --- | --- |
+| GET | `/maintenance` | Session or token | Windows that quiet ordinary notifications |
+| POST | `/maintenance` | Session or token | Quiet ordinary notifications for at most 7 days |
+| DELETE | `/maintenance/{windowId}` | Session or token | Remove a maintenance window |
+| GET | `/incidents` | Session or token | Security notices that still need a person to look at them |
+| POST | `/incidents/{incidentId}/snooze` | Session or token | Hide a notice until a time within 7 days. A host key change cannot be snoozed. |
+| POST | `/incidents/{incidentId}/acknowledge` | Session or token | Record that a person has reviewed this notice. This does not change the server. |
 | GET | `/alerts` | Session or token | Open alerts, or recent alerts including resolved ones |
 | GET | `/alerts/rules` | Session or token | Alert rules of the account |
 | PUT | `/alerts/rules/{kind}` | Session or token | Change one alert rule |

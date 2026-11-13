@@ -46,6 +46,11 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 		}
 		changes["group_id"] = *in.GroupID
 	}
+	if _, moves := changes["group_id"]; moves && !a.isPerson() {
+		if err := s.keepPlanGroup(ctx, srv, in); err != nil {
+			return ServerView{}, err
+		}
+	}
 	if in.HostsControlPlane != nil {
 		changes["hosts_control_plane"] = *in.HostsControlPlane
 	}
@@ -65,6 +70,32 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 	delete(changes, "updated_at")
 	s.audit(ctx, nil, a, "server.update", srv.Name, changes)
 	return s.GetServer(ctx, a, id)
+}
+
+// keepPlanGroup refuses to move a server out of a group that requires a
+// plan, unless the new group requires one too. Moving it would let a token
+// update the server without an approved plan.
+func (s *Service) keepPlanGroup(ctx context.Context, srv store.Server, in UpdateServerInput) error {
+	if srv.GroupID == nil {
+		return nil
+	}
+	if in.GroupID != nil && !in.ClearGroup && *in.GroupID == *srv.GroupID {
+		return nil
+	}
+	var from store.Group
+	if err := s.db.WithContext(ctx).Where("id = ?", *srv.GroupID).Take(&from).Error; err != nil {
+		return mapStore(err)
+	}
+	if !from.PlanRequired {
+		return nil
+	}
+	if !in.ClearGroup && in.GroupID != nil {
+		var to store.Group
+		if err := s.db.WithContext(ctx).Where("id = ?", *in.GroupID).Take(&to).Error; err == nil && to.PlanRequired {
+			return nil
+		}
+	}
+	return errPersonOnly("move a server out of a group that requires a plan")
 }
 
 // cleanNote keeps a single line of at most 200 characters.

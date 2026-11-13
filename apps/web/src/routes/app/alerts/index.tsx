@@ -5,15 +5,20 @@ import { SettingsIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
-import { Empty, PageHeader, Severity, Toggle, cn } from '#/components/kit'
+import {
+  Empty,
+  ErrorBanner,
+  PageHeader,
+  Severity,
+  Toggle,
+  cn,
+} from '#/components/kit'
 import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
-import { useRole } from '../route'
 import { Card } from '#/components/ui/card'
 
 function NeedsReview() {
   const qc = useQueryClient()
-  const { canAct } = useRole()
   const incidents = useQuery(q.incidents(false))
   const ack = useMutation({
     mutationFn: (id: number) =>
@@ -38,10 +43,22 @@ function NeedsReview() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
   })
   const items = incidents.data?.items ?? []
+  if (incidents.error) {
+    return (
+      <ErrorBanner
+        error={incidents.error}
+        className="mb-6"
+      />
+    )
+  }
   if (items.length === 0) return null
+  const busy = (m: typeof ack, id: number) => m.isPending && m.variables === id
   return (
     <Card className="mb-6">
       <div className="label px-4 pt-4">Needs review</div>
+      {(ack.error || snooze.error) && (
+        <ErrorBanner error={ack.error ?? snooze.error} className="mx-4 mt-3" />
+      )}
       <ul className="divide-y divide-line">
         {items.map((item) => (
           <li
@@ -55,14 +72,14 @@ function NeedsReview() {
                 {item.kind} · {item.serverName} · <Ago iso={item.lastSeen} />
               </div>
             </div>
-            {canAct && (
+            {item.canReview && (
               <div className="flex gap-2">
                 {item.kind !== 'host_key' && (
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => snooze.mutate(item.id)}
-                    busy={snooze.isPending}
+                    busy={busy(snooze, item.id)}
                   >
                     Tomorrow
                   </Button>
@@ -71,7 +88,7 @@ function NeedsReview() {
                   size="sm"
                   variant="outline"
                   onClick={() => ack.mutate(item.id)}
-                  busy={ack.isPending}
+                  busy={busy(ack, item.id)}
                 >
                   Reviewed
                 </Button>
@@ -81,8 +98,10 @@ function NeedsReview() {
         ))}
       </ul>
       <p className="px-4 pb-4 text-xs text-muted-foreground">
-        Reviewed means you have seen it. Tomorrow hides it for one day, then it
-        comes back. Neither changes the server.
+        Reviewed means you have seen it. It opens again if the same thing
+        happens again. Tomorrow hides it for one day, then it comes back.
+        Neither changes the server. Notices about shared servers are reviewed
+        by their owner.
       </p>
     </Card>
   )

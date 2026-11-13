@@ -199,6 +199,48 @@ func (e EffectiveRole) Valid() bool {
 	}
 }
 
+// Defines values for FixPlanStatus.
+const (
+	FixPlanStatusApproved    FixPlanStatus = "approved"
+	FixPlanStatusExecuting   FixPlanStatus = "executing"
+	FixPlanStatusExpired     FixPlanStatus = "expired"
+	FixPlanStatusFailed      FixPlanStatus = "failed"
+	FixPlanStatusInvalidated FixPlanStatus = "invalidated"
+	FixPlanStatusPartial     FixPlanStatus = "partial"
+	FixPlanStatusRejected    FixPlanStatus = "rejected"
+	FixPlanStatusSkipped     FixPlanStatus = "skipped"
+	FixPlanStatusSubmitted   FixPlanStatus = "submitted"
+	FixPlanStatusSucceeded   FixPlanStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the FixPlanStatus enum.
+func (e FixPlanStatus) Valid() bool {
+	switch e {
+	case FixPlanStatusApproved:
+		return true
+	case FixPlanStatusExecuting:
+		return true
+	case FixPlanStatusExpired:
+		return true
+	case FixPlanStatusFailed:
+		return true
+	case FixPlanStatusInvalidated:
+		return true
+	case FixPlanStatusPartial:
+		return true
+	case FixPlanStatusRejected:
+		return true
+	case FixPlanStatusSkipped:
+		return true
+	case FixPlanStatusSubmitted:
+		return true
+	case FixPlanStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupAccess.
 const (
 	GroupAccessOperate GroupAccess = "operate"
@@ -986,8 +1028,13 @@ type FixPlan struct {
 	Id          int64      `json:"id"`
 	Reason      string     `json:"reason"`
 	RunId       *int64     `json:"runId,omitempty"`
-	Status      string     `json:"status"`
+
+	// Status executing until the run finishes, then the run's status.
+	Status FixPlanStatus `json:"status"`
 }
+
+// FixPlanStatus executing until the run finishes, then the run's status.
+type FixPlanStatus string
 
 // FleetOverview defines model for FleetOverview.
 type FleetOverview struct {
@@ -1118,12 +1165,15 @@ type ImageCheckList struct {
 
 // Incident defines model for Incident.
 type Incident struct {
-	AckedAt   *time.Time `json:"ackedAt,omitempty"`
-	FirstSeen time.Time  `json:"firstSeen"`
-	Id        int64      `json:"id"`
-	Kind      string     `json:"kind"`
-	LastSeen  time.Time  `json:"lastSeen"`
-	Message   string     `json:"message"`
+	AckedAt *time.Time `json:"ackedAt,omitempty"`
+
+	// CanReview True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
+	CanReview bool      `json:"canReview"`
+	FirstSeen time.Time `json:"firstSeen"`
+	Id        int64     `json:"id"`
+	Kind      string    `json:"kind"`
+	LastSeen  time.Time `json:"lastSeen"`
+	Message   string    `json:"message"`
 
 	// NextStep What a person can do next. It does not change the server.
 	NextStep     string        `json:"nextStep"`
@@ -1140,6 +1190,7 @@ type IncidentState string
 
 // IncidentList defines model for IncidentList.
 type IncidentList struct {
+	// Items The 100 most recently seen notices.
 	Items []Incident `json:"items"`
 }
 
@@ -1197,6 +1248,7 @@ type KeyLabelRequest struct {
 
 // KeyList defines model for KeyList.
 type KeyList struct {
+	// Items At most 2000 key grants, ordered by fingerprint.
 	Items []Key `json:"items"`
 }
 
@@ -1241,6 +1293,7 @@ type LoginRecord = proto.Login
 
 // MaintenanceList defines model for MaintenanceList.
 type MaintenanceList struct {
+	// Items Windows that have not ended, earliest first, at most 200.
 	Items []MaintenanceWindow `json:"items"`
 }
 
@@ -1396,7 +1449,10 @@ type PlanBody struct {
 	ObserveSeconds  *int         `json:"observeSeconds,omitempty"`
 
 	// Packages Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
-	Packages         *[]string           `json:"packages,omitempty"`
+	Packages *[]string `json:"packages,omitempty"`
+
+	// PinnedServerIds The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
+	PinnedServerIds  *[]int64            `json:"pinnedServerIds,omitempty"`
 	RebootIfRequired *bool               `json:"rebootIfRequired,omitempty"`
 	ServerIds        *[]int64            `json:"serverIds,omitempty"`
 	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
@@ -1411,6 +1467,7 @@ type PlanBodyUpdateMode string
 
 // PlanList defines model for PlanList.
 type PlanList struct {
+	// Items The 100 most recent plans, newest first.
 	Items []FixPlan `json:"items"`
 }
 
@@ -1797,8 +1854,17 @@ type ChannelId = int64
 // GroupId defines model for GroupId.
 type GroupId = int64
 
+// IncidentId defines model for IncidentId.
+type IncidentId = int64
+
 // LinkToken defines model for LinkToken.
 type LinkToken = string
+
+// PlanId defines model for PlanId.
+type PlanId = int64
+
+// RunId defines model for RunId.
+type RunId = int64
 
 // ServerId defines model for ServerId.
 type ServerId = int64
@@ -1808,6 +1874,9 @@ type TeamId = int64
 
 // UserId defines model for UserId.
 type UserId = int64
+
+// WindowId defines model for WindowId.
+type WindowId = int64
 
 // ListActivityParams defines parameters for ListActivity.
 type ListActivityParams struct {
@@ -2050,10 +2119,10 @@ type ServerInterface interface {
 	ListIncidents(w http.ResponseWriter, r *http.Request, params ListIncidentsParams)
 	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
 	// (POST /incidents/{incidentId}/acknowledge)
-	AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId int64)
+	AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId)
 	// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
 	// (POST /incidents/{incidentId}/snooze)
-	SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId int64)
+	SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId)
 	// GetInvite What an invite link offers, for the signed-in user
 	// (GET /invites/{token})
 	GetInvite(w http.ResponseWriter, r *http.Request, token LinkToken)
@@ -2074,7 +2143,7 @@ type ServerInterface interface {
 	CreateMaintenance(w http.ResponseWriter, r *http.Request)
 	// DeleteMaintenance Remove a maintenance window
 	// (DELETE /maintenance/{windowId})
-	DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId int64)
+	DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId WindowId)
 	// GetMe The signed-in user and their current account
 	// (GET /me)
 	GetMe(w http.ResponseWriter, r *http.Request)
@@ -2140,16 +2209,16 @@ type ServerInterface interface {
 	ProposePlan(w http.ResponseWriter, r *http.Request)
 	// GetPlan One typed plan
 	// (GET /plans/{planId})
-	GetPlan(w http.ResponseWriter, r *http.Request, planId int64)
+	GetPlan(w http.ResponseWriter, r *http.Request, planId PlanId)
 	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
 	// (POST /plans/{planId}/approve)
-	ApprovePlan(w http.ResponseWriter, r *http.Request, planId int64)
+	ApprovePlan(w http.ResponseWriter, r *http.Request, planId PlanId)
 	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 	// (POST /plans/{planId}/execute)
-	ExecutePlan(w http.ResponseWriter, r *http.Request, planId int64)
+	ExecutePlan(w http.ResponseWriter, r *http.Request, planId PlanId)
 	// RejectPlan Reject a plan from a browser session. A token cannot reject.
 	// (POST /plans/{planId}/reject)
-	RejectPlan(w http.ResponseWriter, r *http.Request, planId int64)
+	RejectPlan(w http.ResponseWriter, r *http.Request, planId PlanId)
 	// ListRuns Maintenance runs, newest first
 	// (GET /runs)
 	ListRuns(w http.ResponseWriter, r *http.Request, params ListRunsParams)
@@ -2158,10 +2227,10 @@ type ServerInterface interface {
 	StartRun(w http.ResponseWriter, r *http.Request)
 	// GetRun One run with each server's result
 	// (GET /runs/{runId})
-	GetRun(w http.ResponseWriter, r *http.Request, runId int64)
+	GetRun(w http.ResponseWriter, r *http.Request, runId RunId)
 	// GetPatchReport Package result and checks for one update run
 	// (GET /runs/{runId}/report)
-	GetPatchReport(w http.ResponseWriter, r *http.Request, runId int64)
+	GetPatchReport(w http.ResponseWriter, r *http.Request, runId RunId)
 	// AddServer Add a server with a one-time sudo login (installs esa-helper)
 	// (POST /servers)
 	AddServer(w http.ResponseWriter, r *http.Request)
@@ -2209,7 +2278,7 @@ type ServerInterface interface {
 	GetServerJobs(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// ApproveKeyBaseline Approve the keys currently recorded on this server
 	// (POST /servers/{serverId}/key-baseline)
-	ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId int64)
+	ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	// (GET /servers/{serverId}/logs)
 	GetServerLogs(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerLogsParams)
@@ -2846,7 +2915,7 @@ func (siw *ServerInterfaceWrapper) AcknowledgeIncident(w http.ResponseWriter, r 
 	_ = err
 
 	// ------------- Path parameter "incidentId" -------------
-	var incidentId int64
+	var incidentId IncidentId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "incidentId", r.PathValue("incidentId"), &incidentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -2872,7 +2941,7 @@ func (siw *ServerInterfaceWrapper) SnoozeIncident(w http.ResponseWriter, r *http
 	_ = err
 
 	// ------------- Path parameter "incidentId" -------------
-	var incidentId int64
+	var incidentId IncidentId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "incidentId", r.PathValue("incidentId"), &incidentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3006,7 +3075,7 @@ func (siw *ServerInterfaceWrapper) DeleteMaintenance(w http.ResponseWriter, r *h
 	_ = err
 
 	// ------------- Path parameter "windowId" -------------
-	var windowId int64
+	var windowId WindowId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "windowId", r.PathValue("windowId"), &windowId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3466,7 +3535,7 @@ func (siw *ServerInterfaceWrapper) GetPlan(w http.ResponseWriter, r *http.Reques
 	_ = err
 
 	// ------------- Path parameter "planId" -------------
-	var planId int64
+	var planId PlanId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3492,7 +3561,7 @@ func (siw *ServerInterfaceWrapper) ApprovePlan(w http.ResponseWriter, r *http.Re
 	_ = err
 
 	// ------------- Path parameter "planId" -------------
-	var planId int64
+	var planId PlanId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3518,7 +3587,7 @@ func (siw *ServerInterfaceWrapper) ExecutePlan(w http.ResponseWriter, r *http.Re
 	_ = err
 
 	// ------------- Path parameter "planId" -------------
-	var planId int64
+	var planId PlanId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3544,7 +3613,7 @@ func (siw *ServerInterfaceWrapper) RejectPlan(w http.ResponseWriter, r *http.Req
 	_ = err
 
 	// ------------- Path parameter "planId" -------------
-	var planId int64
+	var planId PlanId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3669,7 +3738,7 @@ func (siw *ServerInterfaceWrapper) GetRun(w http.ResponseWriter, r *http.Request
 	_ = err
 
 	// ------------- Path parameter "runId" -------------
-	var runId int64
+	var runId RunId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -3695,7 +3764,7 @@ func (siw *ServerInterfaceWrapper) GetPatchReport(w http.ResponseWriter, r *http
 	_ = err
 
 	// ------------- Path parameter "runId" -------------
-	var runId int64
+	var runId RunId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "runId", r.PathValue("runId"), &runId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -4109,7 +4178,7 @@ func (siw *ServerInterfaceWrapper) ApproveKeyBaseline(w http.ResponseWriter, r *
 	_ = err
 
 	// ------------- Path parameter "serverId" -------------
-	var serverId int64
+	var serverId ServerId
 
 	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
 	if err != nil {
@@ -5722,7 +5791,7 @@ func (response ListIncidentsdefaultJSONResponse) VisitListIncidentsResponse(w ht
 }
 
 type AcknowledgeIncidentRequestObject struct {
-	IncidentId int64 `json:"incidentId"`
+	IncidentId IncidentId `json:"incidentId"`
 }
 
 type AcknowledgeIncidentResponseObject interface {
@@ -5761,7 +5830,7 @@ func (response AcknowledgeIncidentdefaultJSONResponse) VisitAcknowledgeIncidentR
 }
 
 type SnoozeIncidentRequestObject struct {
-	IncidentId int64 `json:"incidentId"`
+	IncidentId IncidentId `json:"incidentId"`
 	Body       *SnoozeIncidentJSONRequestBody
 }
 
@@ -6027,7 +6096,7 @@ func (response CreateMaintenancedefaultJSONResponse) VisitCreateMaintenanceRespo
 }
 
 type DeleteMaintenanceRequestObject struct {
-	WindowId int64 `json:"windowId"`
+	WindowId WindowId `json:"windowId"`
 }
 
 type DeleteMaintenanceResponseObject interface {
@@ -6847,7 +6916,7 @@ func (response ProposePlandefaultJSONResponse) VisitProposePlanResponse(w http.R
 }
 
 type GetPlanRequestObject struct {
-	PlanId int64 `json:"planId"`
+	PlanId PlanId `json:"planId"`
 }
 
 type GetPlanResponseObject interface {
@@ -6886,7 +6955,7 @@ func (response GetPlandefaultJSONResponse) VisitGetPlanResponse(w http.ResponseW
 }
 
 type ApprovePlanRequestObject struct {
-	PlanId int64 `json:"planId"`
+	PlanId PlanId `json:"planId"`
 }
 
 type ApprovePlanResponseObject interface {
@@ -6925,7 +6994,7 @@ func (response ApprovePlandefaultJSONResponse) VisitApprovePlanResponse(w http.R
 }
 
 type ExecutePlanRequestObject struct {
-	PlanId int64 `json:"planId"`
+	PlanId PlanId `json:"planId"`
 }
 
 type ExecutePlanResponseObject interface {
@@ -6964,7 +7033,7 @@ func (response ExecutePlandefaultJSONResponse) VisitExecutePlanResponse(w http.R
 }
 
 type RejectPlanRequestObject struct {
-	PlanId int64 `json:"planId"`
+	PlanId PlanId `json:"planId"`
 	Body   *RejectPlanJSONRequestBody
 }
 
@@ -7082,7 +7151,7 @@ func (response StartRundefaultJSONResponse) VisitStartRunResponse(w http.Respons
 }
 
 type GetRunRequestObject struct {
-	RunId int64 `json:"runId"`
+	RunId RunId `json:"runId"`
 }
 
 type GetRunResponseObject interface {
@@ -7121,7 +7190,7 @@ func (response GetRundefaultJSONResponse) VisitGetRunResponse(w http.ResponseWri
 }
 
 type GetPatchReportRequestObject struct {
-	RunId int64 `json:"runId"`
+	RunId RunId `json:"runId"`
 }
 
 type GetPatchReportResponseObject interface {
@@ -7746,7 +7815,7 @@ func (response GetServerJobsdefaultJSONResponse) VisitGetServerJobsResponse(w ht
 }
 
 type ApproveKeyBaselineRequestObject struct {
-	ServerId int64 `json:"serverId"`
+	ServerId ServerId `json:"serverId"`
 }
 
 type ApproveKeyBaselineResponseObject interface {
@@ -9326,7 +9395,7 @@ func (sh *strictHandler) ListIncidents(w http.ResponseWriter, r *http.Request, p
 }
 
 // AcknowledgeIncident operation middleware
-func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId int64) {
+func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId) {
 	var request AcknowledgeIncidentRequestObject
 
 	request.IncidentId = incidentId
@@ -9352,7 +9421,7 @@ func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Requ
 }
 
 // SnoozeIncident operation middleware
-func (sh *strictHandler) SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId int64) {
+func (sh *strictHandler) SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId) {
 	var request SnoozeIncidentRequestObject
 
 	request.IncidentId = incidentId
@@ -9547,7 +9616,7 @@ func (sh *strictHandler) CreateMaintenance(w http.ResponseWriter, r *http.Reques
 }
 
 // DeleteMaintenance operation middleware
-func (sh *strictHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId int64) {
+func (sh *strictHandler) DeleteMaintenance(w http.ResponseWriter, r *http.Request, windowId WindowId) {
 	var request DeleteMaintenanceRequestObject
 
 	request.WindowId = windowId
@@ -10153,7 +10222,7 @@ func (sh *strictHandler) ProposePlan(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetPlan operation middleware
-func (sh *strictHandler) GetPlan(w http.ResponseWriter, r *http.Request, planId int64) {
+func (sh *strictHandler) GetPlan(w http.ResponseWriter, r *http.Request, planId PlanId) {
 	var request GetPlanRequestObject
 
 	request.PlanId = planId
@@ -10179,7 +10248,7 @@ func (sh *strictHandler) GetPlan(w http.ResponseWriter, r *http.Request, planId 
 }
 
 // ApprovePlan operation middleware
-func (sh *strictHandler) ApprovePlan(w http.ResponseWriter, r *http.Request, planId int64) {
+func (sh *strictHandler) ApprovePlan(w http.ResponseWriter, r *http.Request, planId PlanId) {
 	var request ApprovePlanRequestObject
 
 	request.PlanId = planId
@@ -10205,7 +10274,7 @@ func (sh *strictHandler) ApprovePlan(w http.ResponseWriter, r *http.Request, pla
 }
 
 // ExecutePlan operation middleware
-func (sh *strictHandler) ExecutePlan(w http.ResponseWriter, r *http.Request, planId int64) {
+func (sh *strictHandler) ExecutePlan(w http.ResponseWriter, r *http.Request, planId PlanId) {
 	var request ExecutePlanRequestObject
 
 	request.PlanId = planId
@@ -10231,7 +10300,7 @@ func (sh *strictHandler) ExecutePlan(w http.ResponseWriter, r *http.Request, pla
 }
 
 // RejectPlan operation middleware
-func (sh *strictHandler) RejectPlan(w http.ResponseWriter, r *http.Request, planId int64) {
+func (sh *strictHandler) RejectPlan(w http.ResponseWriter, r *http.Request, planId PlanId) {
 	var request RejectPlanRequestObject
 
 	request.PlanId = planId
@@ -10321,7 +10390,7 @@ func (sh *strictHandler) StartRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // GetRun operation middleware
-func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId int64) {
+func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId RunId) {
 	var request GetRunRequestObject
 
 	request.RunId = runId
@@ -10347,7 +10416,7 @@ func (sh *strictHandler) GetRun(w http.ResponseWriter, r *http.Request, runId in
 }
 
 // GetPatchReport operation middleware
-func (sh *strictHandler) GetPatchReport(w http.ResponseWriter, r *http.Request, runId int64) {
+func (sh *strictHandler) GetPatchReport(w http.ResponseWriter, r *http.Request, runId RunId) {
 	var request GetPatchReportRequestObject
 
 	request.RunId = runId
@@ -10809,7 +10878,7 @@ func (sh *strictHandler) GetServerJobs(w http.ResponseWriter, r *http.Request, s
 }
 
 // ApproveKeyBaseline operation middleware
-func (sh *strictHandler) ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId int64) {
+func (sh *strictHandler) ApproveKeyBaseline(w http.ResponseWriter, r *http.Request, serverId ServerId) {
 	var request ApproveKeyBaselineRequestObject
 
 	request.ServerId = serverId

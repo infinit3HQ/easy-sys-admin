@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,13 +63,20 @@ func (s *Service) Advisories(ctx context.Context, a Actor, serverID int64) (Advi
 }
 
 func matchAdvisories(inv proto.PackageInventory, path string) AdvisoryReport {
+	rep := matchFeed(inv, path)
+	// A failed or partial inventory stays visible whatever the feed says,
+	// so zero matches never reads as a clean result.
+	if len(inv.Gaps) > 0 {
+		rep.Coverage = "Package inventory is incomplete (" + strings.Join(inv.Gaps, ", ") + "). Matches below are not a full result. " + rep.Coverage
+	}
+	return rep
+}
+
+func matchFeed(inv proto.PackageInventory, path string) AdvisoryReport {
 	rep := AdvisoryReport{
 		Distro: inv.Distro, Release: inv.Release, Packages: len(inv.Packages),
 		Feed: "not imported", Matches: []AdvisoryMatch{},
 		Coverage: "No advisory feed is imported. A missing list is not a clean result.",
-	}
-	if len(inv.Gaps) > 0 {
-		rep.Coverage = "Package inventory is incomplete (" + strings.Join(inv.Gaps, ", ") + "). Matches below are not a full result."
 	}
 	if path == "" {
 		return rep
@@ -90,19 +98,28 @@ func matchAdvisories(inv proto.PackageInventory, path string) AdvisoryReport {
 		rep.Coverage = "The feed is for " + feed.Distro + " " + feed.Release + ", and this server is " + inv.Distro + " " + inv.Release + ". No match from another release is treated as safe."
 		return rep
 	}
-	affected := map[string]struct {
-		id, fixed, severity string
-	}{}
-	for _, a := range feed.Advisories {
-		for _, v := range a.Affected {
-			affected[a.Package+"\t"+v] = struct{ id, fixed, severity string }{a.ID, a.Fixed, a.Severity}
-		}
+	byPackage := map[string][]int{}
+	for i, a := range feed.Advisories {
+		byPackage[a.Package] = append(byPackage[a.Package], i)
 	}
 	for _, p := range inv.Packages {
-		if hit, ok := affected[p.Name+"\t"+p.Version]; ok {
-			rep.Matches = append(rep.Matches, AdvisoryMatch{ID: hit.id, Package: p.Name, Version: p.Version, Fixed: hit.fixed, Severity: hit.severity})
+		for _, i := range byPackage[p.Name] {
+			a := feed.Advisories[i]
+			if !affectedVersion(p.Version, a.Fixed, a.Affected) {
+				continue
+			}
+			rep.Matches = append(rep.Matches, AdvisoryMatch{ID: a.ID, Package: p.Name, Version: p.Version, Fixed: a.Fixed, Severity: a.Severity})
 		}
 	}
-	rep.Coverage = "Only exact affected versions in the imported feed are listed. A package that is absent is not certified safe."
+	rep.Coverage = "Installed versions older than the fixed version, or listed as affected, in the imported feed are shown. A package that is absent is not certified safe."
 	return rep
+}
+
+// affectedVersion is true when installed is listed as affected, or is
+// older than fixed by Debian version order.
+func affectedVersion(installed, fixed string, affected []string) bool {
+	if slices.Contains(affected, installed) {
+		return true
+	}
+	return fixed != "" && compareDebVersions(installed, fixed) < 0
 }

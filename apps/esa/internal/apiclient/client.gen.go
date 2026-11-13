@@ -199,6 +199,48 @@ func (e EffectiveRole) Valid() bool {
 	}
 }
 
+// Defines values for FixPlanStatus.
+const (
+	FixPlanStatusApproved    FixPlanStatus = "approved"
+	FixPlanStatusExecuting   FixPlanStatus = "executing"
+	FixPlanStatusExpired     FixPlanStatus = "expired"
+	FixPlanStatusFailed      FixPlanStatus = "failed"
+	FixPlanStatusInvalidated FixPlanStatus = "invalidated"
+	FixPlanStatusPartial     FixPlanStatus = "partial"
+	FixPlanStatusRejected    FixPlanStatus = "rejected"
+	FixPlanStatusSkipped     FixPlanStatus = "skipped"
+	FixPlanStatusSubmitted   FixPlanStatus = "submitted"
+	FixPlanStatusSucceeded   FixPlanStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the FixPlanStatus enum.
+func (e FixPlanStatus) Valid() bool {
+	switch e {
+	case FixPlanStatusApproved:
+		return true
+	case FixPlanStatusExecuting:
+		return true
+	case FixPlanStatusExpired:
+		return true
+	case FixPlanStatusFailed:
+		return true
+	case FixPlanStatusInvalidated:
+		return true
+	case FixPlanStatusPartial:
+		return true
+	case FixPlanStatusRejected:
+		return true
+	case FixPlanStatusSkipped:
+		return true
+	case FixPlanStatusSubmitted:
+		return true
+	case FixPlanStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GroupAccess.
 const (
 	GroupAccessOperate GroupAccess = "operate"
@@ -986,8 +1028,13 @@ type FixPlan struct {
 	Id          int64      `json:"id"`
 	Reason      string     `json:"reason"`
 	RunId       *int64     `json:"runId,omitempty"`
-	Status      string     `json:"status"`
+
+	// Status executing until the run finishes, then the run's status.
+	Status FixPlanStatus `json:"status"`
 }
+
+// FixPlanStatus executing until the run finishes, then the run's status.
+type FixPlanStatus string
 
 // FleetOverview defines model for FleetOverview.
 type FleetOverview struct {
@@ -1118,12 +1165,15 @@ type ImageCheckList struct {
 
 // Incident defines model for Incident.
 type Incident struct {
-	AckedAt   *time.Time `json:"ackedAt,omitempty"`
-	FirstSeen time.Time  `json:"firstSeen"`
-	Id        int64      `json:"id"`
-	Kind      string     `json:"kind"`
-	LastSeen  time.Time  `json:"lastSeen"`
-	Message   string     `json:"message"`
+	AckedAt *time.Time `json:"ackedAt,omitempty"`
+
+	// CanReview True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
+	CanReview bool      `json:"canReview"`
+	FirstSeen time.Time `json:"firstSeen"`
+	Id        int64     `json:"id"`
+	Kind      string    `json:"kind"`
+	LastSeen  time.Time `json:"lastSeen"`
+	Message   string    `json:"message"`
 
 	// NextStep What a person can do next. It does not change the server.
 	NextStep     string        `json:"nextStep"`
@@ -1140,6 +1190,7 @@ type IncidentState string
 
 // IncidentList defines model for IncidentList.
 type IncidentList struct {
+	// Items The 100 most recently seen notices.
 	Items []Incident `json:"items"`
 }
 
@@ -1197,6 +1248,7 @@ type KeyLabelRequest struct {
 
 // KeyList defines model for KeyList.
 type KeyList struct {
+	// Items At most 2000 key grants, ordered by fingerprint.
 	Items []Key `json:"items"`
 }
 
@@ -1241,6 +1293,7 @@ type LoginRecord = proto.Login
 
 // MaintenanceList defines model for MaintenanceList.
 type MaintenanceList struct {
+	// Items Windows that have not ended, earliest first, at most 200.
 	Items []MaintenanceWindow `json:"items"`
 }
 
@@ -1396,7 +1449,10 @@ type PlanBody struct {
 	ObserveSeconds  *int         `json:"observeSeconds,omitempty"`
 
 	// Packages Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
-	Packages         *[]string           `json:"packages,omitempty"`
+	Packages *[]string `json:"packages,omitempty"`
+
+	// PinnedServerIds The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
+	PinnedServerIds  *[]int64            `json:"pinnedServerIds,omitempty"`
 	RebootIfRequired *bool               `json:"rebootIfRequired,omitempty"`
 	ServerIds        *[]int64            `json:"serverIds,omitempty"`
 	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
@@ -1411,6 +1467,7 @@ type PlanBodyUpdateMode string
 
 // PlanList defines model for PlanList.
 type PlanList struct {
+	// Items The 100 most recent plans, newest first.
 	Items []FixPlan `json:"items"`
 }
 
@@ -1797,8 +1854,17 @@ type ChannelId = int64
 // GroupId defines model for GroupId.
 type GroupId = int64
 
+// IncidentId defines model for IncidentId.
+type IncidentId = int64
+
 // LinkToken defines model for LinkToken.
 type LinkToken = string
+
+// PlanId defines model for PlanId.
+type PlanId = int64
+
+// RunId defines model for RunId.
+type RunId = int64
 
 // ServerId defines model for ServerId.
 type ServerId = int64
@@ -1808,6 +1874,9 @@ type TeamId = int64
 
 // UserId defines model for UserId.
 type UserId = int64
+
+// WindowId defines model for WindowId.
+type WindowId = int64
 
 // ListActivityParams defines parameters for ListActivity.
 type ListActivityParams struct {
@@ -2245,21 +2314,21 @@ type ClientInterface interface {
 	// AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
 	//
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
-	AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AcknowledgeIncident(ctx context.Context, incidentId IncidentId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SnoozeIncidentWithBody Hide a notice until a time within 7 days. A host key change cannot be snoozed.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-	SnoozeIncidentWithBody(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SnoozeIncidentWithBody(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SnoozeIncident Hide a notice until a time within 7 days. A host key change cannot be snoozed.
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-	SnoozeIncident(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SnoozeIncident(ctx context.Context, incidentId IncidentId, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetInvite What an invite link offers, for the signed-in user
 	//
@@ -2312,7 +2381,7 @@ type ClientInterface interface {
 	// DeleteMaintenance Remove a maintenance window
 	//
 	// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
-	DeleteMaintenance(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteMaintenance(ctx context.Context, windowId WindowId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetMe The signed-in user and their current account
 	//
@@ -2494,31 +2563,31 @@ type ClientInterface interface {
 	// GetPlan One typed plan
 	//
 	// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
-	GetPlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetPlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
 	//
 	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
-	ApprovePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ApprovePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 	//
 	// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
-	ExecutePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ExecutePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RejectPlanWithBody Reject a plan from a browser session. A token cannot reject.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-	RejectPlanWithBody(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RejectPlanWithBody(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RejectPlan Reject a plan from a browser session. A token cannot reject.
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-	RejectPlan(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	RejectPlan(ctx context.Context, planId PlanId, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListRuns Maintenance runs, newest first
 	//
@@ -2542,12 +2611,12 @@ type ClientInterface interface {
 	// GetRun One run with each server's result
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
-	GetRun(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetRun(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetPatchReport Package result and checks for one update run
 	//
 	// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
-	GetPatchReport(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetPatchReport(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AddServerWithBody Add a server with a one-time sudo login (installs esa-helper)
 	//
@@ -2698,7 +2767,7 @@ type ClientInterface interface {
 	// ApproveKeyBaseline Approve the keys currently recorded on this server
 	//
 	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-	ApproveKeyBaseline(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ApproveKeyBaseline(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetServerLogs Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -3319,7 +3388,7 @@ func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams,
 // AcknowledgeIncident Record that a person has reviewed this notice. This does not change the server.
 //
 // Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
-func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId IncidentId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAcknowledgeIncidentRequest(c.Server, incidentId)
 	if err != nil {
 		return nil, err
@@ -3336,7 +3405,7 @@ func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId int64, reqE
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-func (c *Client) SnoozeIncidentWithBody(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SnoozeIncidentWithBody(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSnoozeIncidentRequestWithBody(c.Server, incidentId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -3353,7 +3422,7 @@ func (c *Client) SnoozeIncidentWithBody(ctx context.Context, incidentId int64, c
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-func (c *Client) SnoozeIncident(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SnoozeIncident(ctx context.Context, incidentId IncidentId, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSnoozeIncidentRequest(c.Server, incidentId, body)
 	if err != nil {
 		return nil, err
@@ -3496,7 +3565,7 @@ func (c *Client) CreateMaintenance(ctx context.Context, body CreateMaintenanceJS
 // DeleteMaintenance Remove a maintenance window
 //
 // Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
-func (c *Client) DeleteMaintenance(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) DeleteMaintenance(ctx context.Context, windowId WindowId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteMaintenanceRequest(c.Server, windowId)
 	if err != nil {
 		return nil, err
@@ -3978,7 +4047,7 @@ func (c *Client) ProposePlan(ctx context.Context, body ProposePlanJSONRequestBod
 // GetPlan One typed plan
 //
 // Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
-func (c *Client) GetPlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetPlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPlanRequest(c.Server, planId)
 	if err != nil {
 		return nil, err
@@ -3993,7 +4062,7 @@ func (c *Client) GetPlan(ctx context.Context, planId int64, reqEditors ...Reques
 // ApprovePlan Approve a plan from a browser session. A token cannot approve.
 //
 // Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
-func (c *Client) ApprovePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ApprovePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApprovePlanRequest(c.Server, planId)
 	if err != nil {
 		return nil, err
@@ -4008,7 +4077,7 @@ func (c *Client) ApprovePlan(ctx context.Context, planId int64, reqEditors ...Re
 // ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 //
 // Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
-func (c *Client) ExecutePlan(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ExecutePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewExecutePlanRequest(c.Server, planId)
 	if err != nil {
 		return nil, err
@@ -4025,7 +4094,7 @@ func (c *Client) ExecutePlan(ctx context.Context, planId int64, reqEditors ...Re
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-func (c *Client) RejectPlanWithBody(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) RejectPlanWithBody(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRejectPlanRequestWithBody(c.Server, planId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -4042,7 +4111,7 @@ func (c *Client) RejectPlanWithBody(ctx context.Context, planId int64, contentTy
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-func (c *Client) RejectPlan(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) RejectPlan(ctx context.Context, planId PlanId, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRejectPlanRequest(c.Server, planId, body)
 	if err != nil {
 		return nil, err
@@ -4106,7 +4175,7 @@ func (c *Client) StartRun(ctx context.Context, body StartRunJSONRequestBody, req
 // GetRun One run with each server's result
 //
 // Corresponds with GET /runs/{runId} (the `GetRun` operationId).
-func (c *Client) GetRun(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetRun(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetRunRequest(c.Server, runId)
 	if err != nil {
 		return nil, err
@@ -4121,7 +4190,7 @@ func (c *Client) GetRun(ctx context.Context, runId int64, reqEditors ...RequestE
 // GetPatchReport Package result and checks for one update run
 //
 // Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
-func (c *Client) GetPatchReport(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetPatchReport(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetPatchReportRequest(c.Server, runId)
 	if err != nil {
 		return nil, err
@@ -4502,7 +4571,7 @@ func (c *Client) GetServerJobs(ctx context.Context, serverId ServerId, reqEditor
 // ApproveKeyBaseline Approve the keys currently recorded on this server
 //
 // Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ApproveKeyBaseline(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApproveKeyBaselineRequest(c.Server, serverId)
 	if err != nil {
 		return nil, err
@@ -5726,7 +5795,7 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 }
 
 // NewAcknowledgeIncidentRequest constructs an http.Request for the AcknowledgeIncident method
-func NewAcknowledgeIncidentRequest(server string, incidentId int64) (*http.Request, error) {
+func NewAcknowledgeIncidentRequest(server string, incidentId IncidentId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -5760,7 +5829,7 @@ func NewAcknowledgeIncidentRequest(server string, incidentId int64) (*http.Reque
 }
 
 // NewSnoozeIncidentRequest calls the generic SnoozeIncident builder with application/json body
-func NewSnoozeIncidentRequest(server string, incidentId int64, body SnoozeIncidentJSONRequestBody) (*http.Request, error) {
+func NewSnoozeIncidentRequest(server string, incidentId IncidentId, body SnoozeIncidentJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -5771,7 +5840,7 @@ func NewSnoozeIncidentRequest(server string, incidentId int64, body SnoozeIncide
 }
 
 // NewSnoozeIncidentRequestWithBody constructs an http.Request for the SnoozeIncident method, with any body, and a specified content type
-func NewSnoozeIncidentRequestWithBody(server string, incidentId int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewSnoozeIncidentRequestWithBody(server string, incidentId IncidentId, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6009,7 +6078,7 @@ func NewCreateMaintenanceRequestWithBody(server string, contentType string, body
 }
 
 // NewDeleteMaintenanceRequest constructs an http.Request for the DeleteMaintenance method
-func NewDeleteMaintenanceRequest(server string, windowId int64) (*http.Request, error) {
+func NewDeleteMaintenanceRequest(server string, windowId WindowId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6823,7 +6892,7 @@ func NewProposePlanRequestWithBody(server string, contentType string, body io.Re
 }
 
 // NewGetPlanRequest constructs an http.Request for the GetPlan method
-func NewGetPlanRequest(server string, planId int64) (*http.Request, error) {
+func NewGetPlanRequest(server string, planId PlanId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6857,7 +6926,7 @@ func NewGetPlanRequest(server string, planId int64) (*http.Request, error) {
 }
 
 // NewApprovePlanRequest constructs an http.Request for the ApprovePlan method
-func NewApprovePlanRequest(server string, planId int64) (*http.Request, error) {
+func NewApprovePlanRequest(server string, planId PlanId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6891,7 +6960,7 @@ func NewApprovePlanRequest(server string, planId int64) (*http.Request, error) {
 }
 
 // NewExecutePlanRequest constructs an http.Request for the ExecutePlan method
-func NewExecutePlanRequest(server string, planId int64) (*http.Request, error) {
+func NewExecutePlanRequest(server string, planId PlanId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -6925,7 +6994,7 @@ func NewExecutePlanRequest(server string, planId int64) (*http.Request, error) {
 }
 
 // NewRejectPlanRequest calls the generic RejectPlan builder with application/json body
-func NewRejectPlanRequest(server string, planId int64, body RejectPlanJSONRequestBody) (*http.Request, error) {
+func NewRejectPlanRequest(server string, planId PlanId, body RejectPlanJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -6936,7 +7005,7 @@ func NewRejectPlanRequest(server string, planId int64, body RejectPlanJSONReques
 }
 
 // NewRejectPlanRequestWithBody constructs an http.Request for the RejectPlan method, with any body, and a specified content type
-func NewRejectPlanRequestWithBody(server string, planId int64, contentType string, body io.Reader) (*http.Request, error) {
+func NewRejectPlanRequestWithBody(server string, planId PlanId, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7114,7 +7183,7 @@ func NewStartRunRequestWithBody(server string, contentType string, body io.Reade
 }
 
 // NewGetRunRequest constructs an http.Request for the GetRun method
-func NewGetRunRequest(server string, runId int64) (*http.Request, error) {
+func NewGetRunRequest(server string, runId RunId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7148,7 +7217,7 @@ func NewGetRunRequest(server string, runId int64) (*http.Request, error) {
 }
 
 // NewGetPatchReportRequest constructs an http.Request for the GetPatchReport method
-func NewGetPatchReportRequest(server string, runId int64) (*http.Request, error) {
+func NewGetPatchReportRequest(server string, runId RunId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -7803,7 +7872,7 @@ func NewGetServerJobsRequest(server string, serverId ServerId) (*http.Request, e
 }
 
 // NewApproveKeyBaselineRequest constructs an http.Request for the ApproveKeyBaseline method
-func NewApproveKeyBaselineRequest(server string, serverId int64) (*http.Request, error) {
+func NewApproveKeyBaselineRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8713,21 +8782,21 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
-	AcknowledgeIncidentWithResponse(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error)
+	AcknowledgeIncidentWithResponse(ctx context.Context, incidentId IncidentId, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error)
 
 	// SnoozeIncidentWithBodyWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-	SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
+	SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
 
 	// SnoozeIncidentWithResponse Hide a notice until a time within 7 days. A host key change cannot be snoozed.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-	SnoozeIncidentWithResponse(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
+	SnoozeIncidentWithResponse(ctx context.Context, incidentId IncidentId, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error)
 
 	// GetInviteWithResponse What an invite link offers, for the signed-in user
 	//
@@ -8790,7 +8859,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
-	DeleteMaintenanceWithResponse(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error)
+	DeleteMaintenanceWithResponse(ctx context.Context, windowId WindowId, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error)
 
 	// GetMeWithResponse The signed-in user and their current account
 	//
@@ -9000,35 +9069,35 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
-	GetPlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*GetPlanResponse, error)
+	GetPlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*GetPlanResponse, error)
 
 	// ApprovePlanWithResponse Approve a plan from a browser session. A token cannot approve.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
-	ApprovePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error)
+	ApprovePlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error)
 
 	// ExecutePlanWithResponse Run an approved plan once. A token that can read logs cannot execute.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
-	ExecutePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error)
+	ExecutePlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error)
 
 	// RejectPlanWithBodyWithResponse Reject a plan from a browser session. A token cannot reject.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-	RejectPlanWithBodyWithResponse(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
+	RejectPlanWithBodyWithResponse(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
 
 	// RejectPlanWithResponse Reject a plan from a browser session. A token cannot reject.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-	RejectPlanWithResponse(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
+	RejectPlanWithResponse(ctx context.Context, planId PlanId, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error)
 
 	// ListRunsWithResponse Maintenance runs, newest first
 	//
@@ -9056,14 +9125,14 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /runs/{runId} (the `GetRun` operationId).
-	GetRunWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
+	GetRunWithResponse(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*GetRunResponse, error)
 
 	// GetPatchReportWithResponse Package result and checks for one update run
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
-	GetPatchReportWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error)
+	GetPatchReportWithResponse(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error)
 
 	// AddServerWithBodyWithResponse Add a server with a one-time sudo login (installs esa-helper)
 	//
@@ -9232,7 +9301,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-	ApproveKeyBaselineWithResponse(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
+	ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error)
 
 	// GetServerLogsWithResponse Journal lines of a unit, or log lines of a container (needs logs:read)
 	//
@@ -14133,7 +14202,7 @@ func (c *ClientWithResponses) ListIncidentsWithResponse(ctx context.Context, par
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
-func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Context, incidentId int64, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error) {
+func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Context, incidentId IncidentId, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error) {
 	rsp, err := c.AcknowledgeIncident(ctx, incidentId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14146,7 +14215,7 @@ func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Contex
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-func (c *ClientWithResponses) SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
+func (c *ClientWithResponses) SnoozeIncidentWithBodyWithResponse(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
 	rsp, err := c.SnoozeIncidentWithBody(ctx, incidentId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14159,7 +14228,7 @@ func (c *ClientWithResponses) SnoozeIncidentWithBodyWithResponse(ctx context.Con
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /incidents/{incidentId}/snooze (the `SnoozeIncident` operationId).
-func (c *ClientWithResponses) SnoozeIncidentWithResponse(ctx context.Context, incidentId int64, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
+func (c *ClientWithResponses) SnoozeIncidentWithResponse(ctx context.Context, incidentId IncidentId, body SnoozeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*SnoozeIncidentResponse, error) {
 	rsp, err := c.SnoozeIncident(ctx, incidentId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14276,7 +14345,7 @@ func (c *ClientWithResponses) CreateMaintenanceWithResponse(ctx context.Context,
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /maintenance/{windowId} (the `DeleteMaintenance` operationId).
-func (c *ClientWithResponses) DeleteMaintenanceWithResponse(ctx context.Context, windowId int64, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error) {
+func (c *ClientWithResponses) DeleteMaintenanceWithResponse(ctx context.Context, windowId WindowId, reqEditors ...RequestEditorFn) (*DeleteMaintenanceResponse, error) {
 	rsp, err := c.DeleteMaintenance(ctx, windowId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14666,7 +14735,7 @@ func (c *ClientWithResponses) ProposePlanWithResponse(ctx context.Context, body 
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /plans/{planId} (the `GetPlan` operationId).
-func (c *ClientWithResponses) GetPlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*GetPlanResponse, error) {
+func (c *ClientWithResponses) GetPlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*GetPlanResponse, error) {
 	rsp, err := c.GetPlan(ctx, planId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14679,7 +14748,7 @@ func (c *ClientWithResponses) GetPlanWithResponse(ctx context.Context, planId in
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
-func (c *ClientWithResponses) ApprovePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error) {
+func (c *ClientWithResponses) ApprovePlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error) {
 	rsp, err := c.ApprovePlan(ctx, planId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14692,7 +14761,7 @@ func (c *ClientWithResponses) ApprovePlanWithResponse(ctx context.Context, planI
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /plans/{planId}/execute (the `ExecutePlan` operationId).
-func (c *ClientWithResponses) ExecutePlanWithResponse(ctx context.Context, planId int64, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error) {
+func (c *ClientWithResponses) ExecutePlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*ExecutePlanResponse, error) {
 	rsp, err := c.ExecutePlan(ctx, planId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14705,7 +14774,7 @@ func (c *ClientWithResponses) ExecutePlanWithResponse(ctx context.Context, planI
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-func (c *ClientWithResponses) RejectPlanWithBodyWithResponse(ctx context.Context, planId int64, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
+func (c *ClientWithResponses) RejectPlanWithBodyWithResponse(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
 	rsp, err := c.RejectPlanWithBody(ctx, planId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14718,7 +14787,7 @@ func (c *ClientWithResponses) RejectPlanWithBodyWithResponse(ctx context.Context
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /plans/{planId}/reject (the `RejectPlan` operationId).
-func (c *ClientWithResponses) RejectPlanWithResponse(ctx context.Context, planId int64, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
+func (c *ClientWithResponses) RejectPlanWithResponse(ctx context.Context, planId PlanId, body RejectPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*RejectPlanResponse, error) {
 	rsp, err := c.RejectPlan(ctx, planId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14770,7 +14839,7 @@ func (c *ClientWithResponses) StartRunWithResponse(ctx context.Context, body Sta
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /runs/{runId} (the `GetRun` operationId).
-func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetRunResponse, error) {
+func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*GetRunResponse, error) {
 	rsp, err := c.GetRun(ctx, runId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -14783,7 +14852,7 @@ func (c *ClientWithResponses) GetRunWithResponse(ctx context.Context, runId int6
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /runs/{runId}/report (the `GetPatchReport` operationId).
-func (c *ClientWithResponses) GetPatchReportWithResponse(ctx context.Context, runId int64, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error) {
+func (c *ClientWithResponses) GetPatchReportWithResponse(ctx context.Context, runId RunId, reqEditors ...RequestEditorFn) (*GetPatchReportResponse, error) {
 	rsp, err := c.GetPatchReport(ctx, runId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -15090,7 +15159,7 @@ func (c *ClientWithResponses) GetServerJobsWithResponse(ctx context.Context, ser
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /servers/{serverId}/key-baseline (the `ApproveKeyBaseline` operationId).
-func (c *ClientWithResponses) ApproveKeyBaselineWithResponse(ctx context.Context, serverId int64, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
+func (c *ClientWithResponses) ApproveKeyBaselineWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*ApproveKeyBaselineResponse, error) {
 	rsp, err := c.ApproveKeyBaseline(ctx, serverId, reqEditors...)
 	if err != nil {
 		return nil, err

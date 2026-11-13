@@ -264,7 +264,7 @@ func insertFakeServers(t *testing.T, s *Service, accountID int64, hosts []fakeHo
 		at := lastAttempt(i)
 		states[i] = store.ServerState{ServerID: srv.ID, Status: string(StatusOK), Reasons: store.JSON("[]"),
 			LastSeenAt: &seen, LastAttemptAt: &at, UpdatesAt: &now, Updates: store.MustJSON(proto.PendingUpdates{}),
-			ExposureAt: &now,
+			ExposureAt:  &now,
 			MissedPolls: missed(i), UpdatedAt: now}
 	}
 	if err := s.db.Omit("Server").CreateInBatches(&states, 500).Error; err != nil {

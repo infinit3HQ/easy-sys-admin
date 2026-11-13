@@ -55,3 +55,9 @@ func mapStore(err error) error {
 	}
 	return err
 }
+
+// errPersonOnly refuses a change that weakens a safety rule unless a person
+// makes it in the web app.
+func errPersonOnly(what string) error {
+	return invalid("planRequired", "only a person signed in to the web app can %s", what)
+}

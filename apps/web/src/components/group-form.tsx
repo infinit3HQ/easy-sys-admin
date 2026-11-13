@@ -305,7 +305,7 @@ export function GroupForm({
               onChange={(planRequired) => setUpd({ planRequired })}
               disabled={disabled}
               label="Require an approved plan"
-              hint="An update or cleanup started by a person or an agent must be an approved plan. The schedule still runs."
+              hint="Every update or cleanup must be an approved plan, so the cleanup and update schedules must be off. Only a person signed in here can turn this off again."
             />
           </div>
         </Panel>

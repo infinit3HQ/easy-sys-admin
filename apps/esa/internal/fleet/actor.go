@@ -95,3 +95,9 @@ func ActorFrom(ctx context.Context) (Actor, bool) {
 	a, ok := ctx.Value(actorKey{}).(Actor)
 	return a, ok
 }
+
+// isPerson is true for a person signed in to the web app. API and MCP
+// tokens and scheduled work are not people, even with admin scope.
+func (a Actor) isPerson() bool {
+	return a.TokenID == 0 && a.UserID != 0 && a.Source == SourceWeb
+}

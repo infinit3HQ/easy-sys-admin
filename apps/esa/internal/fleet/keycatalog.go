@@ -86,18 +86,18 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		seen[id] = true
 		old, ok := have[id]
 		if !ok {
-			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline")
+			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" on "+k.User, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline", false)
 			continue
 		}
 		if old.From != k.From || old.HasCommand != k.HasCommand {
-			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" changed", srv.Name+": restrictions changed for "+k.Fingerprint+" on "+k.User)
+			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" on "+k.User+" changed", srv.Name+": restrictions changed for "+k.Fingerprint+" on "+k.User, false)
 		}
 	}
 	for id, item := range have {
 		if seen[id] {
 			continue
 		}
-		s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", "removed "+item.Fingerprint, srv.Name+": approved key "+item.Fingerprint+" on "+item.User+" was not in the files checked this time")
+		s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", "removed "+item.Fingerprint+" on "+item.User, srv.Name+": approved key "+item.Fingerprint+" on "+item.User+" was not in the files checked this time", false)
 	}
 }
 
@@ -167,7 +167,7 @@ func (s *Service) ListKeys(ctx context.Context, a Actor) ([]KeyView, error) {
 		names[v.ID] = v.Name
 	}
 	var rows []store.KeyOccurrence
-	if err := s.db.WithContext(ctx).Where("server_id IN ?", ids).Order("fingerprint, server_id, user").Find(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("server_id IN ?", ids).Order("fingerprint, server_id, user").Limit(keyListLimit).Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	var labels []store.KeyLabel
@@ -229,3 +229,6 @@ func (s *Service) LabelKey(ctx context.Context, a Actor, fingerprint, label stri
 	s.audit(ctx, nil, a, "key.label", fingerprint, map[string]any{"label": label})
 	return nil
 }
+
+// keyListLimit caps the key catalog response, as the contract declares.
+const keyListLimit = 2000

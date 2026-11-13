@@ -53,6 +53,11 @@ type Exposure struct {
 	BaselineSeeded bool     `json:"baselineSeeded,omitempty"`
 	BaselinePorts  []string `json:"baselinePorts,omitempty"`
 	BaselineKeys   []string `json:"baselineKeys,omitempty"`
+	// BaselineBinds is the previous SpecificBinds. A socket on one public
+	// address (Postgres on the server's own IP) is as exposed as one on
+	// every interface. It is seeded once without an alert, like the ports.
+	BaselineBinds       []string `json:"baselineBinds,omitempty"`
+	BaselineBindsSeeded bool     `json:"baselineBindsSeeded,omitempty"`
 }
 
 func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at time.Time) Exposure {
@@ -97,8 +102,15 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	ex.SSHRead = access.SSHRead
 	ex.Firewall = sec.Firewall
 	if sec.Firewall == "ufw active" {
+		// A ufw that lets everything in by default protects nothing it does
+		// not name, so it is not shown as a plain "ufw active".
+		if sec.FirewallDefaultIncoming == "allow" {
+			ex.Firewall = "ufw active, default allow"
+		}
 		for _, l := range sec.Listening {
-			if l.Exposure == "all" && l.UFW == "unmentioned" {
+			// Docker publishes skip ufw (UFW "unknown"), so they count as
+			// uncovered too.
+			if l.Exposure == "all" && (l.UFW == "unmentioned" || l.UFW == "unknown") {
 				ex.Uncovered++
 			}
 		}
@@ -148,8 +160,11 @@ func exposureConditions(ex Exposure) []condition {
 	if ex.PermitRootLogin == "yes" {
 		add("root-login", "warning", "SSH allows root to log in with a password")
 	}
-	if ex.Firewall == "none" {
+	switch ex.Firewall {
+	case "none":
 		add("firewall", "warning", "no firewall is active")
+	case "ufw active, default allow":
+		add("firewall", "warning", "the firewall allows incoming connections by default")
 	}
 	if ex.ExtraRoot > 0 {
 		add("extra-root", "critical", "a login account other than root has uid 0")
@@ -208,14 +223,25 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 			ex.ListeningOnAllInterfaces = prev.ListeningOnAllInterfaces
 			ports = prev.BaselinePorts
 		}
+		binds := ex.SpecificBinds
+		if !listenOK && prev.BaselineBindsSeeded {
+			ex.SpecificBinds = prev.SpecificBinds
+			binds = prev.BaselineBinds
+		}
 		if prev.Ready && prev.BaselineSeeded {
-			s.noteAdditions(ctx, srv, prev.BaselinePorts, ports, prev.BaselineKeys, keys)
+			prevBinds := binds
+			if prev.BaselineBindsSeeded {
+				prevBinds = prev.BaselineBinds
+			}
+			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ports), binds...), prev.BaselineKeys, keys)
 		}
 		ex.BaselineSeeded = true
 		if listenOK {
 			ex.BaselinePorts = ex.PublicPorts
+			ex.BaselineBinds, ex.BaselineBindsSeeded = ex.SpecificBinds, true
 		} else {
 			ex.BaselinePorts = prev.BaselinePorts
+			ex.BaselineBinds, ex.BaselineBindsSeeded = prev.BaselineBinds, prev.BaselineBindsSeeded
 		}
 		ex.BaselineKeys = keyIDs(keys)
 	}
@@ -305,21 +331,36 @@ func mergeGaps(parts ...[]string) []string {
 }
 
 func keyUses(access proto.AccessReport) []keyUse {
+	// One row per login and fingerprint. The same key on two logins is two
+	// grants. When one login lists a key twice, the least restricted line
+	// (no from=, no command=) is the one that matters.
+	byID := map[string]int{}
 	var out []keyUse
-	seen := map[string]bool{}
 	for _, u := range access.Users {
 		for _, k := range u.AuthorizedKeys {
-			if k.Fingerprint == "" || seen[k.Fingerprint] {
+			if k.Fingerprint == "" {
 				continue
 			}
-			seen[k.Fingerprint] = true
-			out = append(out, keyUse{
+			use := keyUse{
 				Fingerprint: k.Fingerprint, User: u.Name, Type: k.Type,
 				Comment: trimRunes(k.Comment, 200), From: trimRunes(k.From, 200), HasCommand: k.HasCommand,
-			})
+			}
+			if i, ok := byID[keyID(use)]; ok {
+				if restriction(use) < restriction(out[i]) {
+					out[i] = use
+				}
+				continue
+			}
+			byID[keyID(use)] = len(out)
+			out = append(out, use)
 		}
 	}
-	slices.SortFunc(out, func(a, b keyUse) int { return strings.Compare(a.Fingerprint, b.Fingerprint) })
+	slices.SortFunc(out, func(a, b keyUse) int {
+		if c := strings.Compare(a.Fingerprint, b.Fingerprint); c != 0 {
+			return c
+		}
+		return strings.Compare(a.User, b.User)
+	})
 	return out
 }
 
@@ -331,10 +372,25 @@ func trimRunes(s string, n int) string {
 	return string(r[:n])
 }
 
+// keyID is "fingerprint user", the baseline entry for one grant.
+func keyID(k keyUse) string { return k.Fingerprint + " " + k.User }
+
+// restriction ranks a key line: 0 is unrestricted.
+func restriction(k keyUse) int {
+	n := 0
+	if k.From != "" {
+		n++
+	}
+	if k.HasCommand {
+		n++
+	}
+	return n
+}
+
 func keyIDs(keys []keyUse) []string {
 	out := make([]string, len(keys))
 	for i, k := range keys {
-		out[i] = k.Fingerprint
+		out[i] = keyID(k)
 	}
 	return out
 }
@@ -362,21 +418,33 @@ func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts
 		return
 	}
 	if rules[AlertNewPort].Enabled {
-		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new socket on all interfaces")
+		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new listening socket")
 	}
 	if rules[AlertNewKey].Enabled {
-		var fresh []string
-		have := map[string]bool{}
-		for _, p := range prevKeys {
-			have[p] = true
-		}
-		for _, k := range keys {
-			if !have[k.Fingerprint] {
-				fresh = append(fresh, k.Fingerprint+" on "+k.User)
-			}
-		}
-		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, fresh, "new SSH key")
+		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, freshKeys(prevKeys, keys), "new SSH key")
 	}
+}
+
+// freshKeys lists keys not in the previous baseline. A known key added to
+// another login (root, say) is new. Baselines written before logins were
+// recorded hold bare fingerprints; those match the fingerprint alone once.
+func freshKeys(prevKeys []string, keys []keyUse) []string {
+	have := map[string]bool{}
+	legacy := map[string]bool{}
+	for _, p := range prevKeys {
+		if strings.Contains(p, " ") {
+			have[p] = true
+		} else {
+			legacy[p] = true
+		}
+	}
+	var fresh []string
+	for _, k := range keys {
+		if !have[keyID(k)] && !legacy[k.Fingerprint] {
+			fresh = append(fresh, k.Fingerprint+" on "+k.User)
+		}
+	}
+	return fresh
 }
 
 func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.AlertRule, kind AlertKind, items []string, noun string) {
@@ -394,7 +462,7 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 		if len(subject) > 200 {
 			subject = subject[:200]
 		}
-		if !s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg) {
+		if !s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg, true) {
 			return
 		}
 		al := store.Alert{

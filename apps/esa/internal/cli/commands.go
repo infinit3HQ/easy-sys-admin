@@ -21,7 +21,7 @@ var jsonOut bool
 
 func addClientCommands(root *cobra.Command) {
 	root.PersistentFlags().BoolVar(&jsonOut, "json", false, "print JSON instead of tables")
-	root.AddCommand(loginCmd(), logoutCmd(), statusCmd(), serversCmd(), groupsCmd(), runsCmd(), alertsCmd())
+	root.AddCommand(loginCmd(), logoutCmd(), statusCmd(), serversCmd(), groupsCmd(), runsCmd(), plansCmd(), alertsCmd())
 }
 
 func printJSON(v any) error {

@@ -79,7 +79,7 @@ udp UNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:* users:(("systemd-resolve",pid=3,fd=14)
 	if ls[1].Address != "127.0.0.53" || ls[1].Exposure != "local" || ls[2].Exposure != "all" || ls[2].Process != "docker-proxy" {
 		t.Fatalf("got %+v", ls)
 	}
-	attachContainers(ls, map[string]string{"443/tcp": "proxy"})
+	attachContainers(ls, []publication{{Port: 443, Proto: "tcp", Address: "0.0.0.0", Names: "proxy"}})
 	if ls[2].Container != "proxy" || ls[0].Container != "" {
 		t.Fatalf("container join: %+v", ls)
 	}
@@ -156,7 +156,7 @@ func TestUFWRules(t *testing.T) {
 }
 
 func TestDockerPublishIsNotUFWProof(t *testing.T) {
-	published := map[string]string{"80/tcp": "web"}
+	published := []publication{{Port: 80, Proto: "tcp", Address: "0.0.0.0", Names: "web"}}
 	ls := []proto.Listener{{Proto: "tcp", Port: 80, Exposure: "all", UFW: "allow", Process: "docker-proxy"}}
 	markDockerUnknown(ls, published)
 	if ls[0].UFW != "unknown" {
@@ -172,13 +172,14 @@ func TestDockerPublishIsNotUFWProof(t *testing.T) {
 }
 
 func TestUFWFor(t *testing.T) {
-	rules := []string{
+	lines := []string{
 		"22/tcp                     ALLOW       Anywhere",
 		"22/tcp (v6)                ALLOW       Anywhere (v6)",
 		"8080/tcp                   DENY        Anywhere",
 		"25/tcp                     DENY        Anywhere",
 		"25/tcp                     ALLOW       10.1.0.0/24",
 	}
+	rules, _ := parseUFW(lines, nil)
 	if ufwFor(22, "tcp", rules) != "allow" || ufwFor(8080, "tcp", rules) != "deny" || ufwFor(443, "tcp", rules) != "unmentioned" {
 		t.Fatalf("22=%s 8080=%s 443=%s", ufwFor(22, "tcp", rules), ufwFor(8080, "tcp", rules), ufwFor(443, "tcp", rules))
 	}

@@ -847,7 +847,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -902,7 +902,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -921,7 +921,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -940,7 +940,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -959,7 +959,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -978,7 +978,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -997,7 +997,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                serverId: number;
+                serverId: components["parameters"]["ServerId"];
             };
             cookie?: never;
         };
@@ -1051,7 +1051,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                windowId: number;
+                windowId: components["parameters"]["WindowId"];
             };
             cookie?: never;
         };
@@ -1087,7 +1087,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                incidentId: number;
+                incidentId: components["parameters"]["IncidentId"];
             };
             cookie?: never;
         };
@@ -1106,7 +1106,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                incidentId: number;
+                incidentId: components["parameters"]["IncidentId"];
             };
             cookie?: never;
         };
@@ -1687,6 +1687,7 @@ export interface components {
             uses: components["schemas"]["KeyOccurrence"][];
         };
         KeyList: {
+            /** @description At most 2000 key grants, ordered by fingerprint. */
             items: components["schemas"]["Key"][];
         };
         Offboarding: {
@@ -1708,6 +1709,7 @@ export interface components {
             endsAt: string;
         };
         MaintenanceList: {
+            /** @description Windows that have not ended, earliest first, at most 200. */
             items: components["schemas"]["MaintenanceWindow"][];
         };
         MaintenanceRequest: {
@@ -2108,6 +2110,11 @@ export interface components {
             revision: number;
             listening: components["schemas"]["Listener"][];
             firewall: string;
+            /**
+             * @description The ufw default for incoming connections. Absent when ufw is not active, the policy could not be read, or the helper is older.
+             * @enum {string}
+             */
+            firewallDefaultIncoming?: "deny" | "reject" | "allow";
             /** @description Up to 40 lines from an active ufw. Empty for nftables, which is named only. */
             firewallRules: string[];
             crowdsec: string;
@@ -2408,12 +2415,18 @@ export interface components {
             journal?: boolean;
             journalSize?: string;
             /** @description Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan. */
-            packages?: string[];
+            readonly packages?: string[];
+            /** @description The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan. */
+            readonly pinnedServerIds?: number[];
         };
         FixPlan: {
             /** Format: int64 */
             id: number;
-            status: string;
+            /**
+             * @description executing until the run finishes, then the run's status.
+             * @enum {string}
+             */
+            status: "submitted" | "approved" | "rejected" | "executing" | "succeeded" | "partial" | "failed" | "skipped" | "expired" | "invalidated";
             fingerprint: string;
             body: components["schemas"]["PlanBody"];
             /** Format: date-time */
@@ -2425,6 +2438,7 @@ export interface components {
             createdAt: string;
         };
         PlanList: {
+            /** @description The 100 most recent plans, newest first. */
             items: components["schemas"]["FixPlan"][];
         };
         PatchReport: {
@@ -2463,6 +2477,8 @@ export interface components {
             /** Format: int64 */
             serverId: number;
             serverName: string;
+            /** @description True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner. */
+            canReview: boolean;
             kind: string;
             subject: string;
             /** @enum {string} */
@@ -2481,6 +2497,7 @@ export interface components {
             ackedAt?: string | null;
         };
         IncidentList: {
+            /** @description The 100 most recently seen notices. */
             items: components["schemas"]["Incident"][];
         };
         AlertRule: {
@@ -2633,6 +2650,10 @@ export interface components {
         };
     };
     parameters: {
+        PlanId: number;
+        RunId: number;
+        WindowId: number;
+        IncidentId: number;
         ServerId: number;
         GroupId: number;
         ChannelId: number;
@@ -4062,7 +4083,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -4175,7 +4196,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -4198,7 +4219,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -4221,7 +4242,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -4250,7 +4271,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                planId: number;
+                planId: components["parameters"]["PlanId"];
             };
             cookie?: never;
         };
@@ -4273,7 +4294,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -4296,7 +4317,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                serverId: number;
+                serverId: components["parameters"]["ServerId"];
             };
             cookie?: never;
         };
@@ -4386,7 +4407,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                windowId: number;
+                windowId: components["parameters"]["WindowId"];
             };
             cookie?: never;
         };
@@ -4430,7 +4451,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                incidentId: number;
+                incidentId: components["parameters"]["IncidentId"];
             };
             cookie?: never;
         };
@@ -4461,7 +4482,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                incidentId: number;
+                incidentId: components["parameters"]["IncidentId"];
             };
             cookie?: never;
         };

@@ -160,6 +160,7 @@ export const q = {
     queryOptions({
       queryKey: ['plans'],
       queryFn: () => call(api().GET('/plans')),
+      refetchInterval: LIVE,
     }),
   keys: () =>
     queryOptions({

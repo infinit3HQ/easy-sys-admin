@@ -19,7 +19,7 @@ func (s *Service) PruneAudit(ctx context.Context) {
 	var deleted int64
 	for deleted < 100000 {
 		res := s.db.WithContext(ctx).Exec(
-			`DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log WHERE created_at < ? ORDER BY id LIMIT 1000)`,
+			`DELETE FROM audit_log WHERE id IN (SELECT id FROM audit_log WHERE created_at < ? ORDER BY created_at LIMIT 1000)`,
 			cutoff,
 		)
 		if res.Error != nil || res.RowsAffected == 0 {

@@ -22,7 +22,7 @@ func TestPlanApprovalIsABrowserSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	token := owner
-	token.Source, token.TokenID, token.Scopes = SourceMCP, 9, []Scope{ScopeLogs}
+	token.Source, token.TokenID, token.Scopes = SourceMCP, 9, []Scope{ScopeRead, ScopeActions}
 	plan, err := s.ProposePlan(ctx, token, PlanBody{Kind: RunUpdate, ServerIDs: []int64{srv.ID}, UpdateMode: "security"})
 	if err != nil {
 		t.Fatal(err)

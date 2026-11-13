@@ -980,10 +980,7 @@ paths:
 
   /runs/{runId}:
     parameters:
-      - name: runId
-        in: path
-        required: true
-        schema: { type: integer, format: int64 }
+      - $ref: '#/components/parameters/RunId'
     get:
       operationId: getRun
       summary: One run with each server's result
@@ -1053,7 +1050,7 @@ paths:
 
   /plans/{planId}:
     parameters:
-      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/PlanId'
     get:
       operationId: getPlan
       summary: One typed plan
@@ -1068,7 +1065,7 @@ paths:
 
   /plans/{planId}/approve:
     parameters:
-      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/PlanId'
     post:
       operationId: approvePlan
       summary: Approve a plan from a browser session. A token cannot approve.
@@ -1083,7 +1080,7 @@ paths:
 
   /plans/{planId}/reject:
     parameters:
-      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/PlanId'
     post:
       operationId: rejectPlan
       summary: Reject a plan from a browser session. A token cannot reject.
@@ -1107,7 +1104,7 @@ paths:
 
   /plans/{planId}/execute:
     parameters:
-      - { name: planId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/PlanId'
     post:
       operationId: executePlan
       summary: Run an approved plan once. A token that can read logs cannot execute.
@@ -1122,7 +1119,7 @@ paths:
 
   /runs/{runId}/report:
     parameters:
-      - { name: runId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/RunId'
     get:
       operationId: getPatchReport
       summary: Package result and checks for one update run
@@ -1137,7 +1134,7 @@ paths:
 
   /servers/{serverId}/key-baseline:
     parameters:
-      - { name: serverId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/ServerId'
     post:
       operationId: approveKeyBaseline
       summary: Approve the keys currently recorded on this server
@@ -1193,7 +1190,7 @@ paths:
 
   /maintenance/{windowId}:
     parameters:
-      - { name: windowId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/WindowId'
     delete:
       operationId: deleteMaintenance
       summary: Remove a maintenance window
@@ -1220,7 +1217,7 @@ paths:
 
   /incidents/{incidentId}/snooze:
     parameters:
-      - { name: incidentId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/IncidentId'
     post:
       operationId: snoozeIncident
       summary: Hide a notice until a time within 7 days. A host key change cannot be snoozed.
@@ -1245,7 +1242,7 @@ paths:
 
   /incidents/{incidentId}/acknowledge:
     parameters:
-      - { name: incidentId, in: path, required: true, schema: { type: integer, format: int64 } }
+      - $ref: '#/components/parameters/IncidentId'
     post:
       operationId: acknowledgeIncident
       summary: Record that a person has reviewed this notice. This does not change the server.
@@ -1507,6 +1504,26 @@ components:
       description: An API token (esa_...) from Settings > API tokens.
 
   parameters:
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    WindowId:
+      name: windowId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    IncidentId:
+      name: incidentId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     ServerId:
       name: serverId
       in: path
@@ -1972,7 +1989,11 @@ components:
       type: object
       required: [items]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Key' } }
+        items:
+          type: array
+          maxItems: 2000
+          description: At most 2000 key grants, ordered by fingerprint.
+          items: { $ref: '#/components/schemas/Key' }
 
     Offboarding:
       type: object
@@ -1996,7 +2017,11 @@ components:
       type: object
       required: [items]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/MaintenanceWindow' } }
+        items:
+          type: array
+          maxItems: 200
+          description: Windows that have not ended, earliest first, at most 200.
+          items: { $ref: '#/components/schemas/MaintenanceWindow' }
 
     MaintenanceRequest:
       type: object
@@ -2499,6 +2524,10 @@ components:
         revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         listening: { type: array, items: { $ref: '#/components/schemas/Listener' } }
         firewall: { type: string }
+        firewallDefaultIncoming:
+          type: string
+          enum: [deny, reject, allow]
+          description: The ufw default for incoming connections. Absent when ufw is not active, the policy could not be read, or the helper is older.
         firewallRules:
           type: array
           description: Up to 40 lines from an active ufw. Empty for nftables, which is named only.
@@ -2863,14 +2892,23 @@ components:
         packages:
           type: array
           items: { type: string }
+          readOnly: true
           description: Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
+        pinnedServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          readOnly: true
+          description: The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
 
     FixPlan:
       type: object
       required: [id, status, fingerprint, body, reason, createdAt]
       properties:
         id: { type: integer, format: int64 }
-        status: { type: string }
+        status:
+          type: string
+          enum: [submitted, approved, rejected, executing, succeeded, partial, failed, skipped, expired, invalidated]
+          description: executing until the run finishes, then the run's status.
         fingerprint: { type: string }
         body: { $ref: '#/components/schemas/PlanBody' }
         expiresAt: { type: string, format: date-time, nullable: true }
@@ -2882,7 +2920,11 @@ components:
       type: object
       required: [items]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/FixPlan' } }
+        items:
+          type: array
+          maxItems: 100
+          description: The 100 most recent plans, newest first.
+          items: { $ref: '#/components/schemas/FixPlan' }
 
     PatchReport:
       type: object
@@ -2920,11 +2962,14 @@ components:
 
     Incident:
       type: object
-      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen]
+      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen, canReview]
       properties:
         id: { type: integer, format: int64 }
         serverId: { type: integer, format: int64 }
         serverName: { type: string }
+        canReview:
+          type: boolean
+          description: True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
         kind: { type: string }
         subject: { type: string }
         state: { type: string, enum: [open, acknowledged, snoozed] }
@@ -2940,7 +2985,11 @@ components:
       type: object
       required: [items]
       properties:
-        items: { type: array, items: { $ref: '#/components/schemas/Incident' } }
+        items:
+          type: array
+          maxItems: 100
+          description: The 100 most recently seen notices.
+          items: { $ref: '#/components/schemas/Incident' }
 
     AlertRule:
       type: object

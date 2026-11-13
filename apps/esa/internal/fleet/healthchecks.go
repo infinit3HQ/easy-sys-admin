@@ -311,11 +311,15 @@ func (s *Service) checkHTTP(ctx context.Context, host string, c HealthCheck) str
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return errors.New("redirect refused")
 		},
+		// One transport per check, for this host's TLS name. Keep-alives are
+		// off and idle connections closed, so checks leave no sockets open.
 		Transport: &http.Transport{
-			DialContext:     dial.DialContext,
-			TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host},
+			DialContext:       dial.DialContext,
+			TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host},
+			DisableKeepAlives: true,
 		},
 	}
+	defer client.CloseIdleConnections()
 	cctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(cctx, c.Method, url, nil)
@@ -372,4 +376,13 @@ func containerState(boxes []proto.Container, name string) string {
 		return ""
 	}
 	return "not found"
+}
+
+// checkNames lists check names for the audit log.
+func checkNames(checks []HealthCheck) []string {
+	out := make([]string, 0, len(checks))
+	for _, c := range checks {
+		out = append(out, c.Name)
+	}
+	return out
 }

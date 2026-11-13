@@ -24,13 +24,20 @@ type IncidentView struct {
 	FirstSeen  time.Time
 	LastSeen   time.Time
 	AckedAt    *time.Time
+	// CanReview is true when the actor may acknowledge or snooze it: an
+	// admin of the space that owns the server.
+	CanReview bool
 }
 
 // openIncident records a notice. Repeating the same server, kind, and
-// subject updates the last-seen time. It does not send a second notice and
-// does not undo an acknowledgement or a snooze. created is true only the
-// first time.
-func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, kind, subject, message string) (created bool) {
+// subject updates the last-seen time and leaves a snooze in place.
+//
+// A reviewed notice opens again when something new happened: event is true
+// (the caller saw it start again, such as a second host key change or a
+// socket that came back), or the message changed (the same key now on
+// root). A condition that merely persists stays reviewed. opened is true
+// when the notice is new or opened again, so the caller may notify.
+func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, kind, subject, message string, event bool) (opened bool) {
 	if len(subject) > 200 {
 		subject = subject[:200]
 	}
@@ -52,10 +59,16 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 		s.log.Error("load incident", "err", err)
 		return false
 	}
-	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"last_seen": now, "message": message}).Error; err != nil {
-		s.log.Error("update incident", "err", err)
+	changes := map[string]any{"last_seen": now, "message": message}
+	reopen := row.State == "acknowledged" && (event || row.Message != message)
+	if reopen {
+		changes["state"], changes["acked_by"], changes["acked_at"] = "open", nil, nil
 	}
-	return false
+	if err := s.db.WithContext(ctx).Model(&row).Updates(changes).Error; err != nil {
+		s.log.Error("update incident", "err", err)
+		return false
+	}
+	return reopen
 }
 
 // ListIncidents returns notices the actor can see. includeAcknowledged adds
@@ -81,6 +94,7 @@ func (s *Service) ListIncidents(ctx context.Context, a Actor, includeAcknowledge
 		v := IncidentView{ID: r.ID, ServerID: r.ServerID, Kind: r.Kind, Subject: r.Subject, State: r.State,
 			Message: r.Message, FirstSeen: r.FirstSeen, LastSeen: r.LastSeen, AckedAt: r.AckedAt, ServerName: r.Server.Name}
 		v.NextStep = incidentNextStep(r.Kind)
+		v.CanReview = r.AccountID == a.AccountID && a.can(RoleAdmin, ScopeAdmin) == nil
 		out = append(out, v)
 	}
 	return out, nil
@@ -105,7 +119,7 @@ func (s *Service) AcknowledgeIncident(ctx context.Context, a Actor, id int64) (I
 	s.audit(ctx, nil, a, "incident.acknowledge", row.Server.Name, map[string]any{"kind": row.Kind, "subject": row.Subject})
 	row.State, row.AckedAt = "acknowledged", &now
 	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
-		State: row.State, Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, AckedAt: row.AckedAt}, nil
+		State: row.State, Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, AckedAt: row.AckedAt, CanReview: true}, nil
 }
 
 // SnoozeIncident hides a notice until until, which must be within 7 days.
@@ -137,7 +151,7 @@ func (s *Service) SnoozeIncident(ctx context.Context, a Actor, id int64, until t
 	}
 	s.audit(ctx, nil, a, "incident.snooze", row.Server.Name, map[string]any{"kind": row.Kind, "until": until, "reason": reason})
 	return IncidentView{ID: row.ID, ServerID: row.ServerID, ServerName: row.Server.Name, Kind: row.Kind, Subject: row.Subject,
-		State: "snoozed", Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen}, nil
+		State: "snoozed", Message: row.Message, NextStep: incidentNextStep(row.Kind), FirstSeen: row.FirstSeen, LastSeen: row.LastSeen, CanReview: true}, nil
 }
 
 // incidentNextStep is a hint for a person. It does not change the server.

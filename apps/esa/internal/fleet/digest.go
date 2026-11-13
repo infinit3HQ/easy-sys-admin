@@ -23,17 +23,27 @@ func (s *Service) SendDigests(ctx context.Context) {
 		s.log.Error("list accounts for digest", "err", err)
 		return
 	}
+	slot := time.Date(utc.Year(), utc.Month(), utc.Day(), 8, 0, 0, 0, time.UTC)
 	for _, acc := range accounts {
 		if !digestDue(now, acc.DigestAt) {
+			continue
+		}
+		// Claim this week's slot before sending, so a second control plane
+		// that read the same account does not send it again.
+		res := s.db.WithContext(ctx).Model(&store.Account{}).
+			Where("id = ? AND (digest_at IS NULL OR digest_at < ?)", acc.ID, slot).
+			Update("digest_at", now)
+		if res.Error != nil {
+			s.log.Error("record digest", "account_id", acc.ID, "err", res.Error)
+			continue
+		}
+		if res.RowsAffected == 0 {
 			continue
 		}
 		title, body, ok := s.digest(ctx, acc.ID, now)
 		if ok {
 			s.notify(ctx, acc.ID, Message{Title: title, Body: body, Severity: "info", URL: s.publicURL.JoinPath("/app").String()})
 			s.audit(ctx, nil, System(acc.ID), "digest.sent", acc.Name, map[string]any{"title": title})
-		}
-		if err := s.db.WithContext(ctx).Model(&store.Account{}).Where("id = ?", acc.ID).Update("digest_at", now).Error; err != nil {
-			s.log.Error("record digest", "account_id", acc.ID, "err", err)
 		}
 	}
 }

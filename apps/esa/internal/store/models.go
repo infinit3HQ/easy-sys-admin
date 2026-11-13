@@ -145,14 +145,15 @@ type Session struct {
 
 // AuditEntry records who did what, from which front door.
 type AuditEntry struct {
-	ID        int64     `gorm:"primaryKey"`
-	AccountID *int64    `gorm:"index:audit_log_account_time,priority:1"`
-	UserID    *int64    `gorm:"index"`
-	Action    string    `gorm:"not null"`
-	Target    string    `gorm:"not null;default:''"`
-	Detail    string    `gorm:"type:jsonb;not null;default:'{}'"`
-	Source    string    `gorm:"not null;check:audit_log_source_check,source IN ('web','api','mcp','system')"`
-	CreatedAt time.Time `gorm:"not null;index:audit_log_account_time,priority:2,sort:desc"`
+	ID        int64  `gorm:"primaryKey"`
+	AccountID *int64 `gorm:"index:audit_log_account_time,priority:1"`
+	UserID    *int64 `gorm:"index"`
+	Action    string `gorm:"not null"`
+	Target    string `gorm:"not null;default:''"`
+	Detail    string `gorm:"type:jsonb;not null;default:'{}'"`
+	Source    string `gorm:"not null;check:audit_log_source_check,source IN ('web','api','mcp','system')"`
+	// audit_log_created_at lets the prune find old rows without a full scan.
+	CreatedAt time.Time `gorm:"not null;index:audit_log_account_time,priority:2,sort:desc;index:audit_log_created_at"`
 
 	Account *Account `gorm:"constraint:OnDelete:CASCADE"`
 	User    *User    `gorm:"constraint:OnDelete:SET NULL"`

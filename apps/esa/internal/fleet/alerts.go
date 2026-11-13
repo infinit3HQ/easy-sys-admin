@@ -283,7 +283,7 @@ func (s *Service) noteSecurityIncident(ctx context.Context, accountID int64, al 
 	}
 	switch AlertKind(al.Kind) {
 	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
-		s.openIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject, al.Message)
+		s.openIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject, al.Message, true)
 	}
 }
 

@@ -120,6 +120,9 @@ type NotifyDelivery struct {
 	Attempts  int    `gorm:"not null;default:0"`
 	LastError string `gorm:"not null;default:''"`
 	CreatedAt time.Time
+	// ClaimedAt is when the current send started. A stale send is judged
+	// on it, not on CreatedAt.
+	ClaimedAt *time.Time
 	SentAt    *time.Time
 
 	Account Account       `gorm:"constraint:OnDelete:CASCADE"`

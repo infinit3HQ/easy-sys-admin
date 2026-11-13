@@ -29,7 +29,9 @@ function RunPage() {
   const { runId } = Route.useParams()
   const { data: r } = useSuspenseQuery(q.run(runId))
   const report = useQuery({
-    queryKey: ['patch-report', runId],
+    // The run's status is in the key, so the report is fetched once more
+    // when the run finishes instead of keeping the last running copy.
+    queryKey: ['patch-report', runId, r.status],
     queryFn: () =>
       call(api().GET('/runs/{runId}/report', { params: { path: { runId } } })),
     enabled: r.kind === 'update',

@@ -51,6 +51,43 @@ function GroupLayout() {
     (s) => s.groupId === groupId,
   )
   const empty = g.serverCount === 0
+  // A group that requires a plan refuses a direct clean or update, so the
+  // buttons propose a plan for a person to approve on the Plans page. A
+  // plan lives in your own space, so a shared group cannot get one here.
+  const needsPlan = g.updates.planRequired
+  const canPlan = needsPlan && isOwn
+  const propose = useMutation({
+    mutationFn: (kind: 'clean' | 'update') =>
+      call(
+        api().POST('/plans', {
+          body:
+            kind === 'update'
+              ? {
+                  kind,
+                  groupId,
+                  updateMode: g.updates.mode,
+                  hold: g.updates.hold,
+                  rebootIfRequired: g.updates.rebootIfRequired,
+                  canaryServerIds: canaries.length > 0 ? canaries : undefined,
+                  observeSeconds:
+                    canaries.length > 0 && watch > 0 ? watch : undefined,
+                }
+              : {
+                  kind,
+                  groupId,
+                  buildCache: g.clean.buildCache,
+                  vscode: g.clean.vscode,
+                  journal: g.clean.journal,
+                  journalSize: g.clean.journalSize,
+                },
+        }),
+      ),
+    onSuccess: async () => {
+      setConfirm(null)
+      await navigate({ to: '/app/plans' })
+    },
+  })
+  const start = needsPlan ? propose : null
   const run = useMutation({
     mutationFn: (kind: RunKind) =>
       call(
@@ -93,23 +130,27 @@ function GroupLayout() {
             >
               <GaugeIcon /> Measure
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setConfirm('clean')}
-              disabled={empty}
-            >
-              <BrushCleaningIcon /> Clean
-            </Button>
-            <Button
-              onClick={() => {
-                setCanaries([])
-                setWatch(0)
-                setConfirm('update')
-              }}
-              disabled={empty}
-            >
-              <DownloadIcon /> Update
-            </Button>
+            {(!needsPlan || canPlan) && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirm('clean')}
+                  disabled={empty}
+                >
+                  <BrushCleaningIcon /> {needsPlan ? 'Plan clean' : 'Clean'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setCanaries([])
+                    setWatch(0)
+                    setConfirm('update')
+                  }}
+                  disabled={empty}
+                >
+                  <DownloadIcon /> {needsPlan ? 'Plan update' : 'Update'}
+                </Button>
+              </>
+            )}
           </div>
         )}
       </PageHeader>
@@ -138,11 +179,27 @@ function GroupLayout() {
           Its settings and schedules stay with {g.ownerTeam}.
         </Notice>
       )}
+      {needsPlan && canRun && (
+        <Notice className="mb-6">
+          This group requires an approved plan for cleanups and updates.{' '}
+          {canPlan
+            ? 'Propose one here, then approve and run it on the '
+            : 'Its owner proposes and approves plans on their '}
+          <Link to="/app/plans" className="text-amber">
+            Plans
+          </Link>{' '}
+          page.
+        </Notice>
+      )}
       <ErrorBanner error={run.error} className="mb-6" />
       <Outlet />
       <ConfirmDialog
         open={confirm === 'clean' || confirm === 'update'}
-        title={confirm === 'update' ? `Update ${g.name}` : `Clean ${g.name}`}
+        title={
+          start
+            ? `Plan ${confirm === 'update' ? 'an update' : 'a clean'} of ${g.name}`
+            : `${confirm === 'update' ? 'Update' : 'Clean'} ${g.name}`
+        }
         body={
           confirm === 'update' ? (
             <div className="space-y-3">
@@ -205,13 +262,15 @@ function GroupLayout() {
               )}
             </div>
           ) : (
-            `Runs the group's cleanups on ${g.serverCount} servers now.`
+            `Runs the group's cleanups on ${g.serverCount} servers${start ? ' once a person approves the plan' : ' now'}.`
           )
         }
-        actionLabel="Start"
-        busy={run.isPending}
-        error={run.error}
-        onConfirm={() => confirm && run.mutate(confirm)}
+        actionLabel={start ? 'Propose plan' : 'Start'}
+        busy={start ? start.isPending : run.isPending}
+        error={start ? start.error : run.error}
+        onConfirm={() =>
+          confirm && (start ? start.mutate(confirm) : run.mutate(confirm))
+        }
         onClose={() => setConfirm(null)}
       />
     </div>

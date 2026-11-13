@@ -62,8 +62,18 @@ func toPlan(v fleet.PlanView) FixPlan {
 		pkgs := append([]string(nil), v.Body.Packages...)
 		body.Packages = &pkgs
 	}
+	if len(v.Body.PinnedServerIDs) > 0 {
+		ids := append([]int64(nil), v.Body.PinnedServerIDs...)
+		body.PinnedServerIds = &ids
+	}
+	// A person approves what they see, so every cleanup switch is shown,
+	// off as well as on.
+	if v.Body.Kind == fleet.RunClean || v.Body.Kind == fleet.RunMeasure {
+		buildCache, vscode, journal := v.Body.BuildCache, v.Body.VSCode, v.Body.Journal
+		body.BuildCache, body.Vscode, body.Journal = &buildCache, &vscode, &journal
+	}
 	return FixPlan{
-		Id: v.ID, Status: v.Status, Fingerprint: v.Fingerprint, Body: body,
+		Id: v.ID, Status: FixPlanStatus(v.Status), Fingerprint: v.Fingerprint, Body: body,
 		ExpiresAt: v.ExpiresAt, RunId: v.RunID, Reason: v.Reason, CreatedAt: v.CreatedAt,
 	}
 }

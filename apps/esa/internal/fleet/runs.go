@@ -86,7 +86,8 @@ type RunRequest struct {
 	// ObserveSeconds repeats the canary checks before the other servers start.
 	ObserveSeconds int
 	// FromPlan is set only by ExecutePlan. A group that requires a plan
-	// refuses every other interactive start. Schedules are still allowed.
+	// refuses every other start, scheduled runs included. With a GroupID,
+	// ServerIDs then limits the run to the servers the plan pinned.
 	FromPlan bool
 }
 
@@ -150,6 +151,12 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		group, ownerID = &g, g.AccountID
 		if err := s.db.WithContext(ctx).Where("account_id = ? AND group_id = ?", g.AccountID, g.ID).Order("name").Find(&servers).Error; err != nil {
 			return RunView{}, err
+		}
+		if req.FromPlan && len(req.ServerIDs) > 0 {
+			servers = onlyServers(servers, req.ServerIDs)
+			if len(servers) != len(uniqueIDs(req.ServerIDs)) {
+				return RunView{}, invalid("serverIds", "the group's servers changed since the plan was approved")
+			}
 		}
 	} else {
 		if len(req.ServerIDs) == 0 {
@@ -460,6 +467,17 @@ func uniqueIDs(ids []int64) []int64 {
 		if !seen[id] {
 			seen[id] = true
 			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// onlyServers keeps the servers whose id is in ids, in their order.
+func onlyServers(servers []store.Server, ids []int64) []store.Server {
+	var out []store.Server
+	for _, srv := range servers {
+		if slices.Contains(ids, srv.ID) {
+			out = append(out, srv)
 		}
 	}
 	return out

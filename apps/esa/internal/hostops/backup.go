@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
@@ -46,8 +48,11 @@ func readRecovery(dir string) proto.RecoveryReport {
 	return rep
 }
 
+// readRecoveryFile reads one result file. It does not follow a symlink,
+// does not block on a FIFO, and reads only a regular file of at most
+// recoveryMaxByte.
 func readRecoveryFile(path string) (proto.RecoverySource, string) {
-	f, err := os.Open(path)
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return proto.RecoverySource{}, "missing"
@@ -59,8 +64,8 @@ func readRecoveryFile(path string) (proto.RecoverySource, string) {
 	if err != nil || !info.Mode().IsRegular() || info.Size() > recoveryMaxByte {
 		return proto.RecoverySource{}, "unreadable"
 	}
-	buf := make([]byte, info.Size())
-	if _, err := f.Read(buf); err != nil {
+	buf, err := io.ReadAll(io.LimitReader(f, recoveryMaxByte+1))
+	if err != nil || len(buf) > recoveryMaxByte {
 		return proto.RecoverySource{}, "unreadable"
 	}
 	src, err := parseRecovery(buf)

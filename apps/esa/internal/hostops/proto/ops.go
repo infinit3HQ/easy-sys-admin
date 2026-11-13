@@ -217,15 +217,19 @@ type Login struct {
 
 // SecurityReport answers `esa-helper security`.
 type SecurityReport struct {
-	Revision           int        `json:"revision"`
-	Listening          []Listener `json:"listening"`
-	Firewall           string     `json:"firewall"` // "ufw active", "nftables rules", "none"
-	FirewallRules      []string   `json:"firewallRules"`
-	CrowdSec           string     `json:"crowdsec"` // active | inactive | not installed
-	CrowdSecBans       int        `json:"crowdSecBans"`
-	Fail2ban           string     `json:"fail2ban"`
-	Fail2banJails      []BanJail  `json:"fail2banJails"`
-	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
+	Revision      int        `json:"revision"`
+	Listening     []Listener `json:"listening"`
+	Firewall      string     `json:"firewall"` // "ufw active", "nftables rules", "none"
+	FirewallRules []string   `json:"firewallRules"`
+	// FirewallDefaultIncoming is ufw's default incoming policy: deny,
+	// reject, or allow. Empty when ufw is not active or the policy was not
+	// read. With allow, a port no rule mentions is open.
+	FirewallDefaultIncoming string    `json:"firewallDefaultIncoming,omitempty"`
+	CrowdSec                string    `json:"crowdsec"` // active | inactive | not installed
+	CrowdSecBans            int       `json:"crowdSecBans"`
+	Fail2ban                string    `json:"fail2ban"`
+	Fail2banJails           []BanJail `json:"fail2banJails"`
+	UnattendedUpgrades      bool      `json:"unattendedUpgrades"`
 	// Gaps names checks that did not run. An empty listener list is not a
 	// clean result when "listening sockets" is listed here.
 	Gaps []string `json:"gaps"`
@@ -250,6 +254,8 @@ type Listener struct {
 	Exposure  string `json:"exposure"`
 	Container string `json:"container,omitempty"`
 	// UFW is allow, deny, or unmentioned when ufw is active. Empty otherwise.
+	// It is unknown for a port Docker publishes, because Docker forwards it
+	// past ufw's input rules, whether or not ufw is active.
 	UFW string `json:"ufw"`
 }
 

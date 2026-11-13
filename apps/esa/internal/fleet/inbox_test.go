@@ -70,19 +70,29 @@ func TestRepeatedPortIsOneIncidentAndOneNotice(t *testing.T) {
 	if err := s.db.First(&again, incidents[0].ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if again.State != "acknowledged" {
-		t.Fatalf("state = %s, review was cleared", again.State)
+	// oneShot runs only when a socket is new against the last report, so a
+	// repeat after review is the socket coming back: the notice opens again.
+	if again.State != "open" || again.AckedAt != nil {
+		t.Fatalf("state = %s, a new occurrence must reopen the reviewed notice", again.State)
 	}
 	if err := s.db.Model(&store.NotifyDelivery{}).Where("account_id = ?", a.AccountID).Count(&deliveries).Error; err != nil {
 		t.Fatal(err)
 	}
-	if deliveries != 2 {
-		t.Fatalf("notices after review = %d, want 2", deliveries)
+	if deliveries != 3 {
+		t.Fatalf("notices after review = %d, want 3", deliveries)
 	}
 	if err := s.db.Model(&store.Alert{}).Where("account_id = ?", a.AccountID).Count(&alerts).Error; err != nil {
 		t.Fatal(err)
 	}
-	if alerts != 2 {
-		t.Fatalf("alert rows after repeat = %d, want 2", alerts)
+	if alerts != 3 {
+		t.Fatalf("alert rows after repeat = %d, want 3", alerts)
+	}
+	// While it is open, a repeat stays one notice.
+	s.oneShot(ctx, one, rules[AlertNewPort], AlertNewPort, port, "new socket on all interfaces")
+	if err := s.db.Model(&store.NotifyDelivery{}).Where("account_id = ?", a.AccountID).Count(&deliveries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if deliveries != 3 {
+		t.Fatalf("notices while open = %d, want 3", deliveries)
 	}
 }

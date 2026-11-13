@@ -159,6 +159,9 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	g.UpdatesEnabled, g.UpdateMode, g.UpdateDays, g.UpdateTime = in.Updates.Enabled, string(in.Updates.Mode), strings.Join(us.Days, ","), us.Time
 	g.HoldPackages, g.RebootIfRequired = store.MustJSON(hold), in.Updates.RebootIfRequired
 	g.UpdateBatchSize, g.UpdateMaxFailures = max(in.Updates.BatchSize, 1), max(in.Updates.MaxFailures, 1)
+	if in.Updates.PlanRequired && (in.Clean.Enabled || in.Updates.Enabled) {
+		return invalid("planRequired", "a group that requires a plan cannot clean or update on a schedule; turn the schedules off first")
+	}
 	g.PlanRequired = in.Updates.PlanRequired
 	g.HealthChecks = store.MustJSON(checks)
 
@@ -290,6 +293,10 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
 		return GroupView{}, err
 	}
+	if g.PlanRequired && !in.Updates.PlanRequired && !a.isPerson() {
+		return GroupView{}, errPersonOnly("turn off the plan requirement")
+	}
+	wasRequired := g.PlanRequired
 	if err := s.applyGroupInput(&g, in); err != nil {
 		return GroupView{}, err
 	}
@@ -299,6 +306,8 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	s.audit(ctx, nil, a, "group.update", g.Name, map[string]any{
 		"clean_enabled": g.CleanEnabled, "updates_enabled": g.UpdatesEnabled, "update_mode": g.UpdateMode,
 		"batch_size": g.UpdateBatchSize, "max_failures": g.UpdateMaxFailures,
+		"plan_required": g.PlanRequired, "plan_required_before": wasRequired,
+		"hold": in.Updates.Hold, "health_checks": checkNames(in.Checks),
 	})
 	return s.GetGroup(ctx, a, id)
 }
@@ -311,6 +320,9 @@ func (s *Service) DeleteGroup(ctx context.Context, a Actor, id int64) error {
 	var g store.Group
 	if err := s.scoped(ctx, a).Where("id = ?", id).Take(&g).Error; err != nil {
 		return mapStore(err)
+	}
+	if g.PlanRequired && !a.isPerson() {
+		return errPersonOnly("delete a group that requires a plan")
 	}
 	if err := s.db.WithContext(ctx).Where("id = ? AND account_id = ?", id, a.AccountID).Delete(&store.Group{}).Error; err != nil {
 		return err

@@ -103,20 +103,23 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 	}
 	work := func(ctx context.Context, i int) bool { return fn(ctx, &items[i]) }
 	canary, rest := partitionCanaries(items, queued, o.CanaryServerIDs)
-	if len(canary) > 0 {
+	// After a restart the canaries may already be done while the rest still
+	// wait. The canary rules and the watch still apply then.
+	allCanary := canaryIndexes(items, o.CanaryServerIDs)
+	if len(allCanary) > 0 && !restStarted(items, allCanary) {
 		batches := planBatches(items, canary, len(canary))
 		var started int
 		failed, started = runBatches(ctx, batches, maxFailures, failed, work)
 		reason := ""
-		if !canaryFailed(items, canary, failed) && canaryDidNotFinish(items, canary) {
+		if !canaryFailed(items, allCanary, failed) && canaryDidNotFinish(items, allCanary) {
 			reason = "stopped after a canary did not finish"
 		}
-		if reason != "" || canaryFailed(items, canary, failed) || stopRun(len(failed), maxFailures) {
-			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary, reason)
+		if reason != "" || canaryFailed(items, allCanary, failed) || stopRun(len(failed), maxFailures) {
+			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, allCanary, reason)
 			return
 		}
-		if reason := s.watchCanaries(ctx, items, canary, o); reason != "" {
-			s.skipRest(ctx, items, rest, failed, canary, "stopped after the watch: "+reason)
+		if reason := s.watchCanaries(ctx, items, allCanary, o); reason != "" {
+			s.skipRest(ctx, items, rest, failed, allCanary, "stopped after the watch: "+reason)
 			return
 		}
 	}
@@ -135,6 +138,29 @@ func unstarted(batches [][]int, started int) []int {
 		out = append(out, batch...)
 	}
 	return out
+}
+
+// canaryIndexes returns the indexes of every canary in the run, whatever
+// its status.
+func canaryIndexes(items []store.RunServer, canaryIDs []int64) []int {
+	var out []int
+	for i := range items {
+		if slices.Contains(canaryIDs, items[i].ServerID) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// restStarted is true once a server that is not a canary left the queue,
+// so the canary phase is over.
+func restStarted(items []store.RunServer, canary []int) bool {
+	for i := range items {
+		if !slices.Contains(canary, i) && items[i].Status != "queued" {
+			return true
+		}
+	}
+	return false
 }
 
 // canaryDidNotFinish is true when a canary was skipped or never reached
@@ -283,20 +309,10 @@ func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status,
 // is held on one connection so a second control plane process skips the
 // same server instead of starting a second run.
 func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoint, func(), bool) {
-	lock := s.serverLock(rs.ServerID)
-	if !lock.TryLock() {
-		s.setRunServer(ctx, rs, "skipped", "another run is working on this server", nil, 0)
+	unlock, busy := s.lockServer(ctx, rs.ServerID)
+	if unlock == nil {
+		s.setRunServer(ctx, rs, "skipped", busy, nil, 0)
 		return remote.Endpoint{}, nil, false
-	}
-	unlockDB, ok := s.tryServerLock(ctx, rs.ServerID)
-	if !ok {
-		lock.Unlock()
-		s.setRunServer(ctx, rs, "skipped", "another control plane is working on this server", nil, 0)
-		return remote.Endpoint{}, nil, false
-	}
-	unlock := func() {
-		unlockDB()
-		lock.Unlock()
 	}
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", rs.ServerID).Take(&srv).Error; err != nil {
@@ -317,6 +333,24 @@ func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoi
 	}
 	s.setRunServer(ctx, rs, "running", "", nil, 0)
 	return ep, unlock, true
+}
+
+// lockServer takes the in-process and the database lock for one server.
+// It returns nil and the reason when another run holds either.
+func (s *Service) lockServer(ctx context.Context, id int64) (func(), string) {
+	lock := s.serverLock(id)
+	if !lock.TryLock() {
+		return nil, "another run is working on this server"
+	}
+	unlockDB, ok := s.tryServerLock(ctx, id)
+	if !ok {
+		lock.Unlock()
+		return nil, "another control plane is working on this server"
+	}
+	return func() {
+		unlockDB()
+		lock.Unlock()
+	}, ""
 }
 
 // runLockNamespace keeps a run lock from colliding with a server lock.
@@ -751,6 +785,9 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 	status := runOutcome(ok, failed, aborted)
 	now := s.now()
 	s.db.WithContext(ctx).Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{"status": status, "summary": summary, "finished_at": now})
+	// A plan that started this run ends with the run's status.
+	s.db.WithContext(ctx).Model(&store.FixPlan{}).Where("run_id = ? AND status = ?", run.ID, "executing").
+		Updates(map[string]any{"status": status, "updated_at": now})
 	s.log.Info("run finished", "run_id", run.ID, "status", status, "summary", summary)
 	if failed > 0 || aborted {
 		run.Status, run.Summary = status, summary
@@ -820,6 +857,12 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 			// before the next batch starts.
 			failed = append(failed, runBatch(ctx, running, func(ctx context.Context, i int) bool {
 				rs := &run.Servers[i]
+				unlockServer, busy := s.lockServer(ctx, rs.ServerID)
+				if unlockServer == nil {
+					s.setRunServer(ctx, rs, "failed", busy+"; the upgrade may still be running there", nil, 0)
+					return false
+				}
+				defer unlockServer()
 				ep, err := s.endpoint(ctx, rs.Server)
 				if err != nil {
 					s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)

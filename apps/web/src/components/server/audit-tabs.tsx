@@ -22,6 +22,9 @@ import {
   TableRow,
 } from '#/components/ui/table'
 
+/** The helper report revision the sections below need (proto.ReportRevision). An older helper leaves them empty, which is not a clean result. */
+const HELPER_REPORT_REVISION = 2
+
 export function AccessTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.access(serverId))
   const detail = useQuery(q.server(serverId))
@@ -211,7 +214,7 @@ export function AccessTab({ serverId }: { serverId: number }) {
           </dl>
         </Panel>
         <Panel title="Sudo rules">
-          {d.revision < 1 ? (
+          {d.revision < HELPER_REPORT_REVISION ? (
             <p className="text-sm text-muted-foreground">
               Reinstall the helper to read sudoers.
             </p>
@@ -394,6 +397,13 @@ export function SecurityTab({ serverId }: { serverId: number }) {
             v={d.firewall}
             tone={d.firewall === 'none' ? 'warn' : undefined}
           />
+          {d.firewallDefaultIncoming && (
+            <KeyValue
+              k="Incoming by default"
+              v={d.firewallDefaultIncoming}
+              tone={d.firewallDefaultIncoming === 'allow' ? 'warn' : undefined}
+            />
+          )}
           {d.crowdsec !== 'not installed' && (
             <KeyValue
               k="CrowdSec"
@@ -427,7 +437,7 @@ export function SecurityTab({ serverId }: { serverId: number }) {
             ))}
           </ul>
         )}
-        {d.revision < 1 && (
+        {d.revision < HELPER_REPORT_REVISION && (
           <p className="mt-3 text-xs text-muted-foreground">
             Reinstall the helper for users, exposure, and firewall rules.
           </p>

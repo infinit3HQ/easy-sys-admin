@@ -159,13 +159,18 @@ func (s *Service) notifyWorker(q <-chan int64) {
 
 const notifyMaxAttempts = 5
 
+// deliveryStaleAfter is well past the longest send timeout.
+const deliveryStaleAfter = 10 * time.Minute
+
 // DrainDeliveries sends queued notifications and returns expired snoozes
-// to the review list. A delivery left in "sending" for two minutes is
-// queued again.
+// to the review list. A delivery whose send started more than
+// deliveryStaleAfter ago is queued again: the process that claimed it is
+// gone. The age is from the claim, not from when the row was queued, so a
+// delivery that waited in the queue is not taken from a live sender.
 func (s *Service) DrainDeliveries(ctx context.Context) {
-	stale := s.now().Add(-2 * time.Minute)
+	stale := s.now().Add(-deliveryStaleAfter)
 	s.db.WithContext(ctx).Model(&store.NotifyDelivery{}).
-		Where("state = ? AND created_at < ?", "sending", stale).
+		Where("state = ? AND COALESCE(claimed_at, created_at) < ?", "sending", stale).
 		Update("state", "queued")
 	var ids []int64
 	s.db.WithContext(ctx).Model(&store.NotifyDelivery{}).Where("state = ?", "queued").Limit(100).Pluck("id", &ids)
@@ -183,7 +188,7 @@ func (s *Service) DrainDeliveries(ctx context.Context) {
 func (s *Service) deliver(ctx context.Context, id int64) {
 	res := s.db.WithContext(ctx).Model(&store.NotifyDelivery{}).
 		Where("id = ? AND state = ?", id, "queued").
-		Updates(map[string]any{"state": "sending", "attempts": gorm.Expr("attempts + 1")})
+		Updates(map[string]any{"state": "sending", "claimed_at": s.now(), "attempts": gorm.Expr("attempts + 1")})
 	if res.Error != nil || res.RowsAffected == 0 {
 		return
 	}
