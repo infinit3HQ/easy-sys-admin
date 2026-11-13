@@ -1102,6 +1102,29 @@ paths:
               schema: { $ref: '#/components/schemas/FixPlan' }
         default: { $ref: '#/components/responses/Error' }
 
+  /plans/{planId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      operationId: cancelPlan
+      summary: Withdraw a plan that has not started. This never touches a server.
+      tags: [runs]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
   /plans/{planId}/execute:
     parameters:
       - $ref: '#/components/parameters/PlanId'
@@ -3185,8 +3208,15 @@ components:
         packages:
           type: array
           items: { type: string }
+          description: 'The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else.'
+        pending:
+          type: array
+          items: { type: string }
           readOnly: true
-          description: Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
+          description: 'Every pending package when the plan was proposed. A different list at execution invalidates the plan.'
+        waitAfterCanaries:
+          type: boolean
+          description: Pause the plan's run after its canaries until a person continues it.
         pinnedServerIds:
           type: array
           items: { type: integer, format: int64 }
@@ -3200,7 +3230,7 @@ components:
         id: { type: integer, format: int64 }
         status:
           type: string
-          enum: [submitted, approved, rejected, executing, succeeded, partial, failed, skipped, expired, invalidated]
+          enum: [submitted, approved, rejected, cancelled, executing, succeeded, partial, failed, skipped, expired, invalidated]
           description: executing until the run finishes, then the run's status.
         fingerprint: { type: string }
         body: { $ref: '#/components/schemas/PlanBody' }

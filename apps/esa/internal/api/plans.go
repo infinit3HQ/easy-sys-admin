@@ -22,6 +22,10 @@ func fleetPlan(b PlanBody) fleet.PlanBody {
 	if b.CanaryServerIds != nil {
 		body.CanaryServerIDs = *b.CanaryServerIds
 	}
+	if b.Packages != nil {
+		body.Packages = *b.Packages
+	}
+	body.WaitAfterCanaries = deref(b.WaitAfterCanaries)
 	return body
 }
 
@@ -61,6 +65,14 @@ func toPlan(v fleet.PlanView) FixPlan {
 	if len(v.Body.Packages) > 0 {
 		pkgs := append([]string(nil), v.Body.Packages...)
 		body.Packages = &pkgs
+	}
+	if len(v.Body.Pending) > 0 {
+		pending := append([]string(nil), v.Body.Pending...)
+		body.Pending = &pending
+	}
+	if v.Body.WaitAfterCanaries {
+		wait := true
+		body.WaitAfterCanaries = &wait
 	}
 	if len(v.Body.PinnedServerIDs) > 0 {
 		ids := append([]int64(nil), v.Body.PinnedServerIDs...)
@@ -154,4 +166,20 @@ func (h *Handlers) ExecutePlan(ctx context.Context, req ExecutePlanRequestObject
 		return nil, err
 	}
 	return ExecutePlan202JSONResponse(toRun(run)), nil
+}
+
+func (h *Handlers) CancelPlan(ctx context.Context, req CancelPlanRequestObject) (CancelPlanResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reason := ""
+	if req.Body != nil {
+		reason = deref(req.Body.Reason)
+	}
+	v, err := h.fleet.CancelPlan(ctx, a, req.PlanId, reason)
+	if err != nil {
+		return nil, err
+	}
+	return CancelPlan200JSONResponse(toPlan(v)), nil
 }

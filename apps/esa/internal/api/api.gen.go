@@ -227,6 +227,7 @@ func (e EffectiveRole) Valid() bool {
 // Defines values for FixPlanStatus.
 const (
 	FixPlanStatusApproved    FixPlanStatus = "approved"
+	FixPlanStatusCancelled   FixPlanStatus = "cancelled"
 	FixPlanStatusExecuting   FixPlanStatus = "executing"
 	FixPlanStatusExpired     FixPlanStatus = "expired"
 	FixPlanStatusFailed      FixPlanStatus = "failed"
@@ -242,6 +243,8 @@ const (
 func (e FixPlanStatus) Valid() bool {
 	switch e {
 	case FixPlanStatusApproved:
+		return true
+	case FixPlanStatusCancelled:
 		return true
 	case FixPlanStatusExecuting:
 		return true
@@ -1820,8 +1823,11 @@ type PlanBody struct {
 	Kind            PlanBodyKind `json:"kind"`
 	ObserveSeconds  *int         `json:"observeSeconds,omitempty"`
 
-	// Packages Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
+	// Packages The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else.
 	Packages *[]string `json:"packages,omitempty"`
+
+	// Pending Every pending package when the plan was proposed. A different list at execution invalidates the plan.
+	Pending *[]string `json:"pending,omitempty"`
 
 	// PinnedServerIds The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
 	PinnedServerIds  *[]int64            `json:"pinnedServerIds,omitempty"`
@@ -1829,6 +1835,9 @@ type PlanBody struct {
 	ServerIds        *[]int64            `json:"serverIds,omitempty"`
 	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
 	Vscode           *bool               `json:"vscode,omitempty"`
+
+	// WaitAfterCanaries Pause the plan's run after its canaries until a person continues it.
+	WaitAfterCanaries *bool `json:"waitAfterCanaries,omitempty"`
 }
 
 // PlanBodyKind defines model for PlanBody.Kind.
@@ -2331,6 +2340,11 @@ type DeleteOrganizationParams struct {
 	Confirm string `form:"confirm" json:"confirm"`
 }
 
+// CancelPlanJSONBody defines parameters for CancelPlan.
+type CancelPlanJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // RejectPlanJSONBody defines parameters for RejectPlan.
 type RejectPlanJSONBody struct {
 	Reason string `json:"reason"`
@@ -2452,6 +2466,9 @@ type CreateOrganizationJSONRequestBody = OrganizationInput
 
 // ProposePlanJSONRequestBody defines body for ProposePlan for application/json ContentType.
 type ProposePlanJSONRequestBody = PlanBody
+
+// CancelPlanJSONRequestBody defines body for CancelPlan for application/json ContentType.
+type CancelPlanJSONRequestBody CancelPlanJSONBody
 
 // RejectPlanJSONRequestBody defines body for RejectPlan for application/json ContentType.
 type RejectPlanJSONRequestBody RejectPlanJSONBody
@@ -2689,6 +2706,9 @@ type ServerInterface interface {
 	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
 	// (POST /plans/{planId}/approve)
 	ApprovePlan(w http.ResponseWriter, r *http.Request, planId PlanId)
+	// CancelPlan Withdraw a plan that has not started. This never touches a server.
+	// (POST /plans/{planId}/cancel)
+	CancelPlan(w http.ResponseWriter, r *http.Request, planId PlanId)
 	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 	// (POST /plans/{planId}/execute)
 	ExecutePlan(w http.ResponseWriter, r *http.Request, planId PlanId)
@@ -4229,6 +4249,32 @@ func (siw *ServerInterfaceWrapper) ApprovePlan(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// CancelPlan operation middleware
+func (siw *ServerInterfaceWrapper) CancelPlan(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "planId" -------------
+	var planId PlanId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "planId", r.PathValue("planId"), &planId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "planId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelPlan(w, r, planId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ExecutePlan operation middleware
 func (siw *ServerInterfaceWrapper) ExecutePlan(w http.ResponseWriter, r *http.Request) {
 
@@ -5515,6 +5561,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans/{planId}", wrapper.GetPlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/approve", wrapper.ApprovePlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/reject", wrapper.RejectPlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/cancel", wrapper.CancelPlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans/{planId}/execute", wrapper.ExecutePlan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/runs/{runId}/gate", wrapper.DecideGate)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}/report", wrapper.GetPatchReport)
@@ -8010,6 +8057,46 @@ func (response ApprovePlandefaultJSONResponse) VisitApprovePlanResponse(w http.R
 	return err
 }
 
+type CancelPlanRequestObject struct {
+	PlanId PlanId `json:"planId"`
+	Body   *CancelPlanJSONRequestBody
+}
+
+type CancelPlanResponseObject interface {
+	VisitCancelPlanResponse(w http.ResponseWriter) error
+}
+
+type CancelPlan200JSONResponse FixPlan
+
+func (response CancelPlan200JSONResponse) VisitCancelPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CancelPlandefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CancelPlandefaultJSONResponse) VisitCancelPlanResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ExecutePlanRequestObject struct {
 	PlanId PlanId `json:"planId"`
 }
@@ -9678,6 +9765,9 @@ type StrictServerInterface interface {
 	// ApprovePlan Approve a plan from a browser session. A token cannot approve.
 	// (POST /plans/{planId}/approve)
 	ApprovePlan(ctx context.Context, request ApprovePlanRequestObject) (ApprovePlanResponseObject, error)
+	// CancelPlan Withdraw a plan that has not started. This never touches a server.
+	// (POST /plans/{planId}/cancel)
+	CancelPlan(ctx context.Context, request CancelPlanRequestObject) (CancelPlanResponseObject, error)
 	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 	// (POST /plans/{planId}/execute)
 	ExecutePlan(ctx context.Context, request ExecutePlanRequestObject) (ExecutePlanResponseObject, error)
@@ -11624,6 +11714,42 @@ func (sh *strictHandler) ApprovePlan(w http.ResponseWriter, r *http.Request, pla
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ApprovePlanResponseObject); ok {
 		if err := validResponse.VisitApprovePlanResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CancelPlan operation middleware
+func (sh *strictHandler) CancelPlan(w http.ResponseWriter, r *http.Request, planId PlanId) {
+	var request CancelPlanRequestObject
+
+	request.PlanId = planId
+
+	var body CancelPlanJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if !errors.Is(err, io.EOF) {
+			sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+			return
+		}
+	} else {
+		request.Body = &body
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CancelPlan(ctx, request.(CancelPlanRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CancelPlan")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CancelPlanResponseObject); ok {
+		if err := validResponse.VisitCancelPlanResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

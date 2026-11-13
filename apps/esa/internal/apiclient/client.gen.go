@@ -226,6 +226,7 @@ func (e EffectiveRole) Valid() bool {
 // Defines values for FixPlanStatus.
 const (
 	FixPlanStatusApproved    FixPlanStatus = "approved"
+	FixPlanStatusCancelled   FixPlanStatus = "cancelled"
 	FixPlanStatusExecuting   FixPlanStatus = "executing"
 	FixPlanStatusExpired     FixPlanStatus = "expired"
 	FixPlanStatusFailed      FixPlanStatus = "failed"
@@ -241,6 +242,8 @@ const (
 func (e FixPlanStatus) Valid() bool {
 	switch e {
 	case FixPlanStatusApproved:
+		return true
+	case FixPlanStatusCancelled:
 		return true
 	case FixPlanStatusExecuting:
 		return true
@@ -1819,8 +1822,11 @@ type PlanBody struct {
 	Kind            PlanBodyKind `json:"kind"`
 	ObserveSeconds  *int         `json:"observeSeconds,omitempty"`
 
-	// Packages Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan.
+	// Packages The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else.
 	Packages *[]string `json:"packages,omitempty"`
+
+	// Pending Every pending package when the plan was proposed. A different list at execution invalidates the plan.
+	Pending *[]string `json:"pending,omitempty"`
 
 	// PinnedServerIds The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
 	PinnedServerIds  *[]int64            `json:"pinnedServerIds,omitempty"`
@@ -1828,6 +1834,9 @@ type PlanBody struct {
 	ServerIds        *[]int64            `json:"serverIds,omitempty"`
 	UpdateMode       *PlanBodyUpdateMode `json:"updateMode,omitempty"`
 	Vscode           *bool               `json:"vscode,omitempty"`
+
+	// WaitAfterCanaries Pause the plan's run after its canaries until a person continues it.
+	WaitAfterCanaries *bool `json:"waitAfterCanaries,omitempty"`
 }
 
 // PlanBodyKind defines model for PlanBody.Kind.
@@ -2330,6 +2339,11 @@ type DeleteOrganizationParams struct {
 	Confirm string `form:"confirm" json:"confirm"`
 }
 
+// CancelPlanJSONBody defines parameters for CancelPlan.
+type CancelPlanJSONBody struct {
+	Reason *string `json:"reason,omitempty"`
+}
+
 // RejectPlanJSONBody defines parameters for RejectPlan.
 type RejectPlanJSONBody struct {
 	Reason string `json:"reason"`
@@ -2451,6 +2465,9 @@ type CreateOrganizationJSONRequestBody = OrganizationInput
 
 // ProposePlanJSONRequestBody defines body for ProposePlan for application/json ContentType.
 type ProposePlanJSONRequestBody = PlanBody
+
+// CancelPlanJSONRequestBody defines body for CancelPlan for application/json ContentType.
+type CancelPlanJSONRequestBody CancelPlanJSONBody
 
 // RejectPlanJSONRequestBody defines body for RejectPlan for application/json ContentType.
 type RejectPlanJSONRequestBody RejectPlanJSONBody
@@ -3096,6 +3113,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
 	ApprovePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelPlanWithBody Withdraw a plan that has not started. This never touches a server.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+	CancelPlanWithBody(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelPlan Withdraw a plan that has not started. This never touches a server.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+	CancelPlan(ctx context.Context, planId PlanId, body CancelPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ExecutePlan Run an approved plan once. A token that can read logs cannot execute.
 	//
@@ -4815,6 +4846,40 @@ func (c *Client) GetPlan(ctx context.Context, planId PlanId, reqEditors ...Reque
 // Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
 func (c *Client) ApprovePlan(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewApprovePlanRequest(c.Server, planId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelPlanWithBody Withdraw a plan that has not started. This never touches a server.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+func (c *Client) CancelPlanWithBody(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelPlanRequestWithBody(c.Server, planId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelPlan Withdraw a plan that has not started. This never touches a server.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+func (c *Client) CancelPlan(ctx context.Context, planId PlanId, body CancelPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelPlanRequest(c.Server, planId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -8094,6 +8159,53 @@ func NewApprovePlanRequest(server string, planId PlanId) (*http.Request, error) 
 	return req, nil
 }
 
+// NewCancelPlanRequest calls the generic CancelPlan builder with application/json body
+func NewCancelPlanRequest(server string, planId PlanId, body CancelPlanJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCancelPlanRequestWithBody(server, planId, "application/json", bodyReader)
+}
+
+// NewCancelPlanRequestWithBody constructs an http.Request for the CancelPlan method, with any body, and a specified content type
+func NewCancelPlanRequestWithBody(server string, planId PlanId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "planId", planId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/plans/%s/cancel", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewExecutePlanRequest constructs an http.Request for the ExecutePlan method
 func NewExecutePlanRequest(server string, planId PlanId) (*http.Request, error) {
 	var err error
@@ -10390,6 +10502,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /plans/{planId}/approve (the `ApprovePlan` operationId).
 	ApprovePlanWithResponse(ctx context.Context, planId PlanId, reqEditors ...RequestEditorFn) (*ApprovePlanResponse, error)
+
+	// CancelPlanWithBodyWithResponse Withdraw a plan that has not started. This never touches a server.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+	CancelPlanWithBodyWithResponse(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelPlanResponse, error)
+
+	// CancelPlanWithResponse Withdraw a plan that has not started. This never touches a server.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+	CancelPlanWithResponse(ctx context.Context, planId PlanId, body CancelPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelPlanResponse, error)
 
 	// ExecutePlanWithResponse Run an approved plan once. A token that can read logs cannot execute.
 	//
@@ -13786,6 +13912,54 @@ func (r ApprovePlanResponse) ContentType() string {
 	return ""
 }
 
+type CancelPlanResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *FixPlan
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CancelPlanResponse) GetJSON200() *FixPlan {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CancelPlanResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CancelPlanResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelPlanResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelPlanResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CancelPlanResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ExecutePlanResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16726,6 +16900,32 @@ func (c *ClientWithResponses) ApprovePlanWithResponse(ctx context.Context, planI
 	return ParseApprovePlanResponse(rsp)
 }
 
+// CancelPlanWithBodyWithResponse Withdraw a plan that has not started. This never touches a server.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+func (c *ClientWithResponses) CancelPlanWithBodyWithResponse(ctx context.Context, planId PlanId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CancelPlanResponse, error) {
+	rsp, err := c.CancelPlanWithBody(ctx, planId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelPlanResponse(rsp)
+}
+
+// CancelPlanWithResponse Withdraw a plan that has not started. This never touches a server.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /plans/{planId}/cancel (the `CancelPlan` operationId).
+func (c *ClientWithResponses) CancelPlanWithResponse(ctx context.Context, planId PlanId, body CancelPlanJSONRequestBody, reqEditors ...RequestEditorFn) (*CancelPlanResponse, error) {
+	rsp, err := c.CancelPlan(ctx, planId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelPlanResponse(rsp)
+}
+
 // ExecutePlanWithResponse Run an approved plan once. A token that can read logs cannot execute.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -19466,6 +19666,39 @@ func ParseApprovePlanResponse(rsp *http.Response) (*ApprovePlanResponse, error) 
 	}
 
 	response := &ApprovePlanResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FixPlan
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelPlanResponse parses an HTTP response from a CancelPlanWithResponse call
+func ParseCancelPlanResponse(rsp *http.Response) (*CancelPlanResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelPlanResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

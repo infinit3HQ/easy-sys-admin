@@ -107,16 +107,16 @@ The control plane's `dev` script first builds the helper binaries into `apps/esa
 
 `apps/esa/package.json` only lets pnpm and Turborepo run the Go tasks.
 
-| Script          | What it does                                                                                                                              |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `generate`      | `go generate ./...`. Runs `oapi-codegen` to write `internal/api/api.gen.go` and `internal/apiclient/client.gen.go`.                       |
-| `build`         | Builds `bin/esa`, then runs `build:helpers`                                                                                               |
-| `build:helpers` | Builds `bin/esa-helper-linux-amd64` and `bin/esa-helper-linux-arm64` with CGO off. The version is `ESA_VERSION`, or `dev-<short commit>`. |
+| Script          | What it does                                                                                                                                                   |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `generate`      | `go generate ./...`. Runs `oapi-codegen` to write `internal/api/api.gen.go` and `internal/apiclient/client.gen.go`.                                            |
+| `build`         | Builds `bin/esa`, then runs `build:helpers`                                                                                                                    |
+| `build:helpers` | Builds `bin/esa-helper-linux-amd64` and `bin/esa-helper-linux-arm64` with CGO off. The version is `ESA_VERSION`, or `dev-<short commit>`.                      |
 | `dev`           | Runs `build:helpers`, loads `../../.env`, then `go run ./cmd/esa serve`. The env file is loaded in the same process, because `node --run` does not pass it on. |
-| `serve`         | `go run ./cmd/esa serve`                                                                                                                  |
-| `lint`          | `go vet ./...`, and fails when `gofmt -l .` lists a file                                                                                  |
-| `test`          | Loads `../../.env`, then `go test ./...`, in the same process so the file is visible                                                      |
-| `test:go`       | `go test ./...`                                                                                                                           |
+| `serve`         | `go run ./cmd/esa serve`                                                                                                                                       |
+| `lint`          | `go vet ./...`, and fails when `gofmt -l .` lists a file                                                                                                       |
+| `test`          | Loads `../../.env`, then `go test ./...`, in the same process so the file is visible                                                                           |
+| `test:go`       | `go test ./...`                                                                                                                                                |
 
 ### `@esa/web` (apps/web)
 

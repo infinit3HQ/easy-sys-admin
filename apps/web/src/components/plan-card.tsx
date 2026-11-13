@@ -41,7 +41,7 @@ export function PlanCard({
             {kindLabel(b.kind)} ·{' '}
             {b.groupId != null
               ? `group ${names.group(b.groupId)}`
-              : `${servers.length} servers`}{' '}
+              : `${servers.length} ${servers.length === 1 ? 'server' : 'servers'}`}{' '}
             · {plan.status}
           </div>
           <dl className="mt-3 grid gap-1.5">
@@ -76,6 +76,9 @@ export function PlanCard({
                 {b.observeSeconds ? (
                   <KeyValue k="Watch" v={`${b.observeSeconds} s`} />
                 ) : null}
+                {b.waitAfterCanaries ? (
+                  <KeyValue k="After the canaries" v="waits for a person" />
+                ) : null}
               </>
             )}
             {(b.kind === 'clean' || b.kind === 'measure') && (
@@ -84,12 +87,16 @@ export function PlanCard({
                 <KeyValue k="VS Code copies" v={b.vscode ? 'yes' : 'no'} />
                 <KeyValue
                   k="Journal"
-                  v={b.journal ? `yes, down to ${b.journalSize ?? '200M'}` : 'no'}
+                  v={
+                    b.journal ? `yes, down to ${b.journalSize ?? '200M'}` : 'no'
+                  }
                 />
               </>
             )}
           </dl>
-          {b.kind === 'update' && <Packages names={b.packages ?? []} />}
+          {b.kind === 'update' && (
+            <Packages names={b.packages ?? []} pending={b.pending?.length} />
+          )}
           <div className="mt-3 font-mono text-[11px] break-all text-faint">
             {plan.fingerprint}
           </div>
@@ -108,6 +115,7 @@ export function PlanCard({
         </div>
         {canAct && plan.status === 'submitted' && <Decide id={plan.id} />}
         {canAct && plan.status === 'approved' && <Execute plan={plan} />}
+        {canAct && plan.status === 'approved' && <Cancel id={plan.id} />}
       </div>
     </Card>
   )
@@ -117,7 +125,7 @@ function kindLabel(kind: Plan['body']['kind']) {
   return kind === 'update' ? 'Update' : kind === 'clean' ? 'Clean' : 'Measure'
 }
 
-function Packages({ names }: { names: string[] }) {
+function Packages({ names, pending }: { names: string[]; pending?: number }) {
   const [all, setAll] = useState(false)
   if (names.length === 0) {
     return (
@@ -130,7 +138,9 @@ function Packages({ names }: { names: string[] }) {
   return (
     <div className="mt-3">
       <div className="font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
-        Packages ({names.length})
+        {pending && pending > names.length
+          ? `Approves ${names.length} of ${pending} pending packages`
+          : `Packages (${names.length})`}
       </div>
       <p className="mt-1 font-mono text-xs break-words text-ink-2">
         {shown.join(', ')}
@@ -254,6 +264,33 @@ function Execute({ plan }: { plan: Plan }) {
         </p>
       )}
       {run.error && <ErrorBanner error={run.error} />}
+    </div>
+  )
+}
+
+function Cancel({ id }: { id: number }) {
+  const qc = useQueryClient()
+  const cancel = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/plans/{planId}/cancel', {
+          params: { path: { planId: id } },
+          body: { reason: 'cancelled before it ran' },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['plans'] }),
+  })
+  return (
+    <div className="grid gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        busy={cancel.isPending}
+        onClick={() => cancel.mutate()}
+      >
+        Cancel plan
+      </Button>
+      {cancel.error && <ErrorBanner error={cancel.error} />}
     </div>
   )
 }

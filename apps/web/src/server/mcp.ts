@@ -570,6 +570,12 @@ function buildServer(token: string, me: Me): McpServer {
         updateMode: z.enum(['security', 'all']).optional(),
         hold: z.array(z.string()).optional(),
         rebootIfRequired: z.boolean().optional(),
+        packages: z
+          .array(z.string())
+          .optional()
+          .describe('Pending packages to approve. Leave out to approve all of them.'),
+        canaryServerIds: z.array(z.number().int()).optional(),
+        waitAfterCanaries: z.boolean().optional(),
         buildCache: z.boolean().optional(),
         vscode: z.boolean().optional(),
         journal: z.boolean().optional(),

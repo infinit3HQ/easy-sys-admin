@@ -954,6 +954,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plans/{planId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw a plan that has not started. This never touches a server. */
+        post: operations["cancelPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plans/{planId}/execute": {
         parameters: {
             query?: never;
@@ -2666,8 +2685,12 @@ export interface components {
             vscode?: boolean;
             journal?: boolean;
             journalSize?: string;
-            /** @description Filled from the package list recorded on the servers when an update plan is proposed. A different list at execution invalidates the plan. */
-            readonly packages?: string[];
+            /** @description The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else. */
+            packages?: string[];
+            /** @description Every pending package when the plan was proposed. A different list at execution invalidates the plan. */
+            readonly pending?: string[];
+            /** @description Pause the plan's run after its canaries until a person continues it. */
+            waitAfterCanaries?: boolean;
             /** @description The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan. */
             readonly pinnedServerIds?: number[];
         };
@@ -2678,7 +2701,7 @@ export interface components {
              * @description executing until the run finishes, then the run's status.
              * @enum {string}
              */
-            status: "submitted" | "approved" | "rejected" | "executing" | "succeeded" | "partial" | "failed" | "skipped" | "expired" | "invalidated";
+            status: "submitted" | "approved" | "rejected" | "cancelled" | "executing" | "succeeded" | "partial" | "failed" | "skipped" | "expired" | "invalidated";
             fingerprint: string;
             body: components["schemas"]["PlanBody"];
             /** Format: date-time */
@@ -4561,6 +4584,35 @@ export interface operations {
             content: {
                 "application/json": {
                     reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
                 };
             };
         };

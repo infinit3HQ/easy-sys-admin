@@ -80,6 +80,7 @@ func plansCmd() *cobra.Command {
 	var group string
 	var servers []string
 	var mode string
+	var packages []string
 	propose := &cobra.Command{
 		Use:   "propose <measure|clean|update>",
 		Short: "Store a plan for a person to approve in the web app. It does not change a server.",
@@ -122,6 +123,9 @@ func plansCmd() *cobra.Command {
 				body.ServerIds = &ids
 			}
 			fillPlanSettings(&body, grp, mode)
+			if len(packages) > 0 && kind == apiclient.PlanBodyKindUpdate {
+				body.Packages = &packages
+			}
 			r, err := cl.ProposePlanWithResponse(c.Context(), body)
 			if err != nil {
 				return err
@@ -139,6 +143,7 @@ func plansCmd() *cobra.Command {
 	propose.Flags().StringVar(&group, "group", "", "group name")
 	propose.Flags().StringSliceVar(&servers, "server", nil, "server name or id (repeatable)")
 	propose.Flags().StringVar(&mode, "mode", "", "for update plans: security or all (default: the group's setting)")
+	propose.Flags().StringSliceVar(&packages, "package", nil, "for update plans: approve only this pending package (repeatable; default: every pending package)")
 
 	execute := &cobra.Command{
 		Use:   "execute <id>",
@@ -168,7 +173,41 @@ func plansCmd() *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(list, show, propose, execute)
+	var reason string
+	cancel := &cobra.Command{
+		Use:   "cancel <id>",
+		Short: "Withdraw a plan that has not started. This never touches a server.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(c *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return errors.New("plan id must be a number")
+			}
+			cl, err := client()
+			if err != nil {
+				return err
+			}
+			body := apiclient.CancelPlanJSONRequestBody{}
+			if reason != "" {
+				body.Reason = &reason
+			}
+			r, err := cl.CancelPlanWithResponse(c.Context(), id, body)
+			if err != nil {
+				return err
+			}
+			if err := apiErr(r.HTTPResponse, r.Body); err != nil {
+				return err
+			}
+			if jsonOut {
+				return printJSON(r.JSON200)
+			}
+			fmt.Printf("Cancelled plan %d.\n", id)
+			return nil
+		},
+	}
+	cancel.Flags().StringVar(&reason, "reason", "", "why, up to 200 characters")
+
+	cmd.AddCommand(list, show, propose, execute, cancel)
 	return cmd
 }
 
@@ -231,7 +270,13 @@ func printPlan(p *apiclient.FixPlan) {
 		fmt.Printf("Cleanups: build cache %s, VS Code %s, journal %s\n", yesNo(b.BuildCache), yesNo(b.Vscode), yesNo(b.Journal))
 	}
 	if b.Packages != nil {
-		fmt.Printf("Packages (%d): %s\n", len(*b.Packages), strings.Join(*b.Packages, ", "))
+		fmt.Printf("Approved packages (%d): %s\n", len(*b.Packages), strings.Join(*b.Packages, ", "))
+	}
+	if b.Pending != nil && b.Packages != nil && len(*b.Pending) != len(*b.Packages) {
+		fmt.Printf("Pending, not approved: %d more; the helper leaves them alone\n", len(*b.Pending)-len(*b.Packages))
+	}
+	if b.WaitAfterCanaries != nil && *b.WaitAfterCanaries {
+		fmt.Println("Waits for a person after the canaries")
 	}
 	if p.Reason != "" {
 		fmt.Printf("Reason: %s\n", p.Reason)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,9 +32,17 @@ type PlanBody struct {
 	VSCode           bool     `json:"vscode,omitempty"`
 	Journal          bool     `json:"journal,omitempty"`
 	JournalSize      string   `json:"journalSize,omitempty"`
-	// Packages is the pending package list frozen when an update plan is
-	// proposed. A different list at execution invalidates the plan.
+	// Packages are the packages the plan approves: a chosen subset of the
+	// pending list, or all of it when none were chosen. The helper installs
+	// nothing else.
 	Packages []string `json:"packages,omitempty"`
+	// Pending is every pending package when the plan was proposed. A
+	// different list at execution invalidates the plan. Plans stored
+	// before this field compare against Packages.
+	Pending []string `json:"pending,omitempty"`
+	// WaitAfterCanaries pauses the plan's run after its canaries until a
+	// person continues it.
+	WaitAfterCanaries bool `json:"waitAfterCanaries,omitempty"`
 	// PinnedServerIDs are the servers the plan covered when it was
 	// proposed. A server added to or removed from the group since
 	// invalidates the plan, so an approval never reaches a new server.
@@ -98,7 +107,11 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 	}
 	if body.Kind != RunUpdate {
 		body.UpdateMode, body.Hold, body.RebootIfRequired = "", nil, false
-		body.ObserveSeconds, body.CanaryServerIDs = 0, nil
+		body.ObserveSeconds, body.CanaryServerIDs, body.WaitAfterCanaries = 0, nil, false
+		body.Packages = nil
+	}
+	if body.WaitAfterCanaries && len(body.CanaryServerIDs) == 0 {
+		return PlanView{}, invalid("waitAfterCanaries", "pick a canary to wait after")
 	}
 	target, err := s.planTarget(ctx, a.AccountID, body)
 	if err != nil {
@@ -110,10 +123,14 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 		if err != nil {
 			return PlanView{}, err
 		}
-		body.Packages = names
 		if len(names) == 0 {
 			return PlanView{}, invalid("packages", "no %s updates are pending on these servers, so there is nothing to approve", modeWord(body.UpdateMode))
 		}
+		chosen, err := choosePackages(body.Packages, names)
+		if err != nil {
+			return PlanView{}, err
+		}
+		body.Pending, body.Packages = names, chosen
 	}
 	fp, err := planFingerprint(body)
 	if err != nil {
@@ -218,7 +235,7 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 		approved := append([]string{}, body.Packages...)
 		opts.Approved = &approved
 	}
-	req := RunRequest{Kind: body.Kind, GroupID: body.GroupID, ServerIDs: body.ServerIDs, Options: &opts, CanaryServerIDs: body.CanaryServerIDs, ObserveSeconds: body.ObserveSeconds, FromPlan: true}
+	req := RunRequest{Kind: body.Kind, GroupID: body.GroupID, ServerIDs: body.ServerIDs, Options: &opts, CanaryServerIDs: body.CanaryServerIDs, ObserveSeconds: body.ObserveSeconds, WaitAfterCanaries: body.WaitAfterCanaries, FromPlan: true}
 	if body.GroupID != nil {
 		// Run on the servers the person approved, not on servers added to
 		// the group since.
@@ -288,7 +305,11 @@ func (s *Service) claimPlan(ctx context.Context, a Actor, id int64) (planClaim, 
 		}
 		if c.body.Kind == RunUpdate {
 			names, err := s.pendingNames(ctx, target, c.body.UpdateMode)
-			if err != nil || !sameNames(names, c.body.Packages) {
+			frozen := c.body.Pending
+			if frozen == nil {
+				frozen = c.body.Packages
+			}
+			if err != nil || !sameNames(names, frozen) {
 				c.refuse = &planRefusal{"invalidated", "package list changed"}
 				return invalid("status", "the package list changed, so this approval no longer applies")
 			}
@@ -470,4 +491,50 @@ func modeWord(mode string) string {
 		return "package"
 	}
 	return "security"
+}
+
+// choosePackages checks a requested subset against the pending list. No
+// request approves every pending package.
+func choosePackages(requested, pending []string) ([]string, error) {
+	if len(requested) == 0 {
+		return pending, nil
+	}
+	var out []string
+	for _, name := range cleanList(requested) {
+		if !slices.Contains(pending, name) {
+			return nil, invalid("packages", "%q is not pending on these servers", name)
+		}
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
+}
+
+// CancelPlan withdraws a plan that has not started. A started plan is
+// stopped at its run's canary gate or not at all: cancel never touches a
+// server.
+func (s *Service) CancelPlan(ctx context.Context, a Actor, id int64, reason string) (PlanView, error) {
+	if err := a.can(RoleAdmin, ScopeActions); err != nil {
+		return PlanView{}, err
+	}
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) > 200 {
+		return PlanView{}, invalid("reason", "must be at most 200 characters")
+	}
+	row, body, err := s.loadPlan(ctx, a, id)
+	if err != nil {
+		return PlanView{}, err
+	}
+	res := s.db.WithContext(ctx).Model(&store.FixPlan{}).
+		Where("id = ? AND account_id = ? AND status IN ? AND run_id IS NULL", id, a.AccountID, []string{"submitted", "approved"}).
+		Updates(map[string]any{"status": "cancelled", "reason": reason, "updated_at": s.now()})
+	if res.Error != nil {
+		return PlanView{}, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return PlanView{}, invalid("status", "only a plan that has not started can be cancelled")
+	}
+	s.audit(ctx, nil, a, "plan.cancel", row.Fingerprint, map[string]any{"id": row.ID, "reason": reason})
+	row.Status, row.Reason = "cancelled", reason
+	return toPlan(row, body), nil
 }
