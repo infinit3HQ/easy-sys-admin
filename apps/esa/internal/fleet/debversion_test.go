@@ -43,6 +43,40 @@ func TestMatchAdvisoriesComparesFixedVersion(t *testing.T) {
 	}
 }
 
+func TestBackportAndSourcePackage(t *testing.T) {
+	// 3.0.13-0ubuntu3.4 is the Ubuntu fix. 3.2.1 is the upstream release it
+	// was taken from. 3.1.0 is newer than the Ubuntu package and older than
+	// upstream, so comparing upstream would call the backport unfixed.
+	path := writeFeed(t, `{"schema":1,"distro":"ubuntu","release":"24.04","advisories":[
+	  {"id":"USN-9","package":"openssl","fixed":"3.0.13-0ubuntu3.4","upstreamFixed":"3.2.1","severity":"high"},
+	  {"id":"USN-8","package":"glibc","fixed":"2.39-0ubuntu8.4","severity":"medium"},
+	  {"id":"USN-7","package":"cron","fixed":"1:2.0","severity":"low"}
+	]}`)
+	inv := proto.PackageInventory{Distro: "ubuntu", Release: "24.04", Packages: []proto.InstalledPackage{
+		{Name: "openssl", Version: "3.1.0"},
+		{Name: "libc6", Version: "2.39-0ubuntu8.3", Source: "glibc", SourceVersion: "2.39-0ubuntu8.3"},
+		{Name: "libc-bin", Version: "2.39-0ubuntu8.3", Source: "glibc", SourceVersion: "2.39-0ubuntu8.4"},
+		{Name: "cron", Version: "2.1"},
+	}}
+	got := matchAdvisories(inv, path)
+	if len(got.Matches) != 2 {
+		t.Fatalf("matches: %+v", got.Matches)
+	}
+	if got.Matches[0].Package != "libc6" || got.Matches[0].Version != "2.39-0ubuntu8.3" {
+		t.Fatalf("source advisory should hit the older binary: %+v", got.Matches[0])
+	}
+	if got.Matches[1].Package != "cron" || got.Matches[1].Fixed != "1:2.0" {
+		t.Fatalf("epoch: %+v", got.Matches[1])
+	}
+	inv.Packages[0].Version = "3.0.13-0ubuntu3.4"
+	inv.Packages[1].SourceVersion = "2.39-0ubuntu8.4"
+	inv.Packages[3].Version = "1:2.0"
+	got = matchAdvisories(inv, path)
+	if len(got.Matches) != 0 {
+		t.Fatalf("backport, fixed source and epoch must not match: %+v", got.Matches)
+	}
+}
+
 func TestMatchAdvisoriesKeepsInventoryWarning(t *testing.T) {
 	path := writeFeed(t, `{"schema":1,"distro":"ubuntu","release":"24.04","advisories":[]}`)
 	inv := proto.PackageInventory{Distro: "ubuntu", Release: "24.04", Gaps: []string{"dpkg-query"}}

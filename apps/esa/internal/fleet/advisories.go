@@ -41,6 +41,10 @@ type advisoryFeed struct {
 		Fixed    string   `json:"fixed"`
 		Severity string   `json:"severity"`
 		Affected []string `json:"affected"`
+		// UpstreamFixed is the upstream release the distro patched. It is
+		// not compared. A backport's version is often older than that
+		// release and is still the fix.
+		UpstreamFixed string `json:"upstreamFixed"`
 	} `json:"advisories"`
 }
 
@@ -102,16 +106,31 @@ func matchFeed(inv proto.PackageInventory, path string) AdvisoryReport {
 	for i, a := range feed.Advisories {
 		byPackage[a.Package] = append(byPackage[a.Package], i)
 	}
+	seen := map[string]bool{}
 	for _, p := range inv.Packages {
-		for _, i := range byPackage[p.Name] {
-			a := feed.Advisories[i]
-			if !affectedVersion(p.Version, a.Fixed, a.Affected) {
-				continue
+		// The binary name is checked first. A source-package advisory then
+		// applies to each binary built from it, using the source version.
+		checks := []struct{ name, version string }{{p.Name, p.Version}}
+		if p.Source != "" && p.Source != p.Name {
+			ver := p.SourceVersion
+			if ver == "" {
+				ver = p.Version
 			}
-			rep.Matches = append(rep.Matches, AdvisoryMatch{ID: a.ID, Package: p.Name, Version: p.Version, Fixed: a.Fixed, Severity: a.Severity})
+			checks = append(checks, struct{ name, version string }{p.Source, ver})
+		}
+		for _, c := range checks {
+			for _, i := range byPackage[c.name] {
+				a := feed.Advisories[i]
+				key := a.ID + "\x00" + p.Name
+				if seen[key] || !affectedVersion(c.version, a.Fixed, a.Affected) {
+					continue
+				}
+				seen[key] = true
+				rep.Matches = append(rep.Matches, AdvisoryMatch{ID: a.ID, Package: p.Name, Version: c.version, Fixed: a.Fixed, Severity: a.Severity})
+			}
 		}
 	}
-	rep.Coverage = "Installed versions older than the fixed version, or listed as affected, in the imported feed are shown. A package that is absent is not certified safe."
+	rep.Coverage = "Installed versions older than the feed's fixed version, or listed as affected, are shown. The fixed version is the distro package, including a backport; an upstream version is not compared. An advisory named for a source package applies to each binary built from it. A package that is absent is not certified safe."
 	return rep
 }
 
