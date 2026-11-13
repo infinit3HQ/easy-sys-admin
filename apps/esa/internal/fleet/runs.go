@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -179,7 +180,7 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if len(servers) == 0 {
 		return RunView{}, invalid("groupId", "the group has no servers")
 	}
-	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && a.Source != SourceSystem && s.needsPlan(ctx, group, servers) {
+	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && s.needsPlan(ctx, group, servers) {
 		return RunView{}, invalid("kind", "this group requires an approved plan")
 	}
 
@@ -214,6 +215,11 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		if opts.Checks == nil {
 			opts.Checks = checks
 		}
+	}
+	if req.FromPlan && group != nil {
+		var held []string
+		_ = group.HoldPackages.Decode(&held)
+		opts.Hold = unionNames(held, opts.Hold)
 	}
 	if err := validBatching(opts.BatchSize, opts.MaxFailures); err != nil {
 		return RunView{}, err
@@ -456,5 +462,21 @@ func uniqueIDs(ids []int64) []int64 {
 			out = append(out, id)
 		}
 	}
+	return out
+}
+
+// unionNames keeps every name from either list. A plan cannot drop a hold
+// the group already has.
+func unionNames(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range append(append([]string{}, a...), b...) {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	slices.Sort(out)
 	return out
 }

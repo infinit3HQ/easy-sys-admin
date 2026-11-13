@@ -209,7 +209,7 @@ func (s *Service) watchCanaries(ctx context.Context, items []store.RunServer, ca
 		for _, i := range canary {
 			rs := &items[i]
 			if rs.Status != "succeeded" {
-				continue
+				return rs.Server.Name + " did not finish, so the watch cannot pass"
 			}
 			ep, err := s.endpoint(ctx, rs.Server)
 			if err != nil {

@@ -33,8 +33,15 @@ func (s *Service) serverLock(id int64) *sync.Mutex {
 	return m.(*sync.Mutex)
 }
 
-// execute runs a stored run to completion.
+// execute runs a stored run to completion. The run lock is held until it
+// returns, so a second control plane does not resume the same run.
 func (s *Service) execute(ctx context.Context, runID int64) {
+	unlock, ok := s.tryRunLock(ctx, runID)
+	if !ok {
+		s.log.Info("run left with the process that already holds it", "run_id", runID)
+		return
+	}
+	defer unlock()
 	var run store.Run
 	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("id = ?", runID).Take(&run).Error; err != nil {
 		s.log.Error("load run", "run_id", runID, "err", err)
@@ -100,8 +107,12 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 		batches := planBatches(items, canary, len(canary))
 		var started int
 		failed, started = runBatches(ctx, batches, maxFailures, failed, work)
-		if canaryFailed(items, canary, failed) || stopRun(len(failed), maxFailures) {
-			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary, "")
+		reason := ""
+		if !canaryFailed(items, canary, failed) && canaryDidNotFinish(items, canary) {
+			reason = "stopped after a canary did not finish"
+		}
+		if reason != "" || canaryFailed(items, canary, failed) || stopRun(len(failed), maxFailures) {
+			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, canary, reason)
 			return
 		}
 		if reason := s.watchCanaries(ctx, items, canary, o); reason != "" {
@@ -124,6 +135,17 @@ func unstarted(batches [][]int, started int) []int {
 		out = append(out, batch...)
 	}
 	return out
+}
+
+// canaryDidNotFinish is true when a canary was skipped or never reached
+// succeeded. A skip is not a pass, and the other servers must not start.
+func canaryDidNotFinish(items []store.RunServer, canary []int) bool {
+	for _, i := range canary {
+		if items[i].Status != "succeeded" {
+			return true
+		}
+	}
+	return false
 }
 
 func canaryFailed(items []store.RunServer, canary, failed []int) bool {
@@ -297,10 +319,24 @@ func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoi
 	return ep, unlock, true
 }
 
+// runLockNamespace keeps a run lock from colliding with a server lock.
+// Server locks use the server id. Run locks use this bit plus the run id.
+const runLockNamespace int64 = 1 << 62
+
 // tryServerLock takes a PostgreSQL advisory lock for this server and holds
 // the connection until unlock. The in-process mutex does not cover a second
 // process.
 func (s *Service) tryServerLock(ctx context.Context, id int64) (func(), bool) {
+	return s.tryAdvisoryLock(ctx, id)
+}
+
+// tryRunLock is held for the whole run. A second process leaves the run
+// alone instead of marking its servers failed.
+func (s *Service) tryRunLock(ctx context.Context, runID int64) (func(), bool) {
+	return s.tryAdvisoryLock(ctx, runLockNamespace+runID)
+}
+
+func (s *Service) tryAdvisoryLock(ctx context.Context, key int64) (func(), bool) {
 	sqlDB, err := s.db.DB()
 	if err != nil {
 		return nil, false
@@ -310,13 +346,13 @@ func (s *Service) tryServerLock(ctx context.Context, id int64) (func(), bool) {
 		return nil, false
 	}
 	var got bool
-	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", id).Scan(&got)
+	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&got)
 	if err != nil || !got {
 		_ = conn.Close()
 		return nil, false
 	}
 	return func() {
-		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", id)
+		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key)
 		_ = conn.Close()
 	}, true
 }
@@ -710,22 +746,41 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Preload("Group").Where("id = ?", runID).Take(&run).Error; err != nil {
 		return
 	}
-	ok, failed, skipped, summary := runTally(RunKind(run.Kind), run.Servers)
-	status := "succeeded"
-	switch {
-	case failed > 0 && ok == 0:
-		status = "failed"
-	case failed > 0:
-		status = "partial"
-	case ok == 0 && skipped > 0:
-		status = "skipped"
-	}
+	ok, failed, _, summary := runTally(RunKind(run.Kind), run.Servers)
+	aborted := runAborted(run.Servers)
+	status := runOutcome(ok, failed, aborted)
 	now := s.now()
 	s.db.WithContext(ctx).Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{"status": status, "summary": summary, "finished_at": now})
 	s.log.Info("run finished", "run_id", run.ID, "status", status, "summary", summary)
-	if failed > 0 {
+	if failed > 0 || aborted {
 		run.Status, run.Summary = status, summary
 		s.alertRunFailed(ctx, run)
+	}
+}
+
+// runAborted reports whether the rest of a run was stopped by a canary or a
+// watch. Those servers are skipped, which is not a successful run.
+func runAborted(servers []store.RunServer) bool {
+	for _, rs := range servers {
+		if strings.HasPrefix(rs.Error, "stopped after") {
+			return true
+		}
+	}
+	return false
+}
+
+// runOutcome is the run status. A stop after a canary or a watch is failed
+// when nothing succeeded, and partial when a canary did.
+func runOutcome(ok, failed int, aborted bool) string {
+	switch {
+	case (failed > 0 || aborted) && ok == 0:
+		return "failed"
+	case failed > 0 || aborted:
+		return "partial"
+	case ok == 0:
+		return "skipped"
+	default:
+		return "succeeded"
 	}
 }
 
@@ -739,6 +794,11 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 		return
 	}
 	for _, run := range runs {
+		unlock, ok := s.tryRunLock(ctx, run.ID)
+		if !ok {
+			s.log.Info("unfinished run is still held", "run_id", run.ID)
+			continue
+		}
 		if RunKind(run.Kind) != RunUpdate {
 			for i := range run.Servers {
 				if rs := &run.Servers[i]; rs.Status == "queued" || rs.Status == "running" {
@@ -746,10 +806,12 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 				}
 			}
 			s.finishRun(ctx, run.ID)
+			unlock()
 			continue
 		}
 		run := run
 		s.background(func(ctx context.Context) {
+			defer unlock()
 			var opts RunOptions
 			_ = run.Options.Decode(&opts)
 			failed, running := resumeState(run.Servers)
