@@ -36,6 +36,9 @@ func (s *Service) AutoScan(ctx context.Context) {
 	if s.scanner == "" {
 		return
 	}
+	if !s.claimJob(ctx, "scan", 50*time.Minute) {
+		return
+	}
 	if s.now().Sub(s.scanDBAt) > scanDBEvery {
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 		cmd := exec.CommandContext(cctx, s.scanner, "db", "update")

@@ -350,6 +350,9 @@ func (s *Service) hostErr(ctx context.Context, srv store.Server, err error) erro
 
 // Rollup averages raw samples into hourly rows and applies retention.
 func (s *Service) Rollup(ctx context.Context) {
+	if !s.claimJob(ctx, "rollup", 30*time.Minute) {
+		return
+	}
 	db := s.db.WithContext(ctx)
 	err := db.Exec(`
 		INSERT INTO metric_hourly (server_id, hour, cpu_percent, mem_percent, disk_percent, load1, samples)

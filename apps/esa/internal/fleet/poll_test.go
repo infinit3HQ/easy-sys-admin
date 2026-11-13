@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -316,5 +317,23 @@ func TestUnreachableBackoffAndAlert(t *testing.T) {
 	}
 	if al = alert(); al == nil || al.ResolvedAt == nil {
 		t.Fatalf("the alert must resolve: %+v", al)
+	}
+}
+
+func TestSecondProcessDoesNotScan(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	if !s.claimJob(ctx, "scan", time.Minute) {
+		t.Fatal("claim")
+	}
+	dir := t.TempDir()
+	script := dir + "/scan"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+dir+"/ran\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := &Service{db: s.db, log: s.log, now: s.now, scanner: script}
+	other.AutoScan(ctx)
+	if _, err := os.Stat(dir + "/ran"); err == nil {
+		t.Fatal("the second process ran the scanner")
 	}
 }
