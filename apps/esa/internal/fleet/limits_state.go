@@ -2,12 +2,14 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -67,10 +69,19 @@ type rateBucket struct {
 }
 
 // limitRate allows rateLimit calls of one action per account per minute.
+// With a database, the count is one row shared by every control plane
+// process. Without one, the count stays in this process.
 func (s *Service) limitRate(a Actor, action string) error {
 	if a.Source == SourceSystem {
 		return nil
 	}
+	if s.db == nil {
+		return s.limitRateMemory(a, action)
+	}
+	return s.limitRateDB(a, action)
+}
+
+func (s *Service) limitRateMemory(a Actor, action string) error {
 	rt := s.rt()
 	now := time.Now()
 	key := strconv.FormatInt(a.AccountID, 10) + "|" + action
@@ -93,6 +104,36 @@ func (s *Service) limitRate(a Actor, action string) error {
 	}
 	b.n++
 	return nil
+}
+
+func (s *Service) limitRateDB(a Actor, action string) error {
+	key := strconv.FormatInt(a.AccountID, 10) + "|" + action
+	var err error
+	for range 2 {
+		err = s.db.Transaction(func(tx *gorm.DB) error {
+			now := time.Now()
+			var row store.RateWindow
+			qerr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("key = ?", key).Take(&row).Error
+			if errors.Is(qerr, gorm.ErrRecordNotFound) {
+				return tx.Create(&store.RateWindow{Key: key, WindowStart: now, N: 1}).Error
+			}
+			if qerr != nil {
+				return qerr
+			}
+			if now.Sub(row.WindowStart) >= rateWindow {
+				return tx.Model(&row).Updates(map[string]any{"window_start": now, "n": 1}).Error
+			}
+			if row.N >= rateLimit {
+				return &ConflictError{Message: "too many requests; wait a minute and try again"}
+			}
+			return tx.Model(&row).Update("n", row.N+1).Error
+		})
+		var conflict *ConflictError
+		if err == nil || errors.As(err, &conflict) {
+			return err
+		}
+	}
+	return err
 }
 
 // underCap returns a ConflictError when the account already has max rows of model.

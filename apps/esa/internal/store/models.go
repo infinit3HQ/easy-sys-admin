@@ -38,6 +38,7 @@ func Models() []any {
 		&MaintenanceWindow{},
 		&NotifyChannel{},
 		&NotifyDelivery{},
+		&RateWindow{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -50,8 +51,14 @@ func Models() []any {
 	}
 }
 
-// Account is a space that owns a fleet: a user's personal space or an
-// organization.
+// RateWindow counts one action for one account during the current minute.
+// Two control plane processes share the row, so each does not get its own quota.
+type RateWindow struct {
+	Key         string    `gorm:"primaryKey;size:80"`
+	WindowStart time.Time `gorm:"not null"`
+	N           int       `gorm:"not null"`
+}
+
 // Every server, group, and run belongs to one account.
 type Account struct {
 	ID   int64  `gorm:"primaryKey"`
