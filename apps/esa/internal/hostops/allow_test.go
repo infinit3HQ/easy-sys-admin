@@ -41,3 +41,10 @@ func TestUnapprovedDependencyStopsThePlan(t *testing.T) {
 		t.Fatalf("a held dependency must stop the plan: %v", got)
 	}
 }
+
+func TestParseDpkgVersions(t *testing.T) {
+	got := parseDpkgVersions("libsqlite3-0:arm64\t3.45.1-1ubuntu2.3\nlocales\t2.39-0ubuntu8.6\n\nbroken line\n")
+	if got["libsqlite3-0"] != "3.45.1-1ubuntu2.3" || got["locales"] != "2.39-0ubuntu8.6" || len(got) != 2 {
+		t.Fatalf("got %v", got)
+	}
+}

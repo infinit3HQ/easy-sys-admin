@@ -1803,6 +1803,13 @@ type PatchServer struct {
 	Packages int    `json:"packages"`
 	ServerId int64  `json:"serverId"`
 	Status   string `json:"status"`
+
+	// Versions Each upgraded package with its version before and after. after is empty when the helper could not read it: unknown, not guessed.
+	Versions []struct {
+		After  string `json:"after"`
+		Before string `json:"before"`
+		Name   string `json:"name"`
+	} `json:"versions"`
 }
 
 // PendingPackage defines model for PendingPackage.

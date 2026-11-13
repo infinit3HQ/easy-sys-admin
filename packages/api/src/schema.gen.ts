@@ -2658,6 +2658,12 @@ export interface components {
             held: string[];
             /** @description Pending packages left alone because the plan did not list them, often found by apt after the approval. */
             notApproved: string[];
+            /** @description Each upgraded package with its version before and after. after is empty when the helper could not read it: unknown, not guessed. */
+            versions: {
+                name: string;
+                before: string;
+                after: string;
+            }[];
             /** @description Set when status got worse after the upgrade. */
             health: string;
             checks: {

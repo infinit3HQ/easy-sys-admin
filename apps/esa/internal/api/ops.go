@@ -194,6 +194,7 @@ func toPatchReport(v fleet.PatchReport) PatchReport {
 			ServerId: s.ServerID, Name: s.Name, Status: s.Status, Error: s.Error,
 			Canary: s.Canary, Packages: s.Packages, Health: s.Health,
 			Installed: nonNil(s.Installed), Held: nonNil(s.Held), NotApproved: nonNil(s.NotApproved),
+			Versions: patchVersions(s.Versions),
 		}
 		item.Checks = make([]struct {
 			Blocking bool    `json:"blocking"`
@@ -574,4 +575,24 @@ func (h *Handlers) DecideGate(ctx context.Context, req DecideGateRequestObject) 
 		return nil, err
 	}
 	return DecideGate200JSONResponse(toRun(run)), nil
+}
+
+func patchVersions(vs []proto.PackageVersion) []struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
+	Name   string `json:"name"`
+} {
+	out := make([]struct {
+		After  string `json:"after"`
+		Before string `json:"before"`
+		Name   string `json:"name"`
+	}, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, struct {
+			After  string `json:"after"`
+			Before string `json:"before"`
+			Name   string `json:"name"`
+		}{v.After, v.Before, v.Name})
+	}
+	return out
 }

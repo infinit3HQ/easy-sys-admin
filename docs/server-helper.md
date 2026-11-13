@@ -220,7 +220,7 @@ systemd-run --unit=esa-upgrade-<run id> --collect \
   /usr/local/lib/esa/esa-helper upgrade-exec --run-id <id> --mode <mode> [--hold ...]
 ```
 
-`KillMode=process` keeps dpkg children from being killed mid-install. Inside the unit, `upgrade-exec` runs `apt-get update`, lists upgradable packages, drops held packages, and in `security` mode keeps only packages whose candidate version is published in a `-security` pocket. It installs them with `apt-get install -y -q --only-upgrade`, keeping existing config files (`--force-confdef`, `--force-confold`), within 2 hours. `NEEDRESTART_MODE=l` makes needrestart list services instead of restarting them. The result file gets the final state, the last 40 log lines, and whether `/var/run/reboot-required` exists.
+`KillMode=process` keeps dpkg children from being killed mid-install. Inside the unit, `upgrade-exec` runs `apt-get update`, lists upgradable packages, drops held packages, and in `security` mode keeps only packages whose candidate version is published in a `-security` pocket. It installs them with `apt-get install -y -q --only-upgrade`, keeping existing config files (`--force-confdef`, `--force-confold`), within 2 hours. `NEEDRESTART_MODE=l` makes needrestart list services instead of restarting them. The result file gets the final state, each upgraded package with its version before (from apt's plan) and after (from `dpkg-query` once the install finished, empty if it cannot be read), the last 40 log lines, and whether `/var/run/reboot-required` exists.
 
 `upgrade-status` reads the result file. If the file still says `running` but the unit has ended, it reports the upgrade as failed. The control plane polls this every 10 seconds; see [architecture.md](architecture.md#updates).
 

@@ -359,6 +359,7 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	}
 	if err == nil {
 		res.Packages = install
+		res.Versions = h.installedVersions(ctx, pending, install)
 	}
 	return finish(err, run.Exit, log)
 }
@@ -481,4 +482,41 @@ func unapproved(sim []proto.PendingPackage, o UpgradeOptions) []string {
 		}
 	}
 	return out
+}
+
+// installedVersions pairs each installed package's version before the
+// upgrade with the version dpkg reports now. A package dpkg does not
+// answer for keeps an empty After.
+func (h *Host) installedVersions(ctx context.Context, pending []proto.PendingPackage, install []string) []proto.PackageVersion {
+	before := map[string]string{}
+	for _, p := range pending {
+		before[p.Name] = p.From
+	}
+	after := map[string]string{}
+	out, err := h.output(ctx, time.Minute, "dpkg-query", append([]string{"-W", "-f=${Package}\t${Version}\n"}, install...)...)
+	if err == nil {
+		after = parseDpkgVersions(out)
+	}
+	versions := make([]proto.PackageVersion, 0, len(install))
+	for _, name := range install {
+		versions = append(versions, proto.PackageVersion{Name: name, Before: before[name], After: after[name]})
+	}
+	return versions
+}
+
+// parseDpkgVersions reads "name<TAB>version" lines. Multi-arch packages
+// print "name:arch"; the architecture is dropped.
+func parseDpkgVersions(out string) map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		name, ver, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok || name == "" || ver == "" {
+			continue
+		}
+		if i := strings.IndexByte(name, ':'); i >= 0 {
+			name = name[:i]
+		}
+		m[name] = ver
+	}
+	return m
 }

@@ -1,6 +1,10 @@
 package fleet
 
-import "context"
+import (
+	"context"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
+)
 
 // PatchServer is one server's package result and the checks around it.
 type PatchServer struct {
@@ -16,8 +20,10 @@ type PatchServer struct {
 	Installed   []string
 	Held        []string
 	NotApproved []string
-	Health      string
-	Checks      []CheckResult
+	// Versions are the upgraded packages, before and after.
+	Versions []proto.PackageVersion
+	Health   string
+	Checks   []CheckResult
 }
 
 // PatchReport is what an update run did, including skipped servers.
@@ -59,9 +65,10 @@ func reportFrom(run RunView) PatchReport {
 			Health  string        `json:"health"`
 			Checks  []CheckResult `json:"checks"`
 			Upgrade struct {
-				Packages    []string `json:"packages"`
-				Skipped     []string `json:"skipped"`
-				NotApproved []string `json:"notApproved"`
+				Packages    []string               `json:"packages"`
+				Skipped     []string               `json:"skipped"`
+				NotApproved []string               `json:"notApproved"`
+				Versions    []proto.PackageVersion `json:"versions"`
 			} `json:"upgrade"`
 		}
 		_ = rs.Detail.Decode(&detail)
@@ -70,6 +77,10 @@ func reportFrom(run RunView) PatchReport {
 		item.Installed = nonEmpty(detail.Upgrade.Packages)
 		item.Held = nonEmpty(detail.Upgrade.Skipped)
 		item.NotApproved = nonEmpty(detail.Upgrade.NotApproved)
+		item.Versions = detail.Upgrade.Versions
+		if item.Versions == nil {
+			item.Versions = []proto.PackageVersion{}
+		}
 		if detail.Checks != nil {
 			item.Checks = detail.Checks
 		}

@@ -81,10 +81,20 @@ function RunPage() {
                 {s.packages > 0 ? `, ${s.packages} packages` : ''}
                 {s.health ? `, ${s.health}` : ''}
                 {s.error ? `, ${s.error}` : ''}
-                {s.installed.length > 0 && (
-                  <div className="text-ink-2">
-                    Installed: {s.installed.join(', ')}
-                  </div>
+                {s.versions.length > 0 ? (
+                  <ul className="text-ink-2">
+                    {s.versions.map((v) => (
+                      <li key={v.name}>
+                        {v.name} {v.before || '?'} → {v.after || 'unknown'}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  s.installed.length > 0 && (
+                    <div className="text-ink-2">
+                      Installed: {s.installed.join(', ')}
+                    </div>
+                  )
                 )}
                 {s.held.length > 0 && (
                   <div className="text-muted-foreground">

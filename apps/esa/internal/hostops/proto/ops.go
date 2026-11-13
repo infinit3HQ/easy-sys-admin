@@ -30,6 +30,13 @@ type PendingPackage struct {
 	Security bool   `json:"security"`
 }
 
+// PackageVersion is one upgraded package.
+type PackageVersion struct {
+	Name   string `json:"name"`
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
+
 // Precheck answers `esa-helper upgrade-precheck`.
 type Precheck struct {
 	OK       bool     `json:"ok"`
@@ -54,11 +61,15 @@ type UpgradeResult struct {
 	Skipped    []string   `json:"skipped,omitempty"`
 	// NotApproved are pending packages left out because the run's --allow
 	// list did not name them.
-	NotApproved    []string `json:"notApproved,omitempty"`
-	ExitCode       int      `json:"exitCode"`
-	Error          string   `json:"error,omitempty"`
-	RebootRequired bool     `json:"rebootRequired"`
-	LogTail        []string `json:"logTail,omitempty"`
+	NotApproved []string `json:"notApproved,omitempty"`
+	// Versions are the upgraded packages with the version before (from
+	// apt's plan) and after (read from dpkg once the install finished).
+	// After is empty when dpkg could not be read: unknown, not guessed.
+	Versions       []PackageVersion `json:"versions,omitempty"`
+	ExitCode       int              `json:"exitCode"`
+	Error          string           `json:"error,omitempty"`
+	RebootRequired bool             `json:"rebootRequired"`
+	LogTail        []string         `json:"logTail,omitempty"`
 }
 
 // ---- Cleanups --------------------------------------------------------------
