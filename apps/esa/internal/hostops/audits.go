@@ -129,6 +129,17 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 				if !defaultAuthorizedKeysFile(v) {
 					rep.Gaps = addGap(rep.Gaps, "custom AuthorizedKeysFile")
 				}
+			case "authorizedkeyscommand":
+				// Keys come from a program at login, so no file lists them.
+				if v != "" && v != "none" {
+					rep.Gaps = addGap(rep.Gaps, "AuthorizedKeysCommand")
+				}
+			case "trustedusercakeys":
+				// Any certificate signed by this CA logs in; it is in no
+				// authorized_keys file.
+				if v != "" && v != "none" {
+					rep.Gaps = addGap(rep.Gaps, "ssh certificates")
+				}
 			}
 		}
 		// sshd -T prints the settings outside any Match block. A Match block

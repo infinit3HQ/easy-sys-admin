@@ -400,3 +400,25 @@ func TestRecoveryFileRefusesLinksAndFIFOs(t *testing.T) {
 		t.Fatalf("oversize: %q", gap)
 	}
 }
+
+func TestAccessKeyCommandAndCertificatesAreGaps(t *testing.T) {
+	h, root := accessHost(t, "port 22\nauthorizedkeyscommand none\ntrustedusercakeys none\n")
+	writeFile(t, root+"/etc/ssh/sshd_config", "Port 22\n")
+	rep, err := h.Access(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range rep.Gaps {
+		if g == "AuthorizedKeysCommand" || g == "ssh certificates" {
+			t.Fatalf("none must not be a gap: %v", rep.Gaps)
+		}
+	}
+	h.Run = &recordingRunner{out: map[string]string{"sshd -T": "port 22\nauthorizedkeyscommand /usr/bin/sss_ssh_authorizedkeys %u\ntrustedusercakeys /etc/ssh/user_ca.pub\n"}}
+	rep, err = h.Access(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(rep.Gaps, "AuthorizedKeysCommand") || !slices.Contains(rep.Gaps, "ssh certificates") {
+		t.Fatalf("logins outside authorized_keys must be gaps: %v", rep.Gaps)
+	}
+}
