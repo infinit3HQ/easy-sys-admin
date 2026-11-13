@@ -267,7 +267,12 @@ func (s *Service) ImportScan(ctx context.Context, a Actor, serverID int64, raw [
 		return ScanView{}, err
 	}
 	s.audit(ctx, nil, a, "scan.import", srv.Name, map[string]any{"scanner": scanner, "version": ver, "matches": len(matches), "keptImages": kept})
-	return s.LatestScan(ctx, a, serverID)
+	v, err := s.LatestScan(ctx, a, serverID)
+	if err != nil || v.Stale {
+		return v, err
+	}
+	s.reportScanIncidents(ctx, srv, v.Matches)
+	return v, nil
 }
 
 // LatestScan returns the newest imported scan of a server, or an empty
@@ -422,4 +427,21 @@ func retainUnverifiedImages(prev, next []VulnMatch, imagesRead bool, digests []s
 		n++
 	}
 	return next, n
+}
+
+// reportScanIncidents opens one notice per known-exploited advisory. Aliases
+// of that advisory do not open another. An idle kernel, an exception, and a
+// stale report do not. The match stays in the scan either way.
+func (s *Service) reportScanIncidents(ctx context.Context, srv store.Server, matches []VulnMatch) {
+	seen := map[string]bool{}
+	for _, m := range matches {
+		if m.Tier != 1 || m.NotRunningKernel || m.ExceptedUntil != nil || m.ID == "" || seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		for _, al := range m.Aliases {
+			seen[al] = true
+		}
+		s.openIncident(ctx, srv.AccountID, srv.ID, "vuln", m.ID, srv.Name+": "+m.ID+" on "+m.Package+" "+m.Version+" is listed as known exploited", false)
+	}
 }

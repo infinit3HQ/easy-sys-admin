@@ -183,6 +183,8 @@ func incidentNextStep(kind string) string {
 		return "Read the exposure report. A socket on all interfaces is not proof the port is reachable."
 	case string(AlertSecurityUpdate):
 		return "Read the package list, then start an update only after a person approves the plan."
+	case "vuln":
+		return "Read the vulnerability scan. An exception is not a fix, and a known-exploited match stays listed."
 	default:
 		return "Read the notice. Mark it reviewed when you have seen it."
 	}

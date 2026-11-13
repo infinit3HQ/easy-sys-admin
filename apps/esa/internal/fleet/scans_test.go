@@ -206,6 +206,49 @@ func TestLatestScanStates(t *testing.T) {
 	}
 }
 
+func TestKnownExploitedScanOpensOneNotice(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "scan-notice")
+	srv := addTestServer(t, s, a, nil, "web")
+	fresh := strings.Replace(grypeFixture, "2026-11-12T03:00:00Z", s.now().UTC().Format(time.RFC3339), 1)
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(fresh)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ImportScan(ctx, a, srv.ID, []byte(fresh)); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ?", srv.ID, "vuln").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("known exploited notices: %d", n)
+	}
+	s.reportScanIncidents(ctx, srv, []VulnMatch{
+		{ID: "CVE-1", Aliases: []string{"USN-1"}, Package: "openssl", Version: "1", Tier: 1},
+		{ID: "USN-1", Package: "openssl", Version: "1", Tier: 1},
+		{ID: "CVE-K", Package: "linux-image-1", Tier: 1, NotRunningKernel: true},
+	})
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND subject = ?", srv.ID, "vuln", "USN-1").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("an alias opened its own notice")
+	}
+	old := strings.Replace(grypeFixture, "2026-11-12T03:00:00Z", "2026-10-01T00:00:00Z", 1)
+	other := addTestServer(t, s, a, nil, "old")
+	if _, err := s.ImportScan(ctx, a, other.ID, []byte(old)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ?", other.ID, "vuln").Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatal("a stale database opened a notice")
+	}
+}
+
 func imageGrype(digest, tag, built string) string {
 	return fmt.Sprintf(`{"matches":[{"vulnerability":{"id":"CVE-IMG","severity":"High","fix":{"state":"fixed","versions":["2"]}},"artifact":{"name":"openssl","version":"1","type":"deb","metadata":{"imageID":"%s","userInput":"%s"}}}],"descriptor":{"name":"grype","version":"0.121.3","db":{"built":"%s"}}}`, digest, tag, built)
 }
