@@ -918,6 +918,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download of the key, update, and exposure evidence this account can see */
+        get: operations["getEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/plans": {
         parameters: {
             query?: never;
@@ -1901,6 +1918,30 @@ export interface components {
         KeyList: {
             /** @description At most 2000 key grants, ordered by fingerprint. */
             items: components["schemas"]["Key"][];
+        };
+        /** @description Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists. */
+        EvidenceExport: {
+            /** Format: date-time */
+            exportedAt: string;
+            servers: {
+                /** Format: int64 */
+                id: number;
+                name: string;
+                /** Format: date-time */
+                updatesCheckedAt?: string | null;
+                securityUpdates: number;
+                otherUpdates: number;
+                updatesStale: boolean;
+                /** Format: date-time */
+                exposureCheckedAt?: string | null;
+                exposureReady: boolean;
+                exposureStale: boolean;
+            }[];
+            keys: {
+                fingerprint: string;
+                label: string;
+                servers: string[];
+            }[];
         };
         Offboarding: {
             /** @description What this report does not prove. */
@@ -4663,6 +4704,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No key material, password hashes, or user lists. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceExport"];
+                };
             };
             default: components["responses"]["Error"];
         };

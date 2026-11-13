@@ -21,13 +21,46 @@ function Keys() {
   const r = useQuery(q.keys())
   const { canAct } = useRole()
   const items = r.data?.items ?? []
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<unknown>(null)
+  async function download() {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const data = await call(api().GET('/evidence'))
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'evidence.json'
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      setDownloadError(e)
+    } finally {
+      setDownloading(false)
+    }
+  }
   return (
     <div>
       <PageHeader
         kicker="Access"
         title="Keys"
         description="Fingerprints found in the standard authorized_keys files of accounts with a login shell. A key stored anywhere else is not on this list. Naming a key does not change the server."
-      />
+      >
+        <Button
+          size="sm"
+          variant="outline"
+          busy={downloading}
+          onClick={() => void download()}
+        >
+          Download evidence
+        </Button>
+      </PageHeader>
+      {downloadError ? (
+        <ErrorBanner error={downloadError} className="mb-4" />
+      ) : null}
       <div className="mb-6">
         <KeyOwners canEdit={canAct} />
       </div>

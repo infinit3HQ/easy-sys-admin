@@ -1250,6 +1250,27 @@ type ErrorDetail struct {
 	Message string `json:"message"`
 }
 
+// EvidenceExport Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists.
+type EvidenceExport struct {
+	ExportedAt time.Time `json:"exportedAt"`
+	Keys       []struct {
+		Fingerprint string   `json:"fingerprint"`
+		Label       string   `json:"label"`
+		Servers     []string `json:"servers"`
+	} `json:"keys"`
+	Servers []struct {
+		ExposureCheckedAt *time.Time `json:"exposureCheckedAt,omitempty"`
+		ExposureReady     bool       `json:"exposureReady"`
+		ExposureStale     bool       `json:"exposureStale"`
+		Id                int64      `json:"id"`
+		Name              string     `json:"name"`
+		OtherUpdates      int        `json:"otherUpdates"`
+		SecurityUpdates   int        `json:"securityUpdates"`
+		UpdatesCheckedAt  *time.Time `json:"updatesCheckedAt,omitempty"`
+		UpdatesStale      bool       `json:"updatesStale"`
+	} `json:"servers"`
+}
+
 // Exposure defines model for Exposure.
 type Exposure struct {
 	// AttemptedAt When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
@@ -2642,6 +2663,9 @@ type ServerInterface interface {
 	// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
 	// (POST /deliveries/{deliveryId}/retry)
 	RetryDelivery(w http.ResponseWriter, r *http.Request, deliveryId DeliveryId)
+	// GetEvidence Download of the key, update, and exposure evidence this account can see
+	// (GET /evidence)
+	GetEvidence(w http.ResponseWriter, r *http.Request)
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	// (GET /fleet/overview)
 	GetFleetOverview(w http.ResponseWriter, r *http.Request)
@@ -3294,6 +3318,20 @@ func (siw *ServerInterfaceWrapper) RetryDelivery(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RetryDelivery(w, r, deliveryId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetEvidence operation middleware
+func (siw *ServerInterfaceWrapper) GetEvidence(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEvidence(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5726,6 +5764,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/runs/{runId}", wrapper.GetRun)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/keys", wrapper.ListKeys)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/keys", wrapper.LabelKey)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/evidence", wrapper.GetEvidence)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans", wrapper.ListPlans)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/plans", wrapper.ProposePlan)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans/{planId}", wrapper.GetPlan)
@@ -6399,6 +6438,44 @@ type RetryDeliverydefaultJSONResponse struct {
 }
 
 func (response RetryDeliverydefaultJSONResponse) VisitRetryDeliveryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvidenceRequestObject struct {
+}
+
+type GetEvidenceResponseObject interface {
+	VisitGetEvidenceResponse(w http.ResponseWriter) error
+}
+
+type GetEvidence200JSONResponse EvidenceExport
+
+func (response GetEvidence200JSONResponse) VisitGetEvidenceResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetEvidencedefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetEvidencedefaultJSONResponse) VisitGetEvidenceResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9909,6 +9986,9 @@ type StrictServerInterface interface {
 	// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
 	// (POST /deliveries/{deliveryId}/retry)
 	RetryDelivery(ctx context.Context, request RetryDeliveryRequestObject) (RetryDeliveryResponseObject, error)
+	// GetEvidence Download of the key, update, and exposure evidence this account can see
+	// (GET /evidence)
+	GetEvidence(ctx context.Context, request GetEvidenceRequestObject) (GetEvidenceResponseObject, error)
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	// (GET /fleet/overview)
 	GetFleetOverview(ctx context.Context, request GetFleetOverviewRequestObject) (GetFleetOverviewResponseObject, error)
@@ -10674,6 +10754,30 @@ func (sh *strictHandler) RetryDelivery(w http.ResponseWriter, r *http.Request, d
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(RetryDeliveryResponseObject); ok {
 		if err := validResponse.VisitRetryDeliveryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetEvidence operation middleware
+func (sh *strictHandler) GetEvidence(w http.ResponseWriter, r *http.Request) {
+	var request GetEvidenceRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetEvidence(ctx, request.(GetEvidenceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetEvidence")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetEvidenceResponseObject); ok {
+		if err := validResponse.VisitGetEvidenceResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

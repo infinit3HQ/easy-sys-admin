@@ -19,6 +19,63 @@ func (h *Handlers) ListKeys(ctx context.Context, _ ListKeysRequestObject) (ListK
 	return ListKeys200JSONResponse{Items: mapSlice(items, toKey)}, nil
 }
 
+func (h *Handlers) GetEvidence(ctx context.Context, _ GetEvidenceRequestObject) (GetEvidenceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ev, err := h.fleet.Evidence(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	out := EvidenceExport{ExportedAt: ev.ExportedAt}
+	for _, srv := range ev.Servers {
+		out.Servers = append(out.Servers, struct {
+			ExposureCheckedAt *time.Time `json:"exposureCheckedAt,omitempty"`
+			ExposureReady     bool       `json:"exposureReady"`
+			ExposureStale     bool       `json:"exposureStale"`
+			Id                int64      `json:"id"`
+			Name              string     `json:"name"`
+			OtherUpdates      int        `json:"otherUpdates"`
+			SecurityUpdates   int        `json:"securityUpdates"`
+			UpdatesCheckedAt  *time.Time `json:"updatesCheckedAt,omitempty"`
+			UpdatesStale      bool       `json:"updatesStale"`
+		}{
+			Id: srv.ID, Name: srv.Name, UpdatesCheckedAt: srv.UpdatesCheckedAt,
+			SecurityUpdates: srv.SecurityUpdates, OtherUpdates: srv.OtherUpdates, UpdatesStale: srv.UpdatesStale,
+			ExposureCheckedAt: srv.ExposureCheckedAt, ExposureReady: srv.ExposureReady, ExposureStale: srv.ExposureStale,
+		})
+	}
+	for _, k := range ev.Keys {
+		out.Keys = append(out.Keys, struct {
+			Fingerprint string   `json:"fingerprint"`
+			Label       string   `json:"label"`
+			Servers     []string `json:"servers"`
+		}{Fingerprint: k.Fingerprint, Label: k.Label, Servers: k.Servers})
+	}
+	if out.Servers == nil {
+		out.Servers = []struct {
+			ExposureCheckedAt *time.Time `json:"exposureCheckedAt,omitempty"`
+			ExposureReady     bool       `json:"exposureReady"`
+			ExposureStale     bool       `json:"exposureStale"`
+			Id                int64      `json:"id"`
+			Name              string     `json:"name"`
+			OtherUpdates      int        `json:"otherUpdates"`
+			SecurityUpdates   int        `json:"securityUpdates"`
+			UpdatesCheckedAt  *time.Time `json:"updatesCheckedAt,omitempty"`
+			UpdatesStale      bool       `json:"updatesStale"`
+		}{}
+	}
+	if out.Keys == nil {
+		out.Keys = []struct {
+			Fingerprint string   `json:"fingerprint"`
+			Label       string   `json:"label"`
+			Servers     []string `json:"servers"`
+		}{}
+	}
+	return GetEvidence200JSONResponse(out), nil
+}
+
 func (h *Handlers) LabelKey(ctx context.Context, req LabelKeyRequestObject) (LabelKeyResponseObject, error) {
 	a, err := actor(ctx)
 	if err != nil {

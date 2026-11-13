@@ -1065,6 +1065,19 @@ paths:
           description: Saved
         default: { $ref: '#/components/responses/Error' }
 
+  /evidence:
+    get:
+      operationId: getEvidence
+      summary: Download of the key, update, and exposure evidence this account can see
+      tags: [fleet]
+      responses:
+        '200':
+          description: No key material, password hashes, or user lists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceExport' }
+        default: { $ref: '#/components/responses/Error' }
+
   /plans:
     get:
       operationId: listPlans
@@ -2251,6 +2264,37 @@ components:
           maxItems: 2000
           description: At most 2000 key grants, ordered by fingerprint.
           items: { $ref: '#/components/schemas/Key' }
+
+    EvidenceExport:
+      type: object
+      required: [exportedAt, servers, keys]
+      description: Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists.
+      properties:
+        exportedAt: { type: string, format: date-time }
+        servers:
+          type: array
+          items:
+            type: object
+            required: [id, name, securityUpdates, otherUpdates, updatesStale, exposureReady, exposureStale]
+            properties:
+              id: { type: integer, format: int64 }
+              name: { type: string }
+              updatesCheckedAt: { type: string, format: date-time, nullable: true }
+              securityUpdates: { type: integer }
+              otherUpdates: { type: integer }
+              updatesStale: { type: boolean }
+              exposureCheckedAt: { type: string, format: date-time, nullable: true }
+              exposureReady: { type: boolean }
+              exposureStale: { type: boolean }
+        keys:
+          type: array
+          items:
+            type: object
+            required: [fingerprint, label, servers]
+            properties:
+              fingerprint: { type: string }
+              label: { type: string }
+              servers: { type: array, items: { type: string } }
 
     Offboarding:
       type: object

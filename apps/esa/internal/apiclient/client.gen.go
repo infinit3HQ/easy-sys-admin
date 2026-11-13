@@ -1249,6 +1249,27 @@ type ErrorDetail struct {
 	Message string `json:"message"`
 }
 
+// EvidenceExport Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists.
+type EvidenceExport struct {
+	ExportedAt time.Time `json:"exportedAt"`
+	Keys       []struct {
+		Fingerprint string   `json:"fingerprint"`
+		Label       string   `json:"label"`
+		Servers     []string `json:"servers"`
+	} `json:"keys"`
+	Servers []struct {
+		ExposureCheckedAt *time.Time `json:"exposureCheckedAt,omitempty"`
+		ExposureReady     bool       `json:"exposureReady"`
+		ExposureStale     bool       `json:"exposureStale"`
+		Id                int64      `json:"id"`
+		Name              string     `json:"name"`
+		OtherUpdates      int        `json:"otherUpdates"`
+		SecurityUpdates   int        `json:"securityUpdates"`
+		UpdatesCheckedAt  *time.Time `json:"updatesCheckedAt,omitempty"`
+		UpdatesStale      bool       `json:"updatesStale"`
+	} `json:"servers"`
+}
+
 // Exposure defines model for Exposure.
 type Exposure struct {
 	// AttemptedAt When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
@@ -2792,6 +2813,11 @@ type ClientInterface interface {
 	// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
 	RetryDelivery(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetEvidence Download of the key, update, and exposure evidence this account can see
+	//
+	// Corresponds with GET /evidence (the `GetEvidence` operationId).
+	GetEvidence(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	//
 	// Corresponds with GET /fleet/overview (the `GetFleetOverview` operationId).
@@ -3888,6 +3914,21 @@ func (c *Client) ListDeliveries(ctx context.Context, params *ListDeliveriesParam
 // Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
 func (c *Client) RetryDelivery(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRetryDeliveryRequest(c.Server, deliveryId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetEvidence Download of the key, update, and exposure evidence this account can see
+//
+// Corresponds with GET /evidence (the `GetEvidence` operationId).
+func (c *Client) GetEvidence(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetEvidenceRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -6535,6 +6576,33 @@ func NewRetryDeliveryRequest(server string, deliveryId DeliveryId) (*http.Reques
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetEvidenceRequest constructs an http.Request for the GetEvidence method
+func NewGetEvidenceRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/evidence")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -10324,6 +10392,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
 	RetryDeliveryWithResponse(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*RetryDeliveryResponse, error)
 
+	// GetEvidenceWithResponse Download of the key, update, and exposure evidence this account can see
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /evidence (the `GetEvidence` operationId).
+	GetEvidenceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetEvidenceResponse, error)
+
 	// GetFleetOverviewWithResponse Every server in the current account with its latest status, worst first
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -11976,6 +12051,54 @@ func (r RetryDeliveryResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r RetryDeliveryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetEvidenceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *EvidenceExport
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetEvidenceResponse) GetJSON200() *EvidenceExport {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetEvidenceResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetEvidenceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetEvidenceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetEvidenceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetEvidenceResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -16497,6 +16620,19 @@ func (c *ClientWithResponses) RetryDeliveryWithResponse(ctx context.Context, del
 	return ParseRetryDeliveryResponse(rsp)
 }
 
+// GetEvidenceWithResponse Download of the key, update, and exposure evidence this account can see
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /evidence (the `GetEvidence` operationId).
+func (c *ClientWithResponses) GetEvidenceWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetEvidenceResponse, error) {
+	rsp, err := c.GetEvidence(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetEvidenceResponse(rsp)
+}
+
 // GetFleetOverviewWithResponse Every server in the current account with its latest status, worst first
 //
 // Returns a wrapper object for the known response body format(s).
@@ -18636,6 +18772,39 @@ func ParseRetryDeliveryResponse(rsp *http.Response) (*RetryDeliveryResponse, err
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetEvidenceResponse parses an HTTP response from a GetEvidenceWithResponse call
+func ParseGetEvidenceResponse(rsp *http.Response) (*GetEvidenceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetEvidenceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest EvidenceExport
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
