@@ -1,4 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago, Until, When } from '#/components/time'
@@ -12,6 +13,7 @@ import {
 } from '#/components/kit'
 import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
+import { Input } from '#/components/ui/input'
 import { useServerAccess } from '#/components/server/use-access'
 import { ScanPanel } from '#/components/server/scan-panel'
 import {
@@ -271,6 +273,99 @@ export function AccessTab({ serverId }: { serverId: number }) {
   )
 }
 
+function DatasetPolicies({ canEdit }: { canEdit: boolean }) {
+  const qc = useQueryClient()
+  const r = useQuery(q.datasets())
+  const [name, setName] = useState('')
+  const [hours, setHours] = useState('24')
+  const create = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/datasets', {
+          body: { name: name.trim(), maxAgeHours: Number(hours) },
+        }),
+      ),
+    onSuccess: async () => {
+      setName('')
+      await qc.invalidateQueries({ queryKey: ['datasets'] })
+      await qc.invalidateQueries({ queryKey: ['recovery'] })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().DELETE('/datasets/{datasetId}', {
+          params: { path: { datasetId: id } },
+        }),
+      ),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ['datasets'] })
+      await qc.invalidateQueries({ queryKey: ['recovery'] })
+    },
+  })
+  const items = r.data?.items ?? []
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      {items.length > 0 && (
+        <ul className="mb-2 space-y-1 font-mono text-xs">
+          {items.map((d) => (
+            <li key={d.id} className="flex items-center justify-between gap-2">
+              <span>
+                {d.name}: {d.maxAgeHours}h
+              </span>
+              {canEdit && (
+                <button
+                  type="button"
+                  className="text-faint hover:text-fail"
+                  onClick={() => remove.mutate(d.id)}
+                >
+                  remove
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canEdit && (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            create.mutate()
+          }}
+        >
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="postgres"
+            aria-label="Dataset name"
+            className="h-8 w-36"
+          />
+          <Input
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            inputMode="numeric"
+            aria-label="Maximum age in hours"
+            className="h-8 w-20"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            busy={create.isPending}
+          >
+            Add policy
+          </Button>
+        </form>
+      )}
+      <ErrorBanner
+        error={r.error ?? create.error ?? remove.error}
+        className="mt-2"
+      />
+    </div>
+  )
+}
+
 function banText(
   state: string,
   jails: ReadonlyArray<{ name: string; banned: number }>,
@@ -332,6 +427,7 @@ export function SecurityTab({ serverId }: { serverId: number }) {
           A dataset with no policy is not current. within means the backup time
           is inside the account limit. It is not proof the data can be restored.
         </p>
+        <DatasetPolicies canEdit={canManage} />
       </Panel>
       <ScanPanel
         serverId={serverId}
