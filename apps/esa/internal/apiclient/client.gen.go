@@ -178,6 +178,30 @@ func (e Day) Valid() bool {
 	}
 }
 
+// Defines values for DeliveryState.
+const (
+	DeliveryStateDead    DeliveryState = "dead"
+	DeliveryStateQueued  DeliveryState = "queued"
+	DeliveryStateSending DeliveryState = "sending"
+	DeliveryStateSent    DeliveryState = "sent"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryState enum.
+func (e DeliveryState) Valid() bool {
+	switch e {
+	case DeliveryStateDead:
+		return true
+	case DeliveryStateQueued:
+		return true
+	case DeliveryStateSending:
+		return true
+	case DeliveryStateSent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EffectiveRole.
 const (
 	EffectiveRoleAdmin  EffectiveRole = "admin"
@@ -424,6 +448,24 @@ func (e Role) Valid() bool {
 	case RoleOwner:
 		return true
 	case RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoutingWarnings.
+const (
+	Daily     RoutingWarnings = "daily"
+	Immediate RoutingWarnings = "immediate"
+)
+
+// Valid indicates whether the value is a known member of the RoutingWarnings enum.
+func (e RoutingWarnings) Valid() bool {
+	switch e {
+	case Daily:
+		return true
+	case Immediate:
 		return true
 	default:
 		return false
@@ -971,6 +1013,29 @@ type CronEntry = proto.CronEntry
 
 // Day defines model for Day.
 type Day string
+
+// Delivery defines model for Delivery.
+type Delivery struct {
+	Attempts  int        `json:"attempts"`
+	Channel   string     `json:"channel"`
+	CreatedAt time.Time  `json:"createdAt"`
+	Id        int64      `json:"id"`
+	LastError string     `json:"lastError"`
+	SentAt    *time.Time `json:"sentAt,omitempty"`
+	Severity  string     `json:"severity"`
+
+	// State dead means it gave up after its retries.
+	State DeliveryState `json:"state"`
+	Title string        `json:"title"`
+}
+
+// DeliveryState dead means it gave up after its retries.
+type DeliveryState string
+
+// DeliveryList defines model for DeliveryList.
+type DeliveryList struct {
+	Items []Delivery `json:"items"`
+}
 
 // Disk defines model for Disk.
 type Disk = proto.Disk
@@ -1580,6 +1645,19 @@ type ReinstallRequest struct {
 // Role defines model for Role.
 type Role string
 
+// Routing defines model for Routing.
+type Routing struct {
+	// Hour Hour of the daily summary in timezone.
+	Hour int `json:"hour"`
+
+	// Timezone Example: Asia/Colombo
+	Timezone string          `json:"timezone"`
+	Warnings RoutingWarnings `json:"warnings"`
+}
+
+// RoutingWarnings defines model for Routing.Warnings.
+type RoutingWarnings string
+
 // Run defines model for Run.
 type Run struct {
 	BytesFreed int64       `json:"bytesFreed"`
@@ -1936,6 +2014,9 @@ type User struct {
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
+// DeliveryId defines model for DeliveryId.
+type DeliveryId = int64
+
 // GroupId defines model for GroupId.
 type GroupId = int64
 
@@ -1972,6 +2053,12 @@ type ListActivityParams struct {
 type ListAlertsParams struct {
 	All   *bool `form:"all,omitempty" json:"all,omitempty"`
 	Limit *int  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListDeliveriesParams defines parameters for ListDeliveries.
+type ListDeliveriesParams struct {
+	// Failed Only sends that gave up after their retries.
+	Failed *bool `form:"failed,omitempty" json:"failed,omitempty"`
 }
 
 // ListIncidentsParams defines parameters for ListIncidents.
@@ -2034,6 +2121,9 @@ type GetServerMetricsParams struct {
 
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
+
+// SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
+type SetRoutingJSONRequestBody = Routing
 
 // UpdateAlertRuleJSONRequestBody defines body for UpdateAlertRule for application/json ContentType.
 type UpdateAlertRuleJSONRequestBody = AlertRuleInput
@@ -2215,6 +2305,25 @@ type ClientInterface interface {
 	// Corresponds with GET /alerts (the `ListAlerts` operationId).
 	ListAlerts(ctx context.Context, params *ListAlertsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetRouting How this space's warnings reach its channels
+	//
+	// Corresponds with GET /alerts/routing (the `GetRouting` operationId).
+	GetRouting(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetRoutingWithBody Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+	SetRoutingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetRouting Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+	SetRouting(ctx context.Context, body SetRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListAlertRules Alert rules of the account
 	//
 	// Corresponds with GET /alerts/rules (the `ListAlertRules` operationId).
@@ -2305,6 +2414,16 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 	TestChannel(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListDeliveries The 100 most recent notification sends of this space
+	//
+	// Corresponds with GET /deliveries (the `ListDeliveries` operationId).
+	ListDeliveries(ctx context.Context, params *ListDeliveriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
+	//
+	// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
+	RetryDelivery(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	//
@@ -3007,6 +3126,55 @@ func (c *Client) ListAlerts(ctx context.Context, params *ListAlertsParams, reqEd
 	return c.Client.Do(req)
 }
 
+// GetRouting How this space's warnings reach its channels
+//
+// Corresponds with GET /alerts/routing (the `GetRouting` operationId).
+func (c *Client) GetRouting(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetRoutingRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetRoutingWithBody Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+func (c *Client) SetRoutingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetRoutingRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetRouting Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+func (c *Client) SetRouting(ctx context.Context, body SetRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetRoutingRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListAlertRules Alert rules of the account
 //
 // Corresponds with GET /alerts/rules (the `ListAlertRules` operationId).
@@ -3238,6 +3406,36 @@ func (c *Client) UpdateChannel(ctx context.Context, channelId ChannelId, body Up
 // Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 func (c *Client) TestChannel(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewTestChannelRequest(c.Server, channelId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListDeliveries The 100 most recent notification sends of this space
+//
+// Corresponds with GET /deliveries (the `ListDeliveries` operationId).
+func (c *Client) ListDeliveries(ctx context.Context, params *ListDeliveriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListDeliveriesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
+//
+// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
+func (c *Client) RetryDelivery(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryDeliveryRequest(c.Server, deliveryId)
 	if err != nil {
 		return nil, err
 	}
@@ -5138,6 +5336,73 @@ func NewListAlertsRequest(server string, params *ListAlertsParams) (*http.Reques
 	return req, nil
 }
 
+// NewGetRoutingRequest constructs an http.Request for the GetRouting method
+func NewGetRoutingRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/alerts/routing")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetRoutingRequest calls the generic SetRouting builder with application/json body
+func NewSetRoutingRequest(server string, body SetRoutingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetRoutingRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetRoutingRequestWithBody constructs an http.Request for the SetRouting method, with any body, and a specified content type
+func NewSetRoutingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/alerts/routing")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListAlertRulesRequest constructs an http.Request for the ListAlertRules method
 func NewListAlertRulesRequest(server string) (*http.Request, error) {
 	var err error
@@ -5505,6 +5770,94 @@ func NewTestChannelRequest(server string, channelId ChannelId) (*http.Request, e
 	}
 
 	operationPath := fmt.Sprintf("/channels/%s/test", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListDeliveriesRequest constructs an http.Request for the ListDeliveries method
+func NewListDeliveriesRequest(server string, params *ListDeliveriesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/deliveries")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Failed != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "failed", *params.Failed, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetryDeliveryRequest constructs an http.Request for the RetryDelivery method
+func NewRetryDeliveryRequest(server string, deliveryId DeliveryId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "deliveryId", deliveryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/deliveries/%s/retry", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -8841,6 +9194,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /alerts (the `ListAlerts` operationId).
 	ListAlertsWithResponse(ctx context.Context, params *ListAlertsParams, reqEditors ...RequestEditorFn) (*ListAlertsResponse, error)
 
+	// GetRoutingWithResponse How this space's warnings reach its channels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /alerts/routing (the `GetRouting` operationId).
+	GetRoutingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoutingResponse, error)
+
+	// SetRoutingWithBodyWithResponse Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+	SetRoutingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetRoutingResponse, error)
+
+	// SetRoutingWithResponse Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+	SetRoutingWithResponse(ctx context.Context, body SetRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*SetRoutingResponse, error)
+
 	// ListAlertRulesWithResponse Alert rules of the account
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -8945,6 +9319,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /channels/{channelId}/test (the `TestChannel` operationId).
 	TestChannelWithResponse(ctx context.Context, channelId ChannelId, reqEditors ...RequestEditorFn) (*TestChannelResponse, error)
+
+	// ListDeliveriesWithResponse The 100 most recent notification sends of this space
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /deliveries (the `ListDeliveries` operationId).
+	ListDeliveriesWithResponse(ctx context.Context, params *ListDeliveriesParams, reqEditors ...RequestEditorFn) (*ListDeliveriesResponse, error)
+
+	// RetryDeliveryWithResponse Queue a send that gave up again. A send that may have arrived is not retried.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
+	RetryDeliveryWithResponse(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*RetryDeliveryResponse, error)
 
 	// GetFleetOverviewWithResponse Every server in the current account with its latest status, worst first
 	//
@@ -9821,6 +10209,102 @@ func (r ListAlertsResponse) ContentType() string {
 	return ""
 }
 
+type GetRoutingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Routing
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetRoutingResponse) GetJSON200() *Routing {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetRoutingResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetRoutingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetRoutingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetRoutingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetRoutingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetRoutingResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Routing
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetRoutingResponse) GetJSON200() *Routing {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SetRoutingResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetRoutingResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetRoutingResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetRoutingResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetRoutingResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListAlertRulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -10322,6 +10806,95 @@ func (r TestChannelResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r TestChannelResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListDeliveriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DeliveryList
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListDeliveriesResponse) GetJSON200() *DeliveryList {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r ListDeliveriesResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListDeliveriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListDeliveriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListDeliveriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListDeliveriesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RetryDeliveryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RetryDeliveryResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RetryDeliveryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryDeliveryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryDeliveryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RetryDeliveryResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -14199,6 +14772,45 @@ func (c *ClientWithResponses) ListAlertsWithResponse(ctx context.Context, params
 	return ParseListAlertsResponse(rsp)
 }
 
+// GetRoutingWithResponse How this space's warnings reach its channels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /alerts/routing (the `GetRouting` operationId).
+func (c *ClientWithResponses) GetRoutingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetRoutingResponse, error) {
+	rsp, err := c.GetRouting(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetRoutingResponse(rsp)
+}
+
+// SetRoutingWithBodyWithResponse Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+func (c *ClientWithResponses) SetRoutingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetRoutingResponse, error) {
+	rsp, err := c.SetRoutingWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetRoutingResponse(rsp)
+}
+
+// SetRoutingWithResponse Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /alerts/routing (the `SetRouting` operationId).
+func (c *ClientWithResponses) SetRoutingWithResponse(ctx context.Context, body SetRoutingJSONRequestBody, reqEditors ...RequestEditorFn) (*SetRoutingResponse, error) {
+	rsp, err := c.SetRouting(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetRoutingResponse(rsp)
+}
+
 // ListAlertRulesWithResponse Alert rules of the account
 //
 // Returns a wrapper object for the known response body format(s).
@@ -14392,6 +15004,32 @@ func (c *ClientWithResponses) TestChannelWithResponse(ctx context.Context, chann
 		return nil, err
 	}
 	return ParseTestChannelResponse(rsp)
+}
+
+// ListDeliveriesWithResponse The 100 most recent notification sends of this space
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /deliveries (the `ListDeliveries` operationId).
+func (c *ClientWithResponses) ListDeliveriesWithResponse(ctx context.Context, params *ListDeliveriesParams, reqEditors ...RequestEditorFn) (*ListDeliveriesResponse, error) {
+	rsp, err := c.ListDeliveries(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListDeliveriesResponse(rsp)
+}
+
+// RetryDeliveryWithResponse Queue a send that gave up again. A send that may have arrived is not retried.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /deliveries/{deliveryId}/retry (the `RetryDelivery` operationId).
+func (c *ClientWithResponses) RetryDeliveryWithResponse(ctx context.Context, deliveryId DeliveryId, reqEditors ...RequestEditorFn) (*RetryDeliveryResponse, error) {
+	rsp, err := c.RetryDelivery(ctx, deliveryId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryDeliveryResponse(rsp)
 }
 
 // GetFleetOverviewWithResponse Every server in the current account with its latest status, worst first
@@ -15898,6 +16536,72 @@ func ParseListAlertsResponse(rsp *http.Response) (*ListAlertsResponse, error) {
 	return response, nil
 }
 
+// ParseGetRoutingResponse parses an HTTP response from a GetRoutingWithResponse call
+func ParseGetRoutingResponse(rsp *http.Response) (*GetRoutingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetRoutingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Routing
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetRoutingResponse parses an HTTP response from a SetRoutingWithResponse call
+func ParseSetRoutingResponse(rsp *http.Response) (*SetRoutingResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetRoutingResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Routing
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListAlertRulesResponse parses an HTTP response from a ListAlertRulesWithResponse call
 func ParseListAlertRulesResponse(rsp *http.Response) (*ListAlertRulesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -16236,6 +16940,68 @@ func ParseTestChannelResponse(rsp *http.Response) (*TestChannelResponse, error) 
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListDeliveriesResponse parses an HTTP response from a ListDeliveriesWithResponse call
+func ParseListDeliveriesResponse(rsp *http.Response) (*ListDeliveriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListDeliveriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DeliveryList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryDeliveryResponse parses an HTTP response from a RetryDeliveryWithResponse call
+func ParseRetryDeliveryResponse(rsp *http.Response) (*RetryDeliveryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryDeliveryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

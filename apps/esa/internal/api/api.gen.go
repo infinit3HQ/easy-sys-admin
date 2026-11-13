@@ -179,6 +179,30 @@ func (e Day) Valid() bool {
 	}
 }
 
+// Defines values for DeliveryState.
+const (
+	DeliveryStateDead    DeliveryState = "dead"
+	DeliveryStateQueued  DeliveryState = "queued"
+	DeliveryStateSending DeliveryState = "sending"
+	DeliveryStateSent    DeliveryState = "sent"
+)
+
+// Valid indicates whether the value is a known member of the DeliveryState enum.
+func (e DeliveryState) Valid() bool {
+	switch e {
+	case DeliveryStateDead:
+		return true
+	case DeliveryStateQueued:
+		return true
+	case DeliveryStateSending:
+		return true
+	case DeliveryStateSent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EffectiveRole.
 const (
 	EffectiveRoleAdmin  EffectiveRole = "admin"
@@ -425,6 +449,24 @@ func (e Role) Valid() bool {
 	case RoleOwner:
 		return true
 	case RoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RoutingWarnings.
+const (
+	Daily     RoutingWarnings = "daily"
+	Immediate RoutingWarnings = "immediate"
+)
+
+// Valid indicates whether the value is a known member of the RoutingWarnings enum.
+func (e RoutingWarnings) Valid() bool {
+	switch e {
+	case Daily:
+		return true
+	case Immediate:
 		return true
 	default:
 		return false
@@ -972,6 +1014,29 @@ type CronEntry = proto.CronEntry
 
 // Day defines model for Day.
 type Day string
+
+// Delivery defines model for Delivery.
+type Delivery struct {
+	Attempts  int        `json:"attempts"`
+	Channel   string     `json:"channel"`
+	CreatedAt time.Time  `json:"createdAt"`
+	Id        int64      `json:"id"`
+	LastError string     `json:"lastError"`
+	SentAt    *time.Time `json:"sentAt,omitempty"`
+	Severity  string     `json:"severity"`
+
+	// State dead means it gave up after its retries.
+	State DeliveryState `json:"state"`
+	Title string        `json:"title"`
+}
+
+// DeliveryState dead means it gave up after its retries.
+type DeliveryState string
+
+// DeliveryList defines model for DeliveryList.
+type DeliveryList struct {
+	Items []Delivery `json:"items"`
+}
 
 // Disk defines model for Disk.
 type Disk = proto.Disk
@@ -1581,6 +1646,19 @@ type ReinstallRequest struct {
 // Role defines model for Role.
 type Role string
 
+// Routing defines model for Routing.
+type Routing struct {
+	// Hour Hour of the daily summary in timezone.
+	Hour int `json:"hour"`
+
+	// Timezone Example: Asia/Colombo
+	Timezone string          `json:"timezone"`
+	Warnings RoutingWarnings `json:"warnings"`
+}
+
+// RoutingWarnings defines model for Routing.Warnings.
+type RoutingWarnings string
+
 // Run defines model for Run.
 type Run struct {
 	BytesFreed int64       `json:"bytesFreed"`
@@ -1937,6 +2015,9 @@ type User struct {
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
+// DeliveryId defines model for DeliveryId.
+type DeliveryId = int64
+
 // GroupId defines model for GroupId.
 type GroupId = int64
 
@@ -1973,6 +2054,12 @@ type ListActivityParams struct {
 type ListAlertsParams struct {
 	All   *bool `form:"all,omitempty" json:"all,omitempty"`
 	Limit *int  `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListDeliveriesParams defines parameters for ListDeliveries.
+type ListDeliveriesParams struct {
+	// Failed Only sends that gave up after their retries.
+	Failed *bool `form:"failed,omitempty" json:"failed,omitempty"`
 }
 
 // ListIncidentsParams defines parameters for ListIncidents.
@@ -2035,6 +2122,9 @@ type GetServerMetricsParams struct {
 
 // GetServerMetricsParamsWindow defines parameters for GetServerMetrics.
 type GetServerMetricsParamsWindow string
+
+// SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
+type SetRoutingJSONRequestBody = Routing
 
 // UpdateAlertRuleJSONRequestBody defines body for UpdateAlertRule for application/json ContentType.
 type UpdateAlertRuleJSONRequestBody = AlertRuleInput
@@ -2140,6 +2230,12 @@ type ServerInterface interface {
 	// ListAlerts Open alerts, or recent alerts including resolved ones
 	// (GET /alerts)
 	ListAlerts(w http.ResponseWriter, r *http.Request, params ListAlertsParams)
+	// GetRouting How this space's warnings reach its channels
+	// (GET /alerts/routing)
+	GetRouting(w http.ResponseWriter, r *http.Request)
+	// SetRouting Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	// (PUT /alerts/routing)
+	SetRouting(w http.ResponseWriter, r *http.Request)
 	// ListAlertRules Alert rules of the account
 	// (GET /alerts/rules)
 	ListAlertRules(w http.ResponseWriter, r *http.Request)
@@ -2173,6 +2269,12 @@ type ServerInterface interface {
 	// TestChannel Send a test notification
 	// (POST /channels/{channelId}/test)
 	TestChannel(w http.ResponseWriter, r *http.Request, channelId ChannelId)
+	// ListDeliveries The 100 most recent notification sends of this space
+	// (GET /deliveries)
+	ListDeliveries(w http.ResponseWriter, r *http.Request, params ListDeliveriesParams)
+	// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
+	// (POST /deliveries/{deliveryId}/retry)
+	RetryDelivery(w http.ResponseWriter, r *http.Request, deliveryId DeliveryId)
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	// (GET /fleet/overview)
 	GetFleetOverview(w http.ResponseWriter, r *http.Request)
@@ -2509,6 +2611,34 @@ func (siw *ServerInterfaceWrapper) ListAlerts(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// GetRouting operation middleware
+func (siw *ServerInterfaceWrapper) GetRouting(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetRouting(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetRouting operation middleware
+func (siw *ServerInterfaceWrapper) SetRouting(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetRouting(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListAlertRules operation middleware
 func (siw *ServerInterfaceWrapper) ListAlertRules(w http.ResponseWriter, r *http.Request) {
 
@@ -2714,6 +2844,65 @@ func (siw *ServerInterfaceWrapper) TestChannel(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.TestChannel(w, r, channelId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDeliveries operation middleware
+func (siw *ServerInterfaceWrapper) ListDeliveries(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDeliveriesParams
+
+	// ------------- Optional query parameter "failed" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "failed", r.URL.Query(), &params.Failed, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "failed"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "failed", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDeliveries(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryDelivery operation middleware
+func (siw *ServerInterfaceWrapper) RetryDelivery(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deliveryId" -------------
+	var deliveryId DeliveryId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deliveryId", r.PathValue("deliveryId"), &deliveryId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "deliveryId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryDelivery(w, r, deliveryId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4976,6 +5165,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/accept", wrapper.AcceptIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/snooze", wrapper.SnoozeIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts/routing", wrapper.GetRouting)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/alerts/routing", wrapper.SetRouting)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/deliveries", wrapper.ListDeliveries)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/deliveries/{deliveryId}/retry", wrapper.RetryDelivery)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts", wrapper.ListAlerts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alerts/rules", wrapper.ListAlertRules)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/alerts/rules/{kind}", wrapper.UpdateAlertRule)
@@ -5065,6 +5258,83 @@ type ListAlertsdefaultJSONResponse struct {
 }
 
 func (response ListAlertsdefaultJSONResponse) VisitListAlertsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutingRequestObject struct {
+}
+
+type GetRoutingResponseObject interface {
+	VisitGetRoutingResponse(w http.ResponseWriter) error
+}
+
+type GetRouting200JSONResponse Routing
+
+func (response GetRouting200JSONResponse) VisitGetRoutingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetRoutingdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetRoutingdefaultJSONResponse) VisitGetRoutingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoutingRequestObject struct {
+	Body *SetRoutingJSONRequestBody
+}
+
+type SetRoutingResponseObject interface {
+	VisitSetRoutingResponse(w http.ResponseWriter) error
+}
+
+type SetRouting200JSONResponse Routing
+
+func (response SetRouting200JSONResponse) VisitSetRoutingResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetRoutingdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SetRoutingdefaultJSONResponse) VisitSetRoutingResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -5474,6 +5744,78 @@ type TestChanneldefaultJSONResponse struct {
 }
 
 func (response TestChanneldefaultJSONResponse) VisitTestChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveriesRequestObject struct {
+	Params ListDeliveriesParams
+}
+
+type ListDeliveriesResponseObject interface {
+	VisitListDeliveriesResponse(w http.ResponseWriter) error
+}
+
+type ListDeliveries200JSONResponse DeliveryList
+
+func (response ListDeliveries200JSONResponse) VisitListDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListDeliveriesdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response ListDeliveriesdefaultJSONResponse) VisitListDeliveriesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RetryDeliveryRequestObject struct {
+	DeliveryId DeliveryId `json:"deliveryId"`
+}
+
+type RetryDeliveryResponseObject interface {
+	VisitRetryDeliveryResponse(w http.ResponseWriter) error
+}
+
+type RetryDelivery204Response struct {
+}
+
+func (response RetryDelivery204Response) VisitRetryDeliveryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RetryDeliverydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RetryDeliverydefaultJSONResponse) VisitRetryDeliveryResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -8624,6 +8966,12 @@ type StrictServerInterface interface {
 	// ListAlerts Open alerts, or recent alerts including resolved ones
 	// (GET /alerts)
 	ListAlerts(ctx context.Context, request ListAlertsRequestObject) (ListAlertsResponseObject, error)
+	// GetRouting How this space's warnings reach its channels
+	// (GET /alerts/routing)
+	GetRouting(ctx context.Context, request GetRoutingRequestObject) (GetRoutingResponseObject, error)
+	// SetRouting Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+	// (PUT /alerts/routing)
+	SetRouting(ctx context.Context, request SetRoutingRequestObject) (SetRoutingResponseObject, error)
 	// ListAlertRules Alert rules of the account
 	// (GET /alerts/rules)
 	ListAlertRules(ctx context.Context, request ListAlertRulesRequestObject) (ListAlertRulesResponseObject, error)
@@ -8657,6 +9005,12 @@ type StrictServerInterface interface {
 	// TestChannel Send a test notification
 	// (POST /channels/{channelId}/test)
 	TestChannel(ctx context.Context, request TestChannelRequestObject) (TestChannelResponseObject, error)
+	// ListDeliveries The 100 most recent notification sends of this space
+	// (GET /deliveries)
+	ListDeliveries(ctx context.Context, request ListDeliveriesRequestObject) (ListDeliveriesResponseObject, error)
+	// RetryDelivery Queue a send that gave up again. A send that may have arrived is not retried.
+	// (POST /deliveries/{deliveryId}/retry)
+	RetryDelivery(ctx context.Context, request RetryDeliveryRequestObject) (RetryDeliveryResponseObject, error)
 	// GetFleetOverview Every server in the current account with its latest status, worst first
 	// (GET /fleet/overview)
 	GetFleetOverview(ctx context.Context, request GetFleetOverviewRequestObject) (GetFleetOverviewResponseObject, error)
@@ -8996,6 +9350,61 @@ func (sh *strictHandler) ListAlerts(w http.ResponseWriter, r *http.Request, para
 	}
 }
 
+// GetRouting operation middleware
+func (sh *strictHandler) GetRouting(w http.ResponseWriter, r *http.Request) {
+	var request GetRoutingRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetRouting(ctx, request.(GetRoutingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetRouting")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetRoutingResponseObject); ok {
+		if err := validResponse.VisitGetRoutingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetRouting operation middleware
+func (sh *strictHandler) SetRouting(w http.ResponseWriter, r *http.Request) {
+	var request SetRoutingRequestObject
+
+	var body SetRoutingJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetRouting(ctx, request.(SetRoutingRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetRouting")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetRoutingResponseObject); ok {
+		if err := validResponse.VisitSetRoutingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListAlertRules operation middleware
 func (sh *strictHandler) ListAlertRules(w http.ResponseWriter, r *http.Request) {
 	var request ListAlertRulesRequestObject
@@ -9291,6 +9700,58 @@ func (sh *strictHandler) TestChannel(w http.ResponseWriter, r *http.Request, cha
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(TestChannelResponseObject); ok {
 		if err := validResponse.VisitTestChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDeliveries operation middleware
+func (sh *strictHandler) ListDeliveries(w http.ResponseWriter, r *http.Request, params ListDeliveriesParams) {
+	var request ListDeliveriesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDeliveries(ctx, request.(ListDeliveriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDeliveries")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDeliveriesResponseObject); ok {
+		if err := validResponse.VisitListDeliveriesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RetryDelivery operation middleware
+func (sh *strictHandler) RetryDelivery(w http.ResponseWriter, r *http.Request, deliveryId DeliveryId) {
+	var request RetryDeliveryRequestObject
+
+	request.DeliveryId = deliveryId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RetryDelivery(ctx, request.(RetryDeliveryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RetryDelivery")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RetryDeliveryResponseObject); ok {
+		if err := validResponse.VisitRetryDeliveryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

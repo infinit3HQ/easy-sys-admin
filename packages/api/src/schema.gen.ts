@@ -1158,6 +1158,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/alerts/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** How this space's warnings reach its channels */
+        get: operations["getRouting"];
+        /** Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once. */
+        put: operations["setRouting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The 100 most recent notification sends of this space */
+        get: operations["listDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries/{deliveryId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a send that gave up again. A send that may have arrived is not retried. */
+        post: operations["retryDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/alerts": {
         parameters: {
             query?: never;
@@ -2558,6 +2612,35 @@ export interface components {
             /** Format: date-time */
             ackedAt?: string | null;
         };
+        Routing: {
+            /** @enum {string} */
+            warnings: "immediate" | "daily";
+            /** @description Hour of the daily summary in timezone. */
+            hour: number;
+            /** @example Asia/Colombo */
+            timezone: string;
+        };
+        Delivery: {
+            /** Format: int64 */
+            id: number;
+            channel: string;
+            title: string;
+            severity: string;
+            /**
+             * @description dead means it gave up after its retries.
+             * @enum {string}
+             */
+            state: "queued" | "sending" | "sent" | "dead";
+            attempts: number;
+            lastError: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            sentAt?: string | null;
+        };
+        DeliveryList: {
+            items: components["schemas"]["Delivery"][];
+        };
         IncidentEvent: {
             /** @enum {string} */
             kind: "opened" | "reopened" | "recurred" | "snooze_broken" | "resolved" | "acknowledged" | "snoozed" | "accepted" | "returned";
@@ -2729,6 +2812,7 @@ export interface components {
         PlanId: number;
         RunId: number;
         WindowId: number;
+        DeliveryId: number;
         IncidentId: number;
         ServerId: number;
         GroupId: number;
@@ -4625,6 +4709,97 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Incident"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Routing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    setRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Routing"];
+            };
+        };
+        responses: {
+            /** @description The setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Routing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listDeliveries: {
+        parameters: {
+            query?: {
+                /** @description Only sends that gave up after their retries. */
+                failed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deliveries, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    retryDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };

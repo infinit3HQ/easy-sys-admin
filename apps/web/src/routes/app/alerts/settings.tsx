@@ -27,6 +27,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Separator } from '#/components/ui/separator'
 import { useRole } from '../route'
+import { Deliveries, WarningRouting } from '#/components/alert-delivery'
 
 export const Route = createFileRoute('/app/alerts/settings')({
   loader: ({ context }) =>
@@ -41,6 +42,7 @@ export const Route = createFileRoute('/app/alerts/settings')({
 })
 
 function AlertSettings() {
+  const { canAct } = useRole()
   return (
     <div className="space-y-6">
       <PageHeader
@@ -58,6 +60,8 @@ function AlertSettings() {
         <Channels />
         <Certs />
       </div>
+      <WarningRouting canEdit={canAct} />
+      {canAct && <Deliveries />}
     </div>
   )
 }

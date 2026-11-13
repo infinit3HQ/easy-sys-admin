@@ -178,6 +178,18 @@ export const q = {
       queryKey: ['maintenance'],
       queryFn: () => call(api().GET('/maintenance')),
     }),
+  routing: () =>
+    queryOptions({
+      queryKey: ['routing'],
+      queryFn: () => call(api().GET('/alerts/routing')),
+    }),
+  deliveries: (failed = false) =>
+    queryOptions({
+      queryKey: ['deliveries', failed],
+      queryFn: () =>
+        call(api().GET('/deliveries', { params: { query: { failed } } })),
+      refetchInterval: LIVE,
+    }),
   incident: (id: number) =>
     queryOptions({
       queryKey: ['incidents', 'one', id],

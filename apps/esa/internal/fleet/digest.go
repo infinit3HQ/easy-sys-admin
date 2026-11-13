@@ -42,7 +42,7 @@ func (s *Service) SendDigests(ctx context.Context) {
 		}
 		title, body, ok := s.digest(ctx, acc.ID, now)
 		if ok {
-			s.notify(ctx, acc.ID, Message{Title: title, Body: body, Severity: "info", URL: s.publicURL.JoinPath("/app").String()})
+			s.notify(ctx, acc.ID, Message{Title: title, Body: body, Severity: "info", URL: s.publicURL.JoinPath("/app").String(), Summary: true})
 			s.audit(ctx, nil, System(acc.ID), "digest.sent", acc.Name, map[string]any{"title": title})
 		}
 	}

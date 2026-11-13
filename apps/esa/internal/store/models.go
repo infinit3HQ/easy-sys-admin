@@ -28,6 +28,7 @@ func Models() []any {
 		&Alert{},
 		&SecurityIncident{},
 		&IncidentEvent{},
+		&HeldWarning{},
 		&KeyOccurrence{},
 		&KeyLabel{},
 		&KeyBaseline{},
@@ -63,6 +64,14 @@ type Account struct {
 	ViewerTeamName string `gorm:"not null;size:100;default:'Viewers'"`
 	// DigestAt is when the Monday summary was last sent for this space.
 	DigestAt *time.Time
+	// WarningDelivery is "immediate" (each warning is sent on its own) or
+	// "daily" (warnings wait for one summary at WarningHour in
+	// WarningTimezone). Critical notices are always sent at once.
+	WarningDelivery string `gorm:"not null;default:'immediate';check:accounts_warning_delivery_check,warning_delivery IN ('immediate','daily')"`
+	WarningHour     int    `gorm:"not null;default:8"`
+	WarningTimezone string `gorm:"not null;default:'UTC'"`
+	// WarningDigestAt is when the last daily warning summary was claimed.
+	WarningDigestAt *time.Time
 
 	PersonalUser *User `gorm:"foreignKey:PersonalOf;constraint:OnDelete:CASCADE"`
 }

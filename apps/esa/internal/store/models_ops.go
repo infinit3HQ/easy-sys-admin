@@ -150,6 +150,18 @@ type NotifyDelivery struct {
 	Channel NotifyChannel `gorm:"constraint:OnDelete:CASCADE"`
 }
 
+// HeldWarning is a warning waiting for the space's daily summary. It is
+// stored, so a restart does not lose it, and deleted once summarised.
+type HeldWarning struct {
+	ID        int64     `gorm:"primaryKey"`
+	AccountID int64     `gorm:"not null;index"`
+	Title     string    `gorm:"not null"`
+	URL       string    `gorm:"not null;default:''"`
+	CreatedAt time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // NotifyChannel is where alerts are sent. ConfigEnc holds the URL, token,
 // or SMTP settings, sealed with crypto.Box.
 type NotifyChannel struct {

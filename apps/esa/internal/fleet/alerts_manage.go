@@ -297,6 +297,9 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 	if s.silenced(ctx, accountID, msg.ServerID, msg.Kind) {
 		return
 	}
+	if len(chans) > 0 && s.holdForSummary(ctx, accountID, msg) {
+		return
+	}
 	for _, ch := range chans {
 		s.enqueueNotify(ch, msg)
 	}

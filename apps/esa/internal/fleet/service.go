@@ -38,6 +38,9 @@ type Message struct {
 	// host_key and new_key are never skipped.
 	Kind     string
 	ServerID int64
+	// Summary marks a summary message (the Monday digest, the daily
+	// warning summary). It is sent at once, never held for a summary.
+	Summary bool
 }
 
 // Deps are the service's collaborators.

@@ -23,6 +23,7 @@ func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, 
 	go every(ctx, log, "rollup", time.Hour, 2*time.Minute, fl.Rollup)
 	go every(ctx, log, "sessions", time.Hour, time.Minute, sessions.CleanupExpired)
 	go every(ctx, log, "digest", time.Hour, 3*time.Minute, fl.SendDigests)
+	go every(ctx, log, "warning summary", 5*time.Minute, 90*time.Second, fl.SendWarningSummaries)
 	go every(ctx, log, "certs", 12*time.Hour, 3*time.Minute, fl.CheckCerts)
 	go every(ctx, log, "audit", time.Hour, 4*time.Minute, fl.PruneAudit)
 }

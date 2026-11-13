@@ -100,6 +100,10 @@ Live data read from a server through esa-helper.
 | POST | `/incidents/{incidentId}/accept` | Session or token | Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes. |
 | POST | `/incidents/{incidentId}/snooze` | Session or token | Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed. |
 | POST | `/incidents/{incidentId}/acknowledge` | Session or token | Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server. |
+| GET | `/alerts/routing` | Session or token | How this space's warnings reach its channels |
+| PUT | `/alerts/routing` | Session or token | Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once. |
+| GET | `/deliveries` | Session or token | The 100 most recent notification sends of this space |
+| POST | `/deliveries/{deliveryId}/retry` | Session or token | Queue a send that gave up again. A send that may have arrived is not retried. |
 | GET | `/alerts` | Session or token | Open alerts, or recent alerts including resolved ones |
 | GET | `/alerts/rules` | Session or token | Alert rules of the account |
 | PUT | `/alerts/rules/{kind}` | Session or token | Change one alert rule |
