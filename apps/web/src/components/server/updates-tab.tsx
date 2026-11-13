@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import {
   useMutation,
   useQueryClient,
@@ -39,6 +39,16 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
   const [mode, setMode] = useState<'security' | 'all'>('security')
   const [reboot, setReboot] = useState(false)
   const [confirm, setConfirm] = useState<'update' | 'reboot' | null>(null)
+  const [picked, setPicked] = useState<string[] | null>(null)
+  const navigate = useNavigate()
+  const own = data.server.access === 'own'
+  const eligible = (upd?.packages ?? []).filter(
+    (p) =>
+      (mode === 'all' || p.security) && !(upd?.held.includes(p.name) ?? false),
+  )
+  const selected = (picked ?? eligible.map((p) => p.name)).filter((name) =>
+    eligible.some((p) => p.name === name),
+  )
 
   const check = useMutation({
     mutationFn: () =>
@@ -72,6 +82,22 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       await qc.invalidateQueries({ queryKey: ['runs'] })
     },
   })
+  const propose = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/plans', {
+          body: {
+            kind: 'update',
+            serverIds: [serverId],
+            updateMode: mode,
+            rebootIfRequired: reboot,
+            packages:
+              selected.length === eligible.length ? undefined : selected,
+          },
+        }),
+      ),
+    onSuccess: () => navigate({ to: '/app/plans' }),
+  })
 
   return (
     <div className="space-y-6">
@@ -91,7 +117,7 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
           </Button>
         )}
       </div>
-      <ErrorBanner error={check.error} />
+      <ErrorBanner error={check.error ?? propose.error} />
 
       {canAct && (
         <Panel title="Install">
@@ -99,7 +125,10 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             <Segmented
               aria-label="Which updates"
               value={mode}
-              onChange={setMode}
+              onChange={(next) => {
+                setMode(next)
+                setPicked(null)
+              }}
               options={[
                 {
                   value: 'security',
@@ -129,11 +158,21 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             <Button variant="outline" onClick={() => setConfirm('reboot')}>
               <PowerIcon /> Reboot now
             </Button>
+            {own && (
+              <Button
+                variant="outline"
+                disabled={selected.length === 0}
+                busy={propose.isPending}
+                onClick={() => propose.mutate()}
+              >
+                Propose plan
+              </Button>
+            )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            The upgrade runs as its own systemd job on the server, so it
-            finishes even if the connection drops. Config files you changed are
-            kept.
+            Install updates installs every package in this mode. Propose plan
+            sends only the checked packages, for a person to approve. A held
+            package is not included.
           </p>
         </Panel>
       )}
@@ -166,7 +205,8 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
           <Table className="min-w-[560px] font-mono text-xs">
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-4">Package</TableHead>
+                {own && <TableHead className="w-8 pl-4" />}
+                <TableHead className={own ? '' : 'pl-4'}>Package</TableHead>
                 <TableHead>Installed</TableHead>
                 <TableHead>Candidate</TableHead>
                 <TableHead className="pr-4">From</TableHead>
@@ -181,7 +221,28 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
                 )
                 .map((p) => (
                   <TableRow key={p.name}>
-                    <TableCell className="py-2 pl-4 text-ink">
+                    {own && (
+                      <TableCell className="py-2 pl-4">
+                        {eligible.some((e) => e.name === p.name) ? (
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(p.name)}
+                            aria-label={`Include ${p.name}`}
+                            onChange={(e) => {
+                              const on = e.target.checked
+                              setPicked(
+                                on
+                                  ? [...selected, p.name]
+                                  : selected.filter((n) => n !== p.name),
+                              )
+                            }}
+                          />
+                        ) : null}
+                      </TableCell>
+                    )}
+                    <TableCell
+                      className={own ? 'py-2 text-ink' : 'py-2 pl-4 text-ink'}
+                    >
                       <span className="inline-flex flex-wrap items-center gap-2">
                         {p.security && <Badge variant="warn">sec</Badge>}
                         {p.name}
