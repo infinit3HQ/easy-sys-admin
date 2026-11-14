@@ -188,7 +188,7 @@ type AccessBaseline struct {
 }
 
 // MaintenanceWindow suppresses ordinary notifications. Collection still runs.
-// host_key, new_key, and known-exploited notices are not suppressed.
+// host_key, new_key, known-exploited, and approved-access changes are not suppressed.
 type MaintenanceWindow struct {
 	ID        int64 `gorm:"primaryKey"`
 	AccountID int64 `gorm:"not null;index"`

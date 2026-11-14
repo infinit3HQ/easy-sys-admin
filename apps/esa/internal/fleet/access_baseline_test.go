@@ -93,3 +93,40 @@ func TestAccessBaselineUsesTheRecordedCheck(t *testing.T) {
 		t.Fatalf("incidents: %d", n)
 	}
 }
+
+func TestAccessChangeIsSentDuringMaintenance(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "access-send")
+	srv := addTestServer(t, s, a, nil, "mail")
+	facts := accessFacts(playgroundAccess(), s.now())
+	if err := s.db.Create(&store.ServerState{ServerID: srv.ID, Status: "ok", Reasons: store.JSON("[]"), AccessFacts: store.MustJSON(facts)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApproveAccessBaseline(ctx, a, srv.ID, "checked"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/access"}); err != nil {
+		t.Fatal(err)
+	}
+	note := &countNotifier{}
+	s.notifier = note
+	win := store.MaintenanceWindow{AccountID: a.AccountID, Reason: "work", StartsAt: s.now().Add(-time.Minute), EndsAt: s.now().Add(time.Hour), CreatedBy: a.UserID}
+	if err := s.db.Omit("Account").Create(&win).Error; err != nil {
+		t.Fatal(err)
+	}
+	cur := facts
+	cur.PasswordAuth = true
+	s.reportAccessDrift(ctx, srv, cur)
+	deadline := time.Now().Add(2 * time.Second)
+	for note.n.Load() < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if note.n.Load() != 1 {
+		t.Fatalf("access sends during maintenance: %d", note.n.Load())
+	}
+	s.reportAccessDrift(ctx, srv, cur)
+	if note.n.Load() != 1 {
+		t.Fatal("the same access change was sent again")
+	}
+}

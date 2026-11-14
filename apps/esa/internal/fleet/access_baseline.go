@@ -230,6 +230,20 @@ func (s *Service) reportAccessDrift(ctx context.Context, srv store.Server, cur A
 		return
 	}
 	for _, d := range compareAccess(srv.Name, approved, cur) {
-		s.openIncident(ctx, srv.AccountID, srv.ID, "access", d.Subject, d.Message, false)
+		if !s.openIncident(ctx, srv.AccountID, srv.ID, "access", d.Subject, d.Message, false) {
+			continue
+		}
+		sev := "warning"
+		if strings.HasPrefix(d.Subject, "ssh") {
+			sev = "critical"
+		}
+		url := ""
+		if s.publicURL != nil {
+			url = s.publicURL.JoinPath("/app/alerts").String()
+		}
+		s.notify(ctx, srv.AccountID, Message{
+			Title: srv.Name + ": " + d.Subject, Body: d.Message, Severity: sev, Kind: "access",
+			ServerID: srv.ID, URL: url,
+		})
 	}
 }

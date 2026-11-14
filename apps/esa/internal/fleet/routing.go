@@ -31,7 +31,7 @@ func alwaysImmediate(msg Message) bool {
 	if msg.Summary || msg.Severity == "critical" {
 		return true
 	}
-	return msg.Kind == string(AlertHostKey) || msg.Kind == string(AlertNewKey) || msg.Kind == "vuln" || msg.Kind == kindRunGate
+	return msg.Kind == string(AlertHostKey) || msg.Kind == string(AlertNewKey) || msg.Kind == "vuln" || msg.Kind == "access" || msg.Kind == kindRunGate
 }
 
 // holdForSummary stores a warning for the daily summary when the space
