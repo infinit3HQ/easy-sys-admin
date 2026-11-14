@@ -5,6 +5,7 @@ import { SettingsIcon } from 'lucide-react'
 import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
+import { noticeKind } from '#/lib/notice-kind'
 import {
   Empty,
   ErrorBanner,
@@ -72,7 +73,8 @@ function NeedsReview() {
                 {item.nextStep}
               </div>
               <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
-                {item.kind} · {item.serverName} · <Ago iso={item.lastSeen} />
+                {noticeKind(item.kind)} · {item.serverName} ·{' '}
+                <Ago iso={item.lastSeen} />
               </div>
             </div>
             {item.canReview && (

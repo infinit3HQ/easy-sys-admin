@@ -81,6 +81,9 @@ func TestAccessBaselineUsesTheRecordedCheck(t *testing.T) {
 	if strings.Contains(strings.ToLower(blob), "revok") {
 		t.Fatal(blob)
 	}
+	if strings.Contains(strings.ToLower(incidentNextStep("access")), "revok") {
+		t.Fatal(incidentNextStep("access"))
+	}
 	if !strings.Contains(blob, "password login changed") || !strings.Contains(blob, "login extra") || !strings.Contains(blob, "sudo rule was not in the approved list") {
 		t.Fatalf("drift: %s", blob)
 	}

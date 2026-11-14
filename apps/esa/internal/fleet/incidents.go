@@ -185,6 +185,8 @@ func incidentNextStep(kind string) string {
 		return "Read the package list, then start an update only after a person approves the plan."
 	case "vuln":
 		return "Read the vulnerability scan. An exception is not a fix, and a known-exploited match stays listed."
+	case "access":
+		return "Compare the accounts, sudo rules, and SSH settings with the approval. This does not mean a login was removed."
 	default:
 		return "Read the notice. Mark it reviewed when you have seen it."
 	}

@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { z } from 'zod'
 import { api, call, orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
+import { noticeKind } from '#/lib/notice-kind'
 import {
   ErrorBanner,
   Field,
@@ -74,7 +75,7 @@ function NoticePage() {
           <Panel title="Notice">
             <dl className="space-y-2">
               <KeyValue k="State" v={stateText[n.state] ?? n.state} wrap />
-              <KeyValue k="Kind" v={n.kind} />
+              <KeyValue k="Kind" v={noticeKind(n.kind)} />
               {n.subject && <KeyValue k="Subject" v={n.subject} wrap />}
               <KeyValue k="First seen" v={<When iso={n.firstSeen} />} />
               <KeyValue k="Last seen" v={<When iso={n.lastSeen} />} />
