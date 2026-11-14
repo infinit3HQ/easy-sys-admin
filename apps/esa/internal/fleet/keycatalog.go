@@ -36,7 +36,7 @@ var fingerprintRe = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{20,80}={0,2}$`)
 
 // syncKeyOccurrences replaces the stored keys for one server. Call it only
 // after a helper new enough to read the standard authorized_keys files.
-func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys []keyUse, at time.Time) {
+func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys []keyUse, at time.Time, complete bool) {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		s.log.Error("sync keys", "err", tx.Error)
@@ -62,7 +62,7 @@ func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys
 		s.log.Error("sync keys", "err", err)
 		return
 	}
-	s.reportKeyDrift(ctx, srv, keys)
+	s.reportKeyDrift(ctx, srv, keys, complete)
 }
 
 type baselineKey struct {
@@ -72,7 +72,7 @@ type baselineKey struct {
 	HasCommand  bool   `json:"hasCommand"`
 }
 
-func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []keyUse) {
+func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []keyUse, complete bool) {
 	var base store.KeyBaseline
 	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Take(&base).Error; err != nil {
 		return
@@ -106,6 +106,44 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		}
 		s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", "removed "+item.Fingerprint+" on "+item.User, srv.Name+": approved key "+item.Fingerprint+" on "+item.User+" was not in the files checked this time", false)
 	}
+	if !complete {
+		return
+	}
+	open := map[string]bool{}
+	for _, k := range keys {
+		id := k.User + "\n" + k.Fingerprint
+		if _, ok := have[id]; !ok && excepted[id] {
+			continue
+		}
+		if _, ok := have[id]; !ok {
+			open[k.Fingerprint+" on "+k.User] = true
+			continue
+		}
+		old := have[id]
+		if old.From != k.From || old.HasCommand != k.HasCommand {
+			open[k.Fingerprint+" on "+k.User+" changed"] = true
+		}
+	}
+	for id, item := range have {
+		if !seen[id] {
+			open["removed "+item.Fingerprint+" on "+item.User] = true
+		}
+	}
+	var rows []store.SecurityIncident
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, "new_key", "resolved").Find(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		if open[row.Subject] || !keyDriftSubject(row.Subject) {
+			continue
+		}
+		s.resolveIncident(ctx, srv.AccountID, srv.ID, "new_key", row.Subject)
+		s.notifyResolved(ctx, srv.AccountID, srv.ID, "new_key", row.Subject, "a fresh check no longer saw it")
+	}
+}
+
+func keyDriftSubject(subject string) bool {
+	return strings.HasPrefix(subject, "removed ") || strings.HasSuffix(subject, " changed") || strings.Contains(subject, " on ")
 }
 
 // BaselineVersionView is one approval of a server's keys.

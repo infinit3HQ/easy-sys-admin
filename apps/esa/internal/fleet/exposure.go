@@ -241,7 +241,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 		return
 	}
 	if accessRev >= proto.ReportRevision {
-		s.syncKeyOccurrences(ctx, srv, keys, now)
+		s.syncKeyOccurrences(ctx, srv, keys, now, len(keyEvidenceGaps(ex.Gaps)) == 0)
 	}
 	if ex.Ready {
 		ex = foldListen(prev, ex)
