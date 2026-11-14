@@ -129,4 +129,26 @@ func TestAccessChangeIsSentDuringMaintenance(t *testing.T) {
 	if note.n.Load() != 1 {
 		t.Fatal("the same access change was sent again")
 	}
+	s.reportAccessDrift(ctx, srv, facts)
+	var open int64
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "access", "resolved").Count(&open).Error; err != nil {
+		t.Fatal(err)
+	}
+	if open != 0 {
+		t.Fatal("a matching check left the notice open")
+	}
+	cur.SudoIncomplete = true
+	s.reportAccessDrift(ctx, srv, cur)
+	s.reportAccessDrift(ctx, srv, cur)
+	cur.SudoIncomplete = false
+	s.reportAccessDrift(ctx, srv, cur)
+	partial := cur
+	partial.SudoIncomplete = true
+	s.reportAccessDrift(ctx, srv, partial)
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "access", "resolved").Count(&open).Error; err != nil {
+		t.Fatal(err)
+	}
+	if open != 1 {
+		t.Fatalf("a partial check changed the notice: %d open", open)
+	}
 }

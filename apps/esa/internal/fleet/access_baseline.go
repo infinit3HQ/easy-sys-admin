@@ -229,7 +229,10 @@ func (s *Service) reportAccessDrift(ctx context.Context, srv store.Server, cur A
 	if err := base.Facts.Decode(&approved); err != nil {
 		return
 	}
-	for _, d := range compareAccess(srv.Name, approved, cur) {
+	drifts := compareAccess(srv.Name, approved, cur)
+	seen := map[string]bool{}
+	for _, d := range drifts {
+		seen[d.Subject] = true
 		if !s.openIncident(ctx, srv.AccountID, srv.ID, "access", d.Subject, d.Message, false) {
 			continue
 		}
@@ -245,5 +248,16 @@ func (s *Service) reportAccessDrift(ctx context.Context, srv store.Server, cur A
 			Title: srv.Name + ": " + d.Subject, Body: d.Message, Severity: sev, Kind: "access",
 			ServerID: srv.ID, URL: url,
 		})
+	}
+	var rows []store.SecurityIncident
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, "access", "resolved").Find(&rows).Error; err != nil {
+		s.log.Error("list access notices", "err", err)
+		return
+	}
+	for _, row := range rows {
+		if seen[row.Subject] {
+			continue
+		}
+		s.resolveIncident(ctx, srv.AccountID, srv.ID, "access", row.Subject)
 	}
 }
