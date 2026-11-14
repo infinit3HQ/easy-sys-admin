@@ -305,6 +305,17 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 	}
 }
 
+func (s *Service) notifyResolved(ctx context.Context, accountID, serverID int64, kind, title, body string) {
+	url := ""
+	if s.publicURL != nil {
+		url = s.publicURL.JoinPath("/app/alerts").String()
+	}
+	s.notify(ctx, accountID, Message{
+		Title: "Resolved: " + title, Body: body, Severity: "info", Resolved: true,
+		Kind: kind, ServerID: serverID, URL: url,
+	})
+}
+
 func (s *Service) silenced(ctx context.Context, accountID, serverID int64, kind string) bool {
 	if kind == string(AlertHostKey) || kind == string(AlertNewKey) || kind == "vuln" || kind == "access" {
 		return false

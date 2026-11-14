@@ -490,5 +490,6 @@ func (s *Service) reportScanIncidents(ctx context.Context, srv store.Server, mat
 			continue
 		}
 		s.resolveIncident(ctx, srv.AccountID, srv.ID, "vuln", row.Subject)
+		s.notifyResolved(ctx, srv.AccountID, srv.ID, "vuln", row.Subject, "a fresh check no longer saw it")
 	}
 }

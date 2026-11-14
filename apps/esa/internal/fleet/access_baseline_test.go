@@ -133,6 +133,13 @@ func TestAccessChangeIsSentDuringMaintenance(t *testing.T) {
 		t.Fatal("the same access change was sent again")
 	}
 	s.reportAccessDrift(ctx, srv, facts)
+	deadline = time.Now().Add(2 * time.Second)
+	for note.n.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if note.n.Load() != 2 {
+		t.Fatalf("resolved access sends: %d", note.n.Load())
+	}
 	var open int64
 	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, "access", "resolved").Count(&open).Error; err != nil {
 		t.Fatal(err)

@@ -259,5 +259,6 @@ func (s *Service) reportAccessDrift(ctx context.Context, srv store.Server, cur A
 			continue
 		}
 		s.resolveIncident(ctx, srv.AccountID, srv.ID, "access", row.Subject)
+		s.notifyResolved(ctx, srv.AccountID, srv.ID, "access", row.Subject, "a fresh check no longer saw it")
 	}
 }
