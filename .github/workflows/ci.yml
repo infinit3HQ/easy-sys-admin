@@ -3,17 +3,50 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, nightly]
+
+  workflow_dispatch:
+  schedule:
+    # 03:47 Asia/Colombo. GitHub schedules run from the default branch.
+    - cron: '17 22 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'schedule' && 'refs/heads/nightly' || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  source:
+    name: Select exact source commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      channel: ${{ steps.source.outputs.channel }}
+      version: ${{ steps.source.outputs.version }}
+      registry: ${{ steps.source.outputs.registry }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+          persist-credentials: false
+      - id: source
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          set -eu
+          sha=$(git rev-parse HEAD)
+          channel=''
+          if [ "$EVENT" = schedule ] || [ "$REF" = refs/heads/nightly ]; then channel=nightly; fi
+          if [ "$EVENT" != schedule ] && [ "$REF" = refs/heads/main ]; then channel=production; fi
+          if [ "$EVENT" = pull_request ]; then channel=''; fi
+          registry="ghcr.io/$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')"
+          printf 'sha=%s\nchannel=%s\nversion=%s-%s\nregistry=%s\n' "$sha" "$channel" "${channel:-pr}" "${sha%${sha#????????????}}" "$registry" >> "$GITHUB_OUTPUT"
+
   go:
+    needs: source
     name: Go (control plane, helper, CLI)
     runs-on: ubuntu-latest
     services:
@@ -31,6 +64,10 @@ jobs:
         working-directory: apps/esa
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: apps/esa/go.mod
@@ -39,6 +76,8 @@ jobs:
         run: go generate ./... && git diff --exit-code -- internal/api internal/apiclient
       - name: gofmt
         run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: Validate workflow definitions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -shellcheck= ../../.github/workflows/ci.yml ../../.github/workflows/deploy.yml
       - run: go vet ./...
       - name: Test
         env:
@@ -47,13 +86,34 @@ jobs:
       - name: Build control plane and helpers
         run: |
           go build -o bin/esa ./cmd/esa
-          for arch in amd64 arm64; do GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-helper-linux-$arch ./cmd/esa-helper; done
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-helper-linux-$arch ./cmd/esa-helper
+            if [ -d cmd/esa-agent ]; then GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-agent-linux-$arch ./cmd/esa-agent; fi
+          done
+
+      - name: Rolling control plane matrix
+        env:
+          ESA_TEST_DATABASE_URL: postgres://esa:esa@localhost:5432/esa_test?sslmode=disable
+        run: |
+          if [ ! -f internal/fleet/rolling_binary_test.go ]; then
+            echo 'This source revision predates the rolling binary matrix; the full Go suite still runs above.'
+            exit 0
+          fi
+          rolling_dir="$RUNNER_TEMP/esa-rolling-baseline"
+          mkdir -p "$rolling_dir"
+          git -C ../.. archive b74e5f241820ea437d548922ddba06e5db080b18 apps/esa | tar -x -C "$rolling_dir"
+          (cd "$rolling_dir/apps/esa" && go build -o "$rolling_dir/esa" ./cmd/esa)
+          go test -race -count=1 ./internal/fleet -run TestRollingUpgradeBinaryMatrix -args -rolling-old-binary="$rolling_dir/esa" -rolling-new-binary="$PWD/bin/esa"
 
   web:
+    needs: source
     name: Web and API contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .nvmrc
@@ -62,15 +122,21 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Generated types are up to date
         run: pnpm --filter @esa/api generate && git diff --exit-code -- packages/api/src/schema.gen.ts
+      - name: Validate Compose isolation and image configuration
+        run: node scripts/check-deploy-config.mjs
       - name: Docs API reference is up to date
         run: pnpm --filter @esa/web generate:docs && git diff --exit-code -- apps/web/src/content/docs/api.md
       - run: pnpm turbo run lint typecheck build --filter=!@esa/esa
 
   licenses:
+    needs: source
     name: Dependency licenses
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: apps/esa/go.mod
@@ -83,3 +149,130 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Third-party notices
         run: node scripts/third-party-notices.mjs && git diff --exit-code -- THIRD_PARTY_NOTICES.md
+
+  publish:
+    name: Publish verified multi-platform images
+    needs: [source, go, web, licenses]
+    if: github.event_name != 'pull_request' && needs.source.outputs.channel != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      control-plane: ${{ steps.control.outputs.digest }}
+      web: ${{ steps.web.outputs.digest }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tags
+        env:
+          REGISTRY: ${{ needs.source.outputs.registry }}
+          CHANNEL: ${{ needs.source.outputs.channel }}
+          SHA: ${{ needs.source.outputs.sha }}
+        run: |
+          set -eu
+          for component in control-plane web; do
+            {
+              printf '%s<<TAGS\n' "$component"
+              if [ "$CHANNEL" = production ]; then
+                printf '%s-%s:sha-%s\n' "$REGISTRY" "$component" "$SHA"
+              else
+                printf '%s-%s:nightly-sha-%s\n' "$REGISTRY" "$component" "$SHA"
+              fi
+              printf 'TAGS\n'
+            } >> "$GITHUB_OUTPUT"
+          done
+      - name: Control plane and helper images
+        id: control
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: apps/esa/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.control-plane }}
+          build-args: |
+            VERSION=${{ needs.source.outputs.version }}
+            COMMIT=${{ needs.source.outputs.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.source.outputs.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=control-plane
+          cache-to: type=gha,mode=max,scope=control-plane
+      - name: Web image
+        id: web
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          build-args: |
+            VERSION=${{ needs.source.outputs.version }}
+            COMMIT=${{ needs.source.outputs.sha }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.web }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.source.outputs.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+      - name: Promote channel tags after both builds succeed
+        env:
+          REGISTRY: ${{ needs.source.outputs.registry }}
+          CHANNEL: ${{ needs.source.outputs.channel }}
+          SHA: ${{ needs.source.outputs.sha }}
+          CONTROL_DIGEST: ${{ steps.control.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          set -eu
+          for component in control-plane web; do
+            digest="$CONTROL_DIGEST"
+            if [ "$component" = web ]; then digest="$WEB_DIGEST"; fi
+            if [ "$CHANNEL" = production ]; then
+              docker buildx imagetools create -t "$REGISTRY-$component:stable" -t "$REGISTRY-$component:latest" "$REGISTRY-$component@$digest"
+            else
+              docker buildx imagetools create -t "$REGISTRY-$component:nightly" -t "$REGISTRY-$component:nightly-$(date -u +%Y%m%d)-${SHA%${SHA#????????????}}" "$REGISTRY-$component@$digest"
+            fi
+          done
+      - name: Publish image references
+        env:
+          REGISTRY: ${{ needs.source.outputs.registry }}
+          CONTROL_DIGEST: ${{ steps.control.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web.outputs.digest }}
+        run: |
+          printf 'Control plane: `%s-control-plane@%s`\n\nWeb: `%s-web@%s`\n' "$REGISTRY" "$CONTROL_DIGEST" "$REGISTRY" "$WEB_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy verified images
+    needs: [source, publish]
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.repository == 'infinit3HQ/easy-sys-admin' &&
+      ((needs.source.outputs.channel == 'production' && vars.DEPLOY_ENABLED == 'true') ||
+       (needs.source.outputs.channel == 'nightly' && vars.NIGHTLY_DEPLOY_ENABLED == 'true'))
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: ${{ needs.source.outputs.channel }}
+      sha: ${{ needs.source.outputs.sha }}
+      version: ${{ needs.source.outputs.version }}
+      control-plane-image: ${{ needs.source.outputs.registry }}-control-plane@${{ needs.publish.outputs.control-plane }}
+      web-image: ${{ needs.source.outputs.registry }}-web@${{ needs.publish.outputs.web }}
+    secrets: inherit
