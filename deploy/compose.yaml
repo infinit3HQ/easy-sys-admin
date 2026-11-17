@@ -65,6 +65,9 @@ services:
       ESA_MAX_SERVERS_PER_ACCOUNT: ${ESA_MAX_SERVERS_PER_ACCOUNT:-}
       # true on the hosted beta. Unset or false leaves the self-host caps.
       ESA_BETA_LIMITS: ${ESA_BETA_LIMITS:-}
+      ESA_AUDIT_RETENTION: ${ESA_AUDIT_RETENTION:-}
+      ESA_AUDIT_HOLD_UNTIL: ${ESA_AUDIT_HOLD_UNTIL:-}
+      ESA_REPORT_RETENTION: ${ESA_REPORT_RETENTION:-}
       ESA_METRICS_RAW_RETENTION: ${ESA_METRICS_RAW_RETENTION:-}
       ESA_METRICS_HOURLY_RETENTION: ${ESA_METRICS_HOURLY_RETENTION:-}
     # The control plane SSHs out to managed servers, including this host by

@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import {
   useMutation,
+  useQuery,
   useQueryClient,
   useSuspenseQuery,
 } from '@tanstack/react-query'
@@ -54,6 +55,8 @@ const eventText: Record<string, string> = {
   snoozed: 'Snoozed',
   accepted: 'Risk accepted',
   returned: 'Back on the review list',
+  assigned: 'Assigned',
+  unassigned: 'Assignment cleared',
 }
 
 function NoticePage() {
@@ -76,6 +79,7 @@ function NoticePage() {
             <dl className="space-y-2">
               <KeyValue k="State" v={stateText[n.state] ?? n.state} wrap />
               <KeyValue k="Kind" v={noticeKind(n.kind)} />
+              <KeyValue k="Assigned to" v={n.assigneeName || 'Unassigned'} />
               {n.subject && <KeyValue k="Subject" v={n.subject} wrap />}
               <KeyValue k="First seen" v={<When iso={n.firstSeen} />} />
               <KeyValue k="Last seen" v={<When iso={n.lastSeen} />} />
@@ -140,8 +144,11 @@ function NoticePage() {
           >
             Open {n.serverName}
           </Link>
+          {n.canReview && (
+            <Assignment id={n.id} userId={n.assigneeId ?? null} />
+          )}
           {n.canReview && n.state !== 'resolved' ? (
-            <Review id={n.id} kind={n.kind} />
+            <Review id={n.id} canHold={n.canHold} />
           ) : !n.canReview ? (
             <Notice>
               The space that owns this server reviews this notice.
@@ -153,7 +160,7 @@ function NoticePage() {
   )
 }
 
-function Review({ id, kind }: { id: number; kind: string }) {
+function Review({ id, canHold }: { id: number; canHold: boolean }) {
   const qc = useQueryClient()
   const [note, setNote] = useState('')
   const [reason, setReason] = useState('')
@@ -212,7 +219,7 @@ function Review({ id, kind }: { id: number; kind: string }) {
           </p>
         </form>
       </Panel>
-      {kind !== 'host_key' && (
+      {canHold && (
         <Panel title="Accept the risk">
           <form
             className="grid gap-3"
@@ -256,5 +263,45 @@ function Review({ id, kind }: { id: number; kind: string }) {
       )}
       <ErrorBanner error={error} />
     </div>
+  )
+}
+
+function Assignment({ id, userId }: { id: number; userId: number | null }) {
+  const qc = useQueryClient()
+  const members = useQuery(q.members())
+  const assign = useMutation({
+    mutationFn: (value: string) =>
+      call(
+        api().PUT('/incidents/{incidentId}/assignee', {
+          params: { path: { incidentId: id } },
+          body: { userId: value ? Number(value) : null },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
+  })
+  return (
+    <Panel title="Responsibility">
+      <Field label="Assigned to">
+        <select
+          aria-label="Assigned to"
+          className="h-9 w-full rounded-md border bg-bg-2 px-2 text-sm"
+          value={userId ?? ''}
+          disabled={assign.isPending || !members.data}
+          onChange={(e) => assign.mutate(e.target.value)}
+        >
+          <option value="">Unassigned</option>
+          {(members.data?.items ?? []).map((m) => (
+            <option key={m.userId} value={m.userId}>
+              {m.name || 'Member'}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Assignment records who will follow up. It grants no extra access and
+        does not resolve the notice.
+      </p>
+      <ErrorBanner error={assign.error ?? members.error} />
+    </Panel>
   )
 }

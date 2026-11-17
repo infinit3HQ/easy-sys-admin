@@ -66,7 +66,7 @@ func logRequests(log *slog.Logger) middleware {
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
 			// Health checks and metric scrapes would flood the log; only failures are kept.
-			if (r.URL.Path == "/healthz" || r.URL.Path == "/metrics") && rec.status == http.StatusOK {
+			if (r.URL.Path == "/healthz" || r.URL.Path == "/metrics" || r.URL.Path == "/api/v1/agent/poll") && rec.status == http.StatusOK {
 				return
 			}
 			log.Info("http request",
@@ -91,6 +91,9 @@ var scanImportPath = regexp.MustCompile(`^/api/v1/servers/[0-9]+/scan$`)
 
 // bodyLimit is the cap for one request path.
 func bodyLimit(p string) int64 {
+	if p == "/api/v1/agent/result" {
+		return 8 << 20
+	}
 	if scanImportPath.MatchString(p) {
 		return maxScanBytes
 	}

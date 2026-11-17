@@ -49,6 +49,7 @@ type Group struct {
 	// PlanRequired makes an interactive update or cleanup wait for an
 	// approved plan. A schedule still runs.
 	PlanRequired bool `gorm:"not null;default:false"`
+	TwoApprovers bool `gorm:"not null;default:false;check:groups_two_approvers_plan_required,NOT two_approvers OR plan_required"`
 
 	// Last schedule slot each job claimed, so a slot runs once.
 	CleanSlotAt  *time.Time
@@ -62,12 +63,13 @@ type Group struct {
 
 // Server is one managed machine.
 type Server struct {
-	ID        int64  `gorm:"primaryKey"`
-	AccountID int64  `gorm:"not null;index;uniqueIndex:servers_account_name_key,priority:1"`
-	GroupID   *int64 `gorm:"index"`
-	Name      string `gorm:"not null;size:100;uniqueIndex:servers_account_name_key,priority:2"`
-	Host      string `gorm:"not null"`
-	Port      int    `gorm:"not null;default:22"`
+	ID         int64  `gorm:"primaryKey"`
+	AccountID  int64  `gorm:"not null;index;uniqueIndex:servers_account_name_key,priority:1"`
+	GroupID    *int64 `gorm:"index"`
+	Name       string `gorm:"not null;size:100;uniqueIndex:servers_account_name_key,priority:2"`
+	Host       string `gorm:"not null"`
+	Connection string `gorm:"not null;default:'ssh';check:servers_connection_check,connection IN ('ssh','outbound')"`
+	Port       int    `gorm:"not null;default:22"`
 	// Username is the SSH user for normal operation, "esa" once installed.
 	Username string `gorm:"not null;default:'esa'"`
 
@@ -298,3 +300,21 @@ type MetricHourly struct {
 
 // TableName keeps the plural readable.
 func (MetricHourly) TableName() string { return "metric_hourly" }
+
+// ProbeObservation is an operator-run TCP probe's latest attempt and last
+// complete result. Unknown attempts never erase complete evidence.
+type ProbeObservation struct {
+	ID             int64     `gorm:"primaryKey"`
+	AccountID      int64     `gorm:"not null;uniqueIndex:probe_observations_key,priority:1"`
+	ServerID       int64     `gorm:"not null;uniqueIndex:probe_observations_key,priority:2"`
+	Source         string    `gorm:"not null;size:40;uniqueIndex:probe_observations_key,priority:3"`
+	Port           int       `gorm:"not null;uniqueIndex:probe_observations_key,priority:4"`
+	Host           string    `gorm:"not null"`
+	State          string    `gorm:"not null"`
+	Reason         string    `gorm:"not null"`
+	AttemptedAt    time.Time `gorm:"not null"`
+	LastKnownState string
+	LastKnownAt    *time.Time
+	Account        Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server         Server  `gorm:"constraint:OnDelete:CASCADE"`
+}

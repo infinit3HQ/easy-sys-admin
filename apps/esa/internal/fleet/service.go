@@ -77,7 +77,8 @@ type Deps struct {
 	Scanner string
 	// AuditRetention is how long audit rows are kept. Zero keeps them until
 	// the account is deleted. A space admin cannot set this.
-	AuditRetention time.Duration
+	AuditRetention  time.Duration
+	ReportRetention time.Duration
 	// AuditHoldUntil stops pruning until this time. Zero means no hold.
 	// A space admin cannot set this.
 	AuditHoldUntil time.Time
@@ -135,9 +136,10 @@ type Service struct {
 	advisoryFeed   string
 	scanner        string
 	// scanDBAt is when the scanner's database was last updated.
-	scanDBAt       time.Time
-	auditRetention time.Duration
-	auditHoldUntil time.Time
+	scanDBAt        time.Time
+	auditRetention  time.Duration
+	reportRetention time.Duration
+	auditHoldUntil  time.Time
 }
 
 // New returns a Service.
@@ -160,6 +162,7 @@ func New(baseCtx context.Context, d Deps) *Service {
 		advisoryFeed:    d.AdvisoryFeed,
 		scanner:         d.Scanner,
 		auditRetention:  d.AuditRetention,
+		reportRetention: d.ReportRetention,
 		auditHoldUntil:  d.AuditHoldUntil,
 		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),

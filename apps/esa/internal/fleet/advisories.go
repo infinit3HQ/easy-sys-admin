@@ -70,6 +70,7 @@ func matchAdvisories(inv proto.PackageInventory, path string) AdvisoryReport {
 	rep := matchFeed(inv, path)
 	// A failed or partial inventory stays visible whatever the feed says,
 	// so zero matches never reads as a clean result.
+
 	if len(inv.Gaps) > 0 {
 		rep.Coverage = "Package inventory is incomplete (" + strings.Join(inv.Gaps, ", ") + "). Matches below are not a full result. " + rep.Coverage
 	}
@@ -81,6 +82,10 @@ func matchFeed(inv proto.PackageInventory, path string) AdvisoryReport {
 		Distro: inv.Distro, Release: inv.Release, Packages: len(inv.Packages),
 		Feed: "not imported", Matches: []AdvisoryMatch{},
 		Coverage: "No advisory feed is imported. A missing list is not a clean result.",
+	}
+	if inv.Distro == "rocky" {
+		rep.Coverage = "The local advisory feed compares Debian versions only. Use a Grype RPM scan for this server. A missing match is not a clean result."
+		return rep
 	}
 	if path == "" {
 		return rep

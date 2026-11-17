@@ -36,7 +36,7 @@ func TestHelperGaps(t *testing.T) {
 
 func TestServerViewListsMissingHelperActions(t *testing.T) {
 	v := toView(store.Server{Name: "old", ProtectedContainers: store.JSON("[]")}, store.ServerState{}, false)
-	if !slices.Equal(v.HelperMissing, []string{"recovery", "inventory", proto.FeatureUpgradeAllow}) {
+	if !slices.Equal(v.HelperMissing, []string{"recovery", "inventory", proto.FeatureUpgradeAllow, proto.FeatureUpgradeIdempotent, proto.FeatureRPMUpdates}) {
 		t.Fatalf("missing: %v", v.HelperMissing)
 	}
 	now := time.Now()

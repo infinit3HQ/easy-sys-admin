@@ -34,6 +34,7 @@ type UpdatePolicy struct {
 	// after MaxFailures servers fail (1 to 1000). 0 on input means 1.
 	BatchSize    int
 	MaxFailures  int
+	TwoApprovers bool
 	PlanRequired bool
 }
 
@@ -80,7 +81,7 @@ func toGroupView(g store.Group) GroupView {
 			Enabled: g.UpdatesEnabled, Mode: proto.UpdateMode(g.UpdateMode), Days: splitDays(g.UpdateDays),
 			Time: g.UpdateTime, Hold: []string{}, RebootIfRequired: g.RebootIfRequired,
 			BatchSize: max(g.UpdateBatchSize, 1), MaxFailures: max(g.UpdateMaxFailures, 1),
-			PlanRequired: g.PlanRequired,
+			PlanRequired: g.PlanRequired, TwoApprovers: g.TwoApprovers,
 		},
 		LastRuns: []RunView{}, Checks: []HealthCheck{},
 	}
@@ -162,6 +163,19 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	if in.Updates.PlanRequired && (in.Clean.Enabled || in.Updates.Enabled) {
 		return invalid("planRequired", "a group that requires a plan cannot clean or update on a schedule; turn the schedules off first")
 	}
+	if in.Updates.TwoApprovers && !in.Updates.PlanRequired {
+		return invalid("twoApprovers", "require an approved plan first")
+	}
+	if in.Updates.TwoApprovers && !g.TwoApprovers {
+		var admins int64
+		if err := s.db.Model(&store.Membership{}).Where("account_id = ? AND role IN ?", g.AccountID, []string{"owner", "admin"}).Count(&admins).Error; err != nil {
+			return err
+		}
+		if admins < 2 {
+			return invalid("twoApprovers", "add a second admin before requiring two approvals")
+		}
+	}
+	g.TwoApprovers = in.Updates.TwoApprovers
 	g.PlanRequired = in.Updates.PlanRequired
 	g.HealthChecks = store.MustJSON(checks)
 
@@ -293,20 +307,28 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
 		return GroupView{}, err
 	}
-	if g.PlanRequired && !in.Updates.PlanRequired && !a.isPerson() {
+	if ((g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)) && !a.isPerson() {
 		return GroupView{}, errPersonOnly("turn off the plan requirement")
 	}
 	wasRequired := g.PlanRequired
 	if err := s.applyGroupInput(&g, in); err != nil {
 		return GroupView{}, err
 	}
-	if err := s.db.WithContext(ctx).Omit(clause.Associations).Save(&g).Error; err != nil {
-		return GroupView{}, mapStore(err)
+	update := s.scoped(ctx, a).Model(&store.Group{}).Where("id = ?", g.ID)
+	if !a.isPerson() {
+		update = update.Where("(NOT plan_required OR ?) AND (NOT two_approvers OR ?)", g.PlanRequired, g.TwoApprovers)
+	}
+	result := update.Select("*").Omit(clause.Associations).Updates(&g)
+	if result.Error != nil {
+		return GroupView{}, mapStore(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return GroupView{}, errPersonOnly("weaken an approval requirement that changed concurrently")
 	}
 	s.audit(ctx, nil, a, "group.update", g.Name, map[string]any{
 		"clean_enabled": g.CleanEnabled, "updates_enabled": g.UpdatesEnabled, "update_mode": g.UpdateMode,
 		"batch_size": g.UpdateBatchSize, "max_failures": g.UpdateMaxFailures,
-		"plan_required": g.PlanRequired, "plan_required_before": wasRequired,
+		"two_approvers": g.TwoApprovers, "plan_required": g.PlanRequired, "plan_required_before": wasRequired,
 		"hold": in.Updates.Hold, "health_checks": checkNames(in.Checks),
 	})
 	return s.GetGroup(ctx, a, id)
@@ -324,9 +346,24 @@ func (s *Service) DeleteGroup(ctx context.Context, a Actor, id int64) error {
 	if g.PlanRequired && !a.isPerson() {
 		return errPersonOnly("delete a group that requires a plan")
 	}
-	if err := s.db.WithContext(ctx).Where("id = ? AND account_id = ?", id, a.AccountID).Delete(&store.Group{}).Error; err != nil {
-		return err
-	}
-	s.audit(ctx, nil, a, "group.delete", g.Name, nil)
-	return nil
+	return s.store.InTx(ctx, func(q *store.Queries) error {
+		if a.isPerson() {
+			if err := q.Raw().Exec("SELECT set_config('esa.person_write','true',true)").Error; err != nil {
+				return err
+			}
+		}
+		del := q.Raw().Where("id = ? AND account_id = ?", id, a.AccountID)
+		if !a.isPerson() {
+			del = del.Where("NOT plan_required")
+		}
+		result := del.Delete(&store.Group{})
+		if result.Error != nil {
+			return mapStore(result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return errPersonOnly("delete a group that requires a plan")
+		}
+		s.audit(ctx, q, a, "group.delete", g.Name, nil)
+		return nil
+	})
 }

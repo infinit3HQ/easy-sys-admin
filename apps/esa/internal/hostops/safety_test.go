@@ -198,7 +198,7 @@ func TestVSCodeKeepsNewestAndInUseCopies(t *testing.T) {
 func TestProtectedUnitsCannotBeStopped(t *testing.T) {
 	run := &recordingRunner{}
 	h := &Host{Run: run}
-	for _, unit := range []string{"ssh.service", "sshd.service", "docker.service", "containerd.service"} {
+	for _, unit := range []string{"esa-agent.service", "ssh.service", "sshd.service", "docker.service", "containerd.service"} {
 		err := h.ServiceAction(context.Background(), unit, "stop")
 		if _, ok := err.(*RefusedError); !ok {
 			t.Errorf("stop %s: want RefusedError, got %v", unit, err)

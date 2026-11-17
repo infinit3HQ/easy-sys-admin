@@ -1,6 +1,6 @@
 # Easy Sys Admin Privacy Policy
 
-_Last updated: November 11, 2026_
+_Last updated: November 18, 2026_
 
 This policy explains what personal data the hosted Easy Sys Admin service at easysysadmin.app (the "Service") collects, why, and what choices you have. The Service is run by **Niraj Dilshan, doing business as infinit3HQ**, Colombo, Sri Lanka ("we", "us"), who is responsible for your account data. Contact: support@easysysadmin.app.
 
@@ -18,7 +18,7 @@ This policy covers only the hosted Service. If you self-host the open source ver
 
 Also stored: the pinned SSH host key and its fingerprint; whether a reboot is required; pending package lists; group schedules; alert rules and alert events; TLS certificate checks (hostname, port, expiry, issuer); and run history. A run stores its kind, status, summary, and, for an update, the package list and the last 40 lines of that upgrade's log. About once an hour the board stores an exposure summary for each server: public listen ports, SSH login settings, the firewall name, and counts of extra root accounts and unrestricted sudo rules. That summary does not include password hashes, SSH key material, the user list, or login addresses. Those are shown when you open the access report and are not saved. Journal and container logs shown in the board are read when you ask for them and are not saved as a log archive.
 
-**Credentials:** The SSH key material and connection details the Service needs to reach your servers through the `esa` user, plus API and MCP tokens. Each space has one ed25519 SSH key pair. The private key is encrypted at rest with AES-256-GCM under ESA_MASTER_KEY and stored in the database. ESA_MASTER_KEY is 32 random bytes and lives only in the control plane's environment, not in the database. Each ciphertext is bound to its row, so a copied value does not decrypt in another row. A sudo login is stored only if an owner chooses to keep it, and it is encrypted the same way. The API does not return a stored private key or password. API tokens and the session cookie are stored only as SHA-256 hashes.
+**Credentials:** The SSH key material and connection details the Service needs to reach your servers through the `esa` user, plus API and MCP tokens. Each space has one ed25519 SSH key pair. The private key is encrypted at rest with AES-256-GCM under ESA_MASTER_KEY and stored in the database. ESA_MASTER_KEY is 32 random bytes and lives only in the control plane's environment, not in the database. Each ciphertext is bound to its row, so a copied value does not decrypt in another row. A sudo login is stored only if an owner chooses to keep it, and it is encrypted the same way. The API does not return a stored private key or password. API tokens and the session cookie are stored only as SHA-256 hashes. An optional outbound-agent credential is also stored only as a hash, identifies one server, and expires after 365 days. It can be rotated or revoked by a recently signed-in space admin.
 
 **Usage and device data:** IP address, browser and device type, pages and features used, CLI, API, and MCP request metadata, and error reports.
 
@@ -42,14 +42,14 @@ We **don't sell** your personal data. We don't use Customer Data to train AI mod
 
 We share data only with infrastructure and service providers ("subprocessors") that help us operate the Service, under contracts that protect it.
 
-| Subprocessor | Purpose | Location |
-|---|---|---|
-| Oracle Cloud Infrastructure (Oracle America, Inc.) | Hosting the Service infrastructure and PostgreSQL database | Global / Cloud Data Centers |
-| Google (accounts.google.com) | User authentication and sign-in (when enabled) | Global |
-| OpenID Connect Provider | Sign-in authentication (only when an external OIDC provider is configured) | Host-specific |
-| SMTP Provider | Transactional emails (confirmation, password resets) | Host-specific |
-| Alert destinations you configure (ntfy, webhooks, Discord, Slack, or email) | Delivery of notification alerts you configure | The endpoint or address you set |
-| None for error tracking or analytics | The codebase does not call third-party error trackers or analytics trackers | N/A |
+| Subprocessor                                                                | Purpose                                                                     | Location                        |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------- |
+| Oracle Cloud Infrastructure (Oracle America, Inc.)                          | Hosting the Service infrastructure and PostgreSQL database                  | Global / Cloud Data Centers     |
+| Google (accounts.google.com)                                                | User authentication and sign-in (when enabled)                              | Global                          |
+| OpenID Connect Provider                                                     | Sign-in authentication (only when an external OIDC provider is configured)  | Host-specific                   |
+| SMTP Provider                                                               | Transactional emails (confirmation, password resets)                        | Host-specific                   |
+| Alert destinations you configure (ntfy, webhooks, Discord, Slack, or email) | Delivery of notification alerts you configure                               | The endpoint or address you set |
+| None for error tracking or analytics                                        | The codebase does not call third-party error trackers or analytics trackers | N/A                             |
 
 We may also disclose data if required by law, to protect life, safety, or legal rights, or as part of a corporate reorganization or transfer. We will notify you before any material structural change takes effect.
 
@@ -59,19 +59,22 @@ We are based in Sri Lanka, and our cloud infrastructure providers process data a
 
 ## 5. How Long We Keep It
 
-| Data | Kept for |
-|---|---|
-| Account data | While your account remains active |
-| Logs and command output | Journal and container logs are not permanently archived. The last 40 lines of an upgrade run's log are retained on that run until the server or space is deleted. |
-| Audit trail | Retained until the space is deleted. |
-| Credentials | Until you remove the server or delete your account |
-| Usage data and error reports | Kept in temporary operational memory; no indefinite tracking logs |
+| Data                                 | Kept for                                                                                                                                                                                                                                 |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Account data                         | While your account remains active                                                                                                                                                                                                        |
+| Logs and command output              | Journal and container logs are not permanently archived. The last 40 lines of an upgrade run's log are retained on that run until the server or space is deleted.                                                                        |
+| Audit trail                          | Kept until the space is deleted while pruning is off. Once hosted pruning is enabled, kept for 365 days. An active retention hold pauses deletion.                                                                                       |
+| Resolved notices and scanner history | Once hosted pruning is enabled, resolved notice history and superseded scanner reports are kept for 90 days. Unresolved notices and the latest scanner result are retained, even when stale. Pruning is off until explicitly configured. |
+| Run reports and backup receipts      | Kept until the server or space is deleted.                                                                                                                                                                                               |
+| Outbound task payloads               | Encrypted in PostgreSQL while an outbound operation waits. Cleared after consumption or cancellation; expired task receipts are deleted each minute. Commands expire after at most ten minutes.                                          |
+| Credentials                          | Until you remove the server or delete your account                                                                                                                                                                                       |
+| Usage data and error reports         | Kept in temporary operational memory; no indefinite tracking logs                                                                                                                                                                        |
 
 When you delete your account, we delete your data within 30 days and purge it from encrypted backups within a further 35 days. The exceptions are records strictly required by law or necessary for dispute resolution and security defense. Remember to remove the `esa` user, the `esa-helper` binary, and the authorized SSH key from your managed servers as well.
 
 ## 6. Security
 
-We protect data with HTTPS for the hosted site (an enroll command is refused over plain HTTP except on localhost), AES-256-GCM encryption for secrets at rest under ESA_MASTER_KEY, hashed session cookies and API tokens, an SSH login that is strictly restricted to running the helper binary, and an immutable audit trail of web, API, and MCP actions. No method is 100% impenetrable. If a security incident affects your personal data, we will notify you and relevant supervisory authorities without undue delay and within 72 hours where required by applicable regulations.
+We protect data with HTTPS for the hosted site (an enroll command is refused over plain HTTP except on localhost), AES-256-GCM encryption for secrets at rest under ESA_MASTER_KEY, hashed session cookies and API tokens, an SSH login that is strictly restricted to running the helper binary, and an audit trail of web, API, and MCP actions with deployment-controlled retention. No method is 100% impenetrable. If a security incident affects your personal data, we will notify you and relevant supervisory authorities without undue delay and within 72 hours where required by applicable regulations.
 
 ## 7. Your Rights
 

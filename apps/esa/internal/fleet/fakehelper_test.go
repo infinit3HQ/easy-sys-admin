@@ -35,6 +35,7 @@ type fakeFleet struct {
 	noUpgradeUntilStart bool
 	upgradeStarts       atomic.Int64
 	beforePrecheckReply func()
+	afterUpgradeStart   func()
 
 	keyMu     sync.Mutex
 	clientKey []byte // the account public key the servers accept
@@ -223,6 +224,9 @@ func (f *fakeFleet) session(ch ssh.Channel, reqs <-chan *ssh.Request) {
 			_, _ = ch.Write(envelope(proto.Precheck{OK: true}))
 		case strings.Contains(p.Command, " upgrade-start "):
 			f.upgradeStarts.Add(1)
+			if f.afterUpgradeStart != nil {
+				f.afterUpgradeStart()
+			}
 			_, _ = ch.Write(envelope(proto.UpgradeStarted{Unit: "esa-upgrade"}))
 		case strings.Contains(p.Command, " upgrade-status "):
 			if f.noUpgradeUntilStart && f.upgradeStarts.Load() == 0 {

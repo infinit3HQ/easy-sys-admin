@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/url"
@@ -252,5 +253,83 @@ func TestDatabasePartitionDuringUpgradePrecheck(t *testing.T) {
 	}
 	if saved.Status != "succeeded" || f.upgradeStarts.Load() != 1 {
 		t.Fatalf("recovery: status=%s error=%s starts=%d", saved.Status, saved.Error, f.upgradeStarts.Load())
+	}
+}
+
+func TestLostMaintenanceSessionCannotBeReplacedByReconnect(t *testing.T) {
+	s := newTestService(t)
+	proxy, dsn := newDatabaseProxy(t, os.Getenv("ESA_TEST_DATABASE_URL"))
+	ctx, cancel := maintenanceContext(context.Background())
+	defer cancel()
+	st, err := store.Open(ctx, dsn, s.log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	worker := &Service{db: st.DB()}
+	unlock, ok := worker.tryRunLock(ctx, 42)
+	if !ok {
+		t.Fatal("lock")
+	}
+	defer unlock()
+	proxy.partition(true)
+	proxy.partition(false)
+	if err := st.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := ownershipFrom(ctx).check(ctx); !errors.Is(err, errMaintenanceOwnershipLost) {
+		t.Fatalf("lost session was trusted: %v", err)
+	}
+	if !errors.Is(context.Cause(ctx), errMaintenanceOwnershipLost) {
+		t.Fatal("work was not cancelled")
+	}
+}
+
+func TestDatabasePartitionAfterInstallLeavesNextBatchQueued(t *testing.T) {
+	s := newTestService(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	a := signIn(t, s, "partition-after-install")
+	proxy, dsn := newDatabaseProxy(t, os.Getenv("ESA_TEST_DATABASE_URL"))
+	st, err := store.Open(ctx, dsn, s.log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	worker := New(ctx, Deps{Store: st, Box: s.box, Pool: remote.NewPool(), PublicURL: s.publicURL, Logger: s.log, AllowPrivateNetworks: true})
+	t.Cleanup(func() { cancel(); worker.Wait(); worker.pool.Close() })
+	f := newFakeFleet(t, 0)
+	f.noUpgradeUntilStart = true
+	f.afterUpgradeStart = func() { proxy.partition(true) }
+	acceptAccountKey(t, s, f, a.AccountID)
+	ids := insertFakeServers(t, s, a.AccountID, []fakeHost{f.healthy(), f.healthy()}, func(int) int { return 0 }, func(int) time.Time { return s.now() })
+	run := store.Run{AccountID: a.AccountID, Kind: string(RunUpdate), Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: s.now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		rs := store.RunServer{RunID: run.ID, ServerID: id, Status: "queued", Detail: store.JSON("{}")}
+		if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	worker.execute(worker.netCtx(ctx), run.ID)
+	var rows []store.RunServer
+	if err := s.db.Where("run_id = ?", run.ID).Order("id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Status != "running" || rows[1].Status != "queued" || f.upgradeStarts.Load() != 1 {
+		t.Fatalf("lost worker advanced: %+v starts=%d", rows, f.upgradeStarts.Load())
+	}
+	s.allowPrivate = true
+	t.Cleanup(s.pool.Close)
+	s.ResumeRuns(ctx)
+	s.Wait()
+	var finished store.Run
+	if err := s.db.First(&finished, run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if finished.Status != "succeeded" || f.upgradeStarts.Load() != 2 {
+		t.Fatalf("recovery: status=%s starts=%d", finished.Status, f.upgradeStarts.Load())
 	}
 }

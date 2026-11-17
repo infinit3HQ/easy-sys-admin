@@ -56,9 +56,12 @@ export async function proxyToControlPlane(request: Request): Promise<Response> {
   const target = new URL(incoming.pathname + incoming.search, apiOrigin())
 
   const length = request.headers.get('content-length')
-  const limit = SCAN_IMPORT_PATH.test(incoming.pathname)
-    ? MAX_SCAN_BYTES
-    : MAX_BODY_BYTES
+  const limit =
+    incoming.pathname === '/api/v1/agent/result'
+      ? 8 << 20
+      : SCAN_IMPORT_PATH.test(incoming.pathname)
+        ? MAX_SCAN_BYTES
+        : MAX_BODY_BYTES
   if (length !== null && !(Number(length) <= limit)) {
     return errorResponse(
       413,

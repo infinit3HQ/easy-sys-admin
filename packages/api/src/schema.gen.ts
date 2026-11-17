@@ -649,6 +649,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agent-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register an outbound server. Requires a recently signed-in space admin. The credential is shown once. */
+        post: operations["createAgentServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/agent-credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin. */
+        post: operations["rotateAgentCredential"];
+        /** Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server. */
+        delete: operations["revokeAgentCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered. */
+        post: operations["pollAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a claimed helper result. The first result wins. Expired and rotated commands are refused. */
+        post: operations["submitAgentResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/reachability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Read connection evidence submitted by probes an operator runs. */
+        get: operations["getReachability"];
+        put?: never;
+        /** Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server. */
+        post: operations["submitReachability"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/servers/{serverId}/sbom": {
         parameters: {
             query?: never;
@@ -658,7 +749,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. */
+        /** The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. */
         get: operations["getServerSbom"];
         put?: never;
         post?: never;
@@ -1361,6 +1452,25 @@ export interface paths {
         /** One security notice with its history */
         get: operations["getIncident"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/assignee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Assign a notice to a member of its owning space, or clear the assignment. */
+        put: operations["assignIncident"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2237,6 +2347,20 @@ export interface components {
             /** @description Empty clears the name. */
             label: string;
         };
+        AgentCredential: {
+            /** Format: int64 */
+            serverId: number;
+            /** @description Shown once. Save in a protected file, never in a URL or command argument. */
+            token: string;
+        };
+        AgentCommand: {
+            /** Format: int64 */
+            id: number;
+            action: string;
+            args: string[];
+            /** Format: date-time */
+            expiresAt: string;
+        };
         Server: {
             /** Format: int64 */
             id: number;
@@ -2252,6 +2376,11 @@ export interface components {
             /** Format: int64 */
             groupId?: number | null;
             groupName?: string | null;
+            /**
+             * @description Outbound servers do not accept incoming SSH connections from esa.
+             * @enum {string}
+             */
+            connection?: "ssh" | "outbound";
             /** @enum {string} */
             enrollment: "pending" | "ready";
             hostKeyFingerprint: string;
@@ -2765,6 +2894,8 @@ export interface components {
              * @default 1
              */
             maxFailures: number;
+            /** @description Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule. */
+            twoApprovers: boolean;
             /** @description An interactive update or cleanup must be an approved plan. A schedule still runs. */
             planRequired: boolean;
         };
@@ -3032,6 +3163,38 @@ export interface components {
             /** @description The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan. */
             readonly pinnedServerIds?: number[];
         };
+        ProbeInput: {
+            /** @description A stable label for the probe location. */
+            source: string;
+            /** @description Must equal the server's enrolled host. */
+            host: string;
+            port: number;
+            /** @enum {string} */
+            state: "reachable" | "not_reached" | "unknown";
+            /** @enum {string} */
+            reason: "none" | "refused" | "timeout" | "dns_failed" | "network_error";
+            /** Format: date-time */
+            observedAt: string;
+        };
+        ProbeObservation: {
+            source: string;
+            host: string;
+            port: number;
+            /**
+             * @description Only this probe's latest attempt. Not a result for the whole internet.
+             * @enum {string}
+             */
+            state: "reachable" | "not_reached" | "unknown";
+            reason: string;
+            /** Format: date-time */
+            attemptedAt: string;
+            /** @description True after 15 minutes without a current attempt. Stale evidence is unknown. */
+            stale: boolean;
+            /** @description The last reachable or not_reached result. An unknown attempt does not erase it. */
+            lastKnownState?: string;
+            /** Format: date-time */
+            lastKnownAt?: string | null;
+        };
         FixPlan: {
             /** Format: int64 */
             id: number;
@@ -3040,6 +3203,8 @@ export interface components {
              * @enum {string}
              */
             status: "submitted" | "approved" | "rejected" | "cancelled" | "executing" | "succeeded" | "partial" | "failed" | "skipped" | "expired" | "invalidated";
+            approvals: number;
+            approvalsRequired: number;
             fingerprint: string;
             body: components["schemas"]["PlanBody"];
             /** Format: date-time */
@@ -3090,6 +3255,15 @@ export interface components {
             /** Format: int64 */
             serverId: number;
             serverName: string;
+            /**
+             * Format: int64
+             * @description Assigned member. Hidden from other spaces.
+             */
+            assigneeId?: number | null;
+            /** @description Assigned member display name. Hidden from other spaces. */
+            assigneeName?: string;
+            /** @description Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot. */
+            canHold: boolean;
             /** @description True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner. */
             canReview: boolean;
             kind: string;
@@ -3155,7 +3329,7 @@ export interface components {
         };
         IncidentEvent: {
             /** @enum {string} */
-            kind: "opened" | "reopened" | "recurred" | "snooze_broken" | "resolved" | "acknowledged" | "snoozed" | "accepted" | "returned";
+            kind: "opened" | "reopened" | "recurred" | "snooze_broken" | "resolved" | "acknowledged" | "snoozed" | "accepted" | "returned" | "assigned" | "unassigned";
             /** @description esa for the control plane. People of another organization are not named. */
             actor: string;
             detail: string;
@@ -3335,6 +3509,7 @@ export interface components {
         };
     };
     parameters: {
+        AgentToken: string;
         PlanId: number;
         RunId: number;
         WindowId: number;
@@ -4398,6 +4573,184 @@ export interface operations {
         };
         responses: {
             /** @description Stored. A later result does not replace an earlier one. This does not run a backup or a restore. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAgentServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** Format: int64 */
+                    groupId?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Registered server and one-time credential. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    rotateAgentCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One-time replacement credential. The previous credential stops working immediately. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeAgentCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    pollAgent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Esa-Agent-Token": components["parameters"]["AgentToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No command, or one command with a bounded expiry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        command?: components["schemas"]["AgentCommand"];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitAgentResult: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Esa-Agent-Token": components["parameters"]["AgentToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    id: number;
+                    output: string;
+                    exit: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Result recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getReachability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Observations from each probe. Missing evidence is unknown. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProbeObservation"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitReachability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeInput"];
+            };
+        };
+        responses: {
+            /** @description Observation recorded. An older or repeated observation does not replace newer evidence. */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -5622,6 +5975,36 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The incident, with events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    assignIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    userId: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The incident */
             200: {
                 headers: {
                     [name: string]: unknown;

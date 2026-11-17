@@ -19,6 +19,8 @@ func Models() []any {
 		&ServerCredential{},
 		&EnrollToken{},
 		&ServerState{},
+		&ProbeObservation{},
+		&AgentCredential{}, &AgentTask{},
 		&MetricSample{},
 		&MetricHourly{},
 		&Run{},

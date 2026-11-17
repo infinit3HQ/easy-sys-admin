@@ -11,6 +11,7 @@ import (
 // ServerView is a server with its latest state, as the front doors show it.
 // It never contains credentials.
 type ServerView struct {
+	Connection         string
 	ID                 int64
 	Name               string
 	Host               string
@@ -203,7 +204,7 @@ func deref[T any](p *T) T {
 
 func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 	v := ServerView{
-		ID: srv.ID, Name: srv.Name, Host: srv.Host, Port: srv.Port, Username: srv.Username,
+		Connection: srv.Connection, ID: srv.ID, Name: srv.Name, Host: srv.Host, Port: srv.Port, Username: srv.Username,
 		GroupID: srv.GroupID, Enrollment: srv.Enrollment, HostKeyFingerprint: srv.HostKeyFingerprint,
 		HelperVersion: srv.HelperVersion, Arch: srv.Arch, HostsControlPlane: srv.HostsControlPlane,
 		HasStoredLogin: hasLogin, Note: srv.Note, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},

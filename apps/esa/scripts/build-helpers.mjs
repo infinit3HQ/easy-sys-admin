@@ -26,5 +26,18 @@ for (const arch of ['amd64', 'arm64']) {
     ],
     { stdio: 'inherit', env: { ...process.env, GOOS: 'linux', GOARCH: arch, CGO_ENABLED: '0' } },
   )
+  execFileSync(
+    'go',
+    [
+      'build',
+      '-trimpath',
+      '-ldflags',
+      `-s -w -X ${pkg}.Version=${version} -X ${pkg}.Commit=${commit}`,
+      '-o',
+      `bin/esa-agent-linux-${arch}`,
+      './cmd/esa-agent',
+    ],
+    { stdio: 'inherit', env: { ...process.env, GOOS: 'linux', GOARCH: arch, CGO_ENABLED: '0' } },
+  )
   console.log(`built bin/esa-helper-linux-${arch} (${version})`)
 }

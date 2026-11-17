@@ -42,6 +42,7 @@ export const defaultGroup: GroupInput = {
     batchSize: 1,
     maxFailures: 1,
     planRequired: false,
+    twoApprovers: false,
   },
   checks: [],
 }
@@ -302,10 +303,22 @@ export function GroupForm({
             />
             <Toggle
               checked={g.updates.planRequired}
-              onChange={(planRequired) => setUpd({ planRequired })}
+              onChange={(planRequired) =>
+                setUpd({
+                  planRequired,
+                  twoApprovers: planRequired && g.updates.twoApprovers,
+                })
+              }
               disabled={disabled}
               label="Require an approved plan"
               hint="Every update or cleanup must be an approved plan, so the cleanup and update schedules must be off. Only a person signed in here can turn this off again."
+            />
+            <Toggle
+              checked={g.updates.twoApprovers}
+              onChange={(twoApprovers) => setUpd({ twoApprovers })}
+              disabled={disabled || !g.updates.planRequired}
+              label="Require two different admins to approve"
+              hint="Both admins must sign in recently. The first approval expires after 30 minutes. Tokens cannot bypass this rule."
             />
           </div>
         </Panel>

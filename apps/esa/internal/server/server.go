@@ -68,6 +68,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		AdvisoryFeed:         cfg.AdvisoryFeed,
 		Scanner:              cfg.Scanner,
 		AuditRetention:       cfg.AuditRetention,
+		ReportRetention:      cfg.ReportRetention,
 		AuditHoldUntil:       cfg.AuditHoldUntil,
 		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
@@ -87,6 +88,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	auth.Routes(mux, cfg, oidc, sessions, fl, log)
 	api.Mount(mux, fl, sessions, cfg.Auth, log)
 	api.MountEnroll(mux, fl, log)
+	mountAgentDownloads(mux, cfg.HelperDir)
 
 	handler := chain(mux,
 		recoverPanics(log),

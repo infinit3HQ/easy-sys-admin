@@ -288,6 +288,17 @@ export const q = {
       queryKey: ['org'],
       queryFn: () => call(api().GET('/org')),
     }),
+  reachability: (id: number) =>
+    queryOptions({
+      queryKey: ['reachability', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/reachability', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+      refetchInterval: 15000,
+    }),
   members: () =>
     queryOptions({
       queryKey: ['members'],

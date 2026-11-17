@@ -459,6 +459,20 @@ func (s *Service) RemoveMember(ctx context.Context, a Actor, userID int64) error
 		if err := db.Where("account_id = ? AND user_id = ?", acc.ID, userID).Delete(&store.Membership{}).Error; err != nil {
 			return err
 		}
+		var assigned []store.SecurityIncident
+		if err := db.Where("account_id = ? AND assignee_id = ?", acc.ID, userID).Find(&assigned).Error; err != nil {
+			return err
+		}
+		for _, incident := range assigned {
+			if err := db.Model(&incident).Update("assignee_id", nil).Error; err != nil {
+				return err
+			}
+			ev := store.IncidentEvent{IncidentID: incident.ID, Kind: "unassigned", ActorID: store.OptionalID(a.UserID), Detail: "assignee left the space", At: s.now()}
+			if err := db.Omit("Incident").Create(&ev).Error; err != nil {
+				return err
+			}
+		}
+
 		// Team memberships only make sense inside the organization.
 		if err := db.Where("user_id = ? AND team_id IN (SELECT id FROM teams WHERE account_id = ?)", userID, acc.ID).
 			Delete(&store.TeamMember{}).Error; err != nil {

@@ -52,14 +52,16 @@ type PlanBody struct {
 
 // PlanView is a plan as the API shows it.
 type PlanView struct {
-	ID          int64
-	Status      string
-	Fingerprint string
-	Body        PlanBody
-	ExpiresAt   *time.Time
-	RunID       *int64
-	Reason      string
-	CreatedAt   time.Time
+	Approvals         int
+	ApprovalsRequired int
+	ID                int64
+	Status            string
+	Fingerprint       string
+	Body              PlanBody
+	ExpiresAt         *time.Time
+	RunID             *int64
+	Reason            string
+	CreatedAt         time.Time
 }
 
 func planFingerprint(body PlanBody) (string, error) {
@@ -137,9 +139,14 @@ func (s *Service) ProposePlan(ctx context.Context, a Actor, body PlanBody) (Plan
 	if err != nil {
 		return PlanView{}, err
 	}
+	need, err := s.planApprovalRequirement(ctx, s.db, a.AccountID, body)
+	if err != nil {
+		return PlanView{}, err
+	}
 	now := s.now()
 	row := store.FixPlan{
-		AccountID: a.AccountID, Status: "submitted", Fingerprint: fp, Body: store.MustJSON(body),
+		ApprovalsRequired: need,
+		AccountID:         a.AccountID, Status: "submitted", Fingerprint: fp, Body: store.MustJSON(body),
 		CreatedBy: a.UserID, ProposerTokenID: a.TokenID, CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.db.WithContext(ctx).Omit("Account").Create(&row).Error; err != nil {
@@ -158,30 +165,70 @@ func (s *Service) ApprovePlan(ctx context.Context, a Actor, id int64) (PlanView,
 	if a.SignedInAt != nil && s.now().Sub(*a.SignedInAt) > 15*time.Minute {
 		return PlanView{}, invalid("status", "sign in again, then approve. This session is more than 15 minutes old")
 	}
-	row, body, err := s.loadPlan(ctx, a, id)
+
+	var row store.FixPlan
+	var body PlanBody
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		tx := q.Raw().WithContext(ctx)
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND account_id = ?", id, a.AccountID).Take(&row).Error; err != nil {
+			return mapStore(err)
+		}
+		if row.Status != "submitted" {
+			return invalid("status", "only a submitted plan can be approved")
+		}
+		if err := row.Body.Decode(&body); err != nil {
+			return err
+		}
+		fp, err := planFingerprint(body)
+		if err != nil || fp != row.Fingerprint {
+			return invalid("status", "the plan body does not match its fingerprint")
+		}
+		required, err := s.planApprovalRequirement(ctx, tx, a.AccountID, body)
+		if err != nil {
+			return err
+		}
+		row.ApprovalsRequired = max(required, row.ApprovalsRequired)
+		active, err := memberHolds(ctx, q, a.UserID, a.AccountID, RoleAdmin)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return ErrForbidden
+		}
+		now := s.now()
+		if row.ApprovedBy == nil {
+			row.ApprovedBy, row.ApprovedAt = &a.UserID, &now
+			expiry := now.Add(planApprovalTTL)
+			row.ExpiresAt = &expiry
+		} else {
+			if row.ExpiresAt == nil || !row.ExpiresAt.After(now) {
+				return invalid("status", "the first approval expired; propose a new plan")
+			}
+			active, err := memberHolds(ctx, q, *row.ApprovedBy, a.AccountID, RoleAdmin)
+			if err != nil {
+				return err
+			}
+			if !active {
+				return invalid("status", "the first approver is no longer an admin; propose a new plan")
+			}
+			if *row.ApprovedBy == a.UserID {
+				return nil
+			}
+			row.SecondApprovedBy = &a.UserID
+		}
+		if row.ApprovalsRequired == 1 || row.SecondApprovedBy != nil {
+			row.Status = "approved"
+		}
+		row.UpdatedAt = now
+		if err := tx.Omit("Account").Save(&row).Error; err != nil {
+			return err
+		}
+		s.audit(ctx, q, a, "plan.approve", row.Fingerprint, map[string]any{"id": row.ID, "expires": row.ExpiresAt, "required": row.ApprovalsRequired})
+		return nil
+	})
 	if err != nil {
 		return PlanView{}, err
 	}
-	if row.Status != "submitted" {
-		return PlanView{}, invalid("status", "only a submitted plan can be approved")
-	}
-	fp, err := planFingerprint(body)
-	if err != nil || fp != row.Fingerprint {
-		return PlanView{}, s.invalidate(ctx, a, row, "the plan body does not match its fingerprint")
-	}
-	now := s.now()
-	exp := now.Add(planApprovalTTL)
-	res := s.db.WithContext(ctx).Model(&store.FixPlan{}).
-		Where("id = ? AND account_id = ? AND status = ?", row.ID, a.AccountID, "submitted").
-		Updates(map[string]any{"status": "approved", "approved_by": a.UserID, "approved_at": now, "expires_at": exp, "updated_at": now})
-	if res.Error != nil {
-		return PlanView{}, res.Error
-	}
-	if res.RowsAffected == 0 {
-		return PlanView{}, invalid("status", "only a submitted plan can be approved")
-	}
-	s.audit(ctx, nil, a, "plan.approve", row.Fingerprint, map[string]any{"id": row.ID, "expires": exp})
-	row.Status, row.ExpiresAt, row.ApprovedBy, row.ApprovedAt = "approved", &exp, &a.UserID, &now
 	return toPlan(row, body), nil
 }
 
@@ -314,6 +361,26 @@ func (s *Service) claimPlan(ctx context.Context, a Actor, id int64) (planClaim, 
 		if err != nil || fp != row.Fingerprint {
 			c.refuse = &planRefusal{"invalidated", "fingerprint mismatch"}
 			return invalid("status", "the plan was invalidated")
+		}
+
+		required, err := s.planApprovalRequirement(ctx, tx, a.AccountID, c.body)
+		if err != nil {
+			return err
+		}
+		required = max(required, row.ApprovalsRequired)
+		if row.ApprovedBy == nil || (required == 2 && (row.SecondApprovedBy == nil || *row.SecondApprovedBy == *row.ApprovedBy)) {
+			return invalid("status", "this plan needs two distinct admin approvals")
+		}
+		approvers := []int64{*row.ApprovedBy}
+		if required == 2 {
+			approvers = append(approvers, *row.SecondApprovedBy)
+		}
+		var active []store.Membership
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("account_id = ? AND user_id IN ? AND role IN ?", a.AccountID, approvers, []string{"owner", "admin"}).Order("user_id").Find(&active).Error; err != nil {
+			return err
+		}
+		if len(active) != required {
+			return invalid("status", "an approver is no longer an admin; propose a new plan")
 		}
 		target, err := s.planTarget(ctx, a.AccountID, c.body)
 		if err != nil || !sameIDs(serverIDs(target), c.body.PinnedServerIDs) {
@@ -497,7 +564,15 @@ func sameNames(a, b []string) bool {
 }
 
 func toPlan(row store.FixPlan, body PlanBody) PlanView {
+	count := 0
+	if row.ApprovedBy != nil {
+		count++
+	}
+	if row.SecondApprovedBy != nil {
+		count++
+	}
 	return PlanView{
+		Approvals: count, ApprovalsRequired: max(1, row.ApprovalsRequired),
 		ID: row.ID, Status: row.Status, Fingerprint: row.Fingerprint, Body: body,
 		ExpiresAt: row.ExpiresAt, RunID: row.RunID, Reason: row.Reason, CreatedAt: row.CreatedAt,
 	}
@@ -554,4 +629,23 @@ func (s *Service) CancelPlan(ctx context.Context, a Actor, id int64, reason stri
 	s.audit(ctx, nil, a, "plan.cancel", row.Fingerprint, map[string]any{"id": row.ID, "reason": reason})
 	row.Status, row.Reason = "cancelled", reason
 	return toPlan(row, body), nil
+}
+
+func (s *Service) planApprovalRequirement(ctx context.Context, db *gorm.DB, accountID int64, body PlanBody) (int, error) {
+	var groups []store.Group
+	q := db.WithContext(ctx).Clauses(clause.Locking{Strength: "SHARE"}).Where("account_id = ?", accountID)
+	if body.GroupID != nil {
+		q = q.Where("id = ?", *body.GroupID)
+	} else {
+		q = q.Where("id IN (SELECT group_id FROM servers WHERE account_id = ? AND id IN ?)", accountID, body.PinnedServerIDs)
+	}
+	if err := q.Order("id").Find(&groups).Error; err != nil {
+		return 0, err
+	}
+	for _, group := range groups {
+		if group.TwoApprovers {
+			return 2, nil
+		}
+	}
+	return 1, nil
 }

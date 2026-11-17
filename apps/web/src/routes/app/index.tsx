@@ -305,7 +305,8 @@ function Row({ s }: { s: Server }) {
           </span>
           <span className="mt-0.5 block font-mono text-[10px] tracking-wider text-faint uppercase">
             {s.groupName ?? 'no group'}
-            <OwnerTag s={s} /> · {s.host}
+            <OwnerTag s={s} /> ·{' '}
+            {s.connection === 'outbound' ? 'Outbound HTTPS' : s.host}
           </span>
           {s.note && (
             <span className="mt-0.5 block truncate text-xs text-ink-2 normal-case">
@@ -383,7 +384,8 @@ function ServerCard({ s }: { s: Server }) {
           </div>
           <div className="truncate font-mono text-[10px] tracking-wider text-faint uppercase">
             {s.groupName ?? 'no group'}
-            <OwnerTag s={s} /> · {s.host}
+            <OwnerTag s={s} /> ·{' '}
+            {s.connection === 'outbound' ? 'Outbound HTTPS' : s.host}
           </div>
           {s.note && (
             <div className="truncate text-xs text-ink-2 normal-case">

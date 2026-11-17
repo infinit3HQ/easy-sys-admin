@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"runtime"
 	"sort"
@@ -74,6 +75,13 @@ func (h *Host) Status(ctx context.Context) (proto.Status, error) {
 		if raw, err := h.readFile("/var/run/reboot-required.pkgs"); err == nil {
 			s.RebootPackages = uniqueLines(string(raw))
 		}
+	}
+	if h.rocky9() {
+		result, err := h.Run.Run(ctx, time.Minute, "needs-restarting", "-r")
+		if err != nil || (result.Exit != 0 && result.Exit != 1) {
+			return s, errors.New("reboot requirement could not be checked; install dnf-utils on Rocky Linux 9")
+		}
+		s.RebootRequired = result.Exit == 1
 	}
 	s.FailedUnits = h.failedUnits(ctx)
 

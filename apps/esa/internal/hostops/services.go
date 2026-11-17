@@ -17,7 +17,7 @@ var unitNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@._:\-]{0,200}\.servi
 // protectedUnits cannot be stopped from esa. Losing any of them cuts the
 // control plane off from the server or takes every container down.
 var protectedUnits = map[string]bool{
-	"ssh.service": true, "sshd.service": true, "docker.service": true, "containerd.service": true,
+	"esa-agent.service": true, "ssh.service": true, "sshd.service": true, "docker.service": true, "containerd.service": true,
 	"systemd-journald.service": true, "systemd-logind.service": true, "dbus.service": true,
 	"systemd-resolved.service": true,
 }

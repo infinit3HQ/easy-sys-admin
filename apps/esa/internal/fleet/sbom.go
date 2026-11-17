@@ -98,7 +98,7 @@ func buildSBOM(server string, inv proto.PackageInventory, now time.Time, version
 	bom.Components = append(bom.Components, SBOMComponent{Type: "operating-system", Name: distro, Version: inv.Release, BOMRef: "os-" + distro})
 	for _, p := range inv.Packages {
 		bom.Components = append(bom.Components, SBOMComponent{
-			Type: "library", Name: p.Name, Version: p.Version, Purl: debPurl(distro, inv.Release, p), BOMRef: p.Name + ":" + p.Arch,
+			Type: "library", Name: p.Name, Version: p.Version, Purl: distroPurl(distro, inv.Release, p), BOMRef: p.Name + ":" + p.Arch + ":" + p.Version,
 		})
 	}
 	for i, img := range inv.Images {
@@ -146,4 +146,22 @@ func uuid4() string {
 	b[6] = b[6]&0x0f | 0x40
 	b[8] = b[8]&0x3f | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+func distroPurl(distro, release string, p proto.InstalledPackage) string {
+	if distro != "rocky" {
+		return debPurl(distro, release, p)
+	}
+	q := url.Values{}
+	q.Set("arch", p.Arch)
+	q.Set("distro", distro+"-"+release)
+	version := p.Version
+	if epoch, rest, ok := strings.Cut(version, ":"); ok {
+		q.Set("epoch", epoch)
+		version = rest
+	}
+	if p.Source != "" && p.Source != p.Name {
+		q.Set("upstream", p.Source)
+	}
+	return fmt.Sprintf("pkg:rpm/%s/%s@%s?%s", url.PathEscape(distro), url.PathEscape(p.Name), url.PathEscape(version), q.Encode())
 }

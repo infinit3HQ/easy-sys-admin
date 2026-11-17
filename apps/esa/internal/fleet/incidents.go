@@ -32,7 +32,10 @@ type IncidentView struct {
 	Reason string
 	// CanReview is true when the actor may acknowledge, snooze, or accept
 	// it: an admin of the space that owns the server.
-	CanReview bool
+	AssigneeID   *int64
+	AssigneeName string
+	CanReview    bool
+	CanHold      bool
 	// Events is the notice's history, oldest first. Only GetIncident fills it.
 	Events []IncidentEventView
 }
@@ -126,6 +129,9 @@ func (s *Service) openIncidentWithSockets(ctx context.Context, accountID, server
 			reopen = eventReopened
 		}
 	}
+	if protectedIncident(row) && (row.State == "snoozed" || row.State == "accepted") {
+		reopen = eventReopened
+	}
 	changes := map[string]any{"last_seen": now, "message": message}
 	if sockets != nil {
 		if row.State == "resolved" {
@@ -149,9 +155,14 @@ func (s *Service) openIncidentWithSockets(ctx context.Context, accountID, server
 			changes["recurrences"] = gorm.Expr("recurrences + 1")
 		}
 	}
-	if err := s.db.WithContext(ctx).Model(&row).Updates(changes).Error; err != nil {
-		s.log.Error("update incident", "err", err)
+	result := s.db.WithContext(ctx).Model(&row).Updates(changes)
+	if result.Error != nil {
+		s.log.Error("update incident", "err", result.Error)
 		return false
+	}
+	if result.RowsAffected == 0 {
+		// An expired resolved row may have been pruned after this read.
+		return s.openIncidentWithSockets(ctx, accountID, serverID, kind, subject, message, event, sockets)
 	}
 	if reopen != "" {
 		s.incidentEvent(ctx, row.ID, reopen, nil, message)
@@ -186,14 +197,18 @@ func (s *Service) resolveIncident(ctx context.Context, accountID, serverID int64
 // back on the review list.
 func (s *Service) returnExpired(ctx context.Context) {
 	var rows []store.SecurityIncident
-	if err := s.db.WithContext(ctx).Where("state IN ? AND snooze_until IS NOT NULL AND snooze_until <= ?", []string{"snoozed", "accepted"}, s.now()).Find(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("state IN ? AND ((snooze_until IS NOT NULL AND snooze_until <= ?) OR kind IN ? OR (kind = ? AND subject IN ?))", []string{"snoozed", "accepted"}, s.now(), []string{string(AlertHostKey), string(AlertNewKey), "vuln", "access"}, string(AlertExposure), []string{"empty-password", "extra-root"}).Find(&rows).Error; err != nil {
 		return
 	}
 	for _, r := range rows {
 		res := s.db.WithContext(ctx).Model(&store.SecurityIncident{}).Where("id = ? AND state = ?", r.ID, r.State).
 			Updates(map[string]any{"state": "open", "snooze_until": nil, "snooze_reason": ""})
 		if res.Error == nil && res.RowsAffected == 1 {
-			s.incidentEvent(ctx, r.ID, eventReturned, nil, "the "+map[string]string{"snoozed": "snooze", "accepted": "accepted risk"}[r.State]+" ended")
+			detail := "the " + map[string]string{"snoozed": "snooze", "accepted": "accepted risk"}[r.State] + " ended"
+			if protectedIncident(r) {
+				detail = "critical and access-change notices cannot be held"
+			}
+			s.incidentEvent(ctx, r.ID, eventReturned, nil, detail)
 		}
 	}
 }

@@ -27,7 +27,7 @@ func toGroupInput(b *GroupInput) fleet.GroupInput {
 		Updates: fleet.UpdatePolicy{
 			Enabled: b.Updates.Enabled, Mode: proto.UpdateMode(b.Updates.Mode), Days: days(b.Updates.Days), Time: b.Updates.Time,
 			Hold: b.Updates.Hold, RebootIfRequired: b.Updates.RebootIfRequired,
-			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures, PlanRequired: b.Updates.PlanRequired,
+			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures, PlanRequired: b.Updates.PlanRequired, TwoApprovers: b.Updates.TwoApprovers,
 		},
 		Checks: toFleetChecks(b.Checks),
 	}
@@ -605,4 +605,19 @@ func patchVersions(vs []proto.PackageVersion) []struct {
 		}{v.After, v.Before, v.Name})
 	}
 	return out
+}
+
+func (h *Handlers) AssignIncident(ctx context.Context, req AssignIncidentRequestObject) (AssignIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "userId", Message: "is required"}
+	}
+	v, err := h.fleet.AssignIncident(ctx, a, req.IncidentId, req.Body.UserId)
+	if err != nil {
+		return nil, err
+	}
+	return AssignIncident200JSONResponse(toIncident(v)), nil
 }

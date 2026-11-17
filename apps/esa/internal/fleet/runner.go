@@ -36,6 +36,8 @@ func (s *Service) serverLock(id int64) *sync.Mutex {
 // execute runs a stored run to completion. The run lock is held until it
 // returns, so a second control plane does not resume the same run.
 func (s *Service) execute(ctx context.Context, runID int64) {
+	ctx, stopOwnership := maintenanceContext(ctx)
+	defer stopOwnership()
 	unlock, ok := s.tryRunLock(ctx, runID)
 	if !ok {
 		s.log.Info("run left with the process that already holds it", "run_id", runID)
@@ -295,7 +297,10 @@ func stopMessage(items []store.RunServer, failed []int) string {
 	return fmt.Sprintf("stopped after %d failed servers", len(failed))
 }
 
-func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status, errMsg string, detail any, freed int64) {
+func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status, errMsg string, detail any, freed int64) bool {
+	if errors.Is(context.Cause(ctx), errMaintenanceOwnershipLost) {
+		return false
+	}
 	now := s.now()
 	changes := map[string]any{"status": status, "error": errMsg, "bytes_freed": freed}
 	if detail != nil {
@@ -316,7 +321,9 @@ func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status,
 	rs.Status = status
 	if err := s.db.WithContext(context.WithoutCancel(ctx)).Model(&store.RunServer{}).Where("id = ?", rs.ID).Updates(changes).Error; err != nil {
 		s.log.Error("update run server", "id", rs.ID, "err", err)
+		return false
 	}
+	return true
 }
 
 // begin locks the server and resolves its endpoint. It returns false (and
@@ -346,7 +353,10 @@ func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoi
 		s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
-	s.setRunServer(ctx, rs, "running", "", nil, 0)
+	if !s.setRunServer(ctx, rs, "running", "", nil, 0) {
+		unlock()
+		return remote.Endpoint{}, nil, false
+	}
 	return ep, unlock, true
 }
 
@@ -400,8 +410,21 @@ func (s *Service) tryAdvisoryLock(ctx context.Context, key int64) (func(), bool)
 		_ = conn.Close()
 		return nil, false
 	}
+	owner := ownershipFrom(ctx)
+	if owner != nil {
+		owner.mu.Lock()
+		owner.conns[conn] = true
+		owner.mu.Unlock()
+	}
 	return func() {
-		_, _ = conn.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", key)
+		if owner != nil {
+			owner.mu.Lock()
+			delete(owner.conns, conn)
+			owner.mu.Unlock()
+		}
+		unlockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", key)
 		_ = conn.Close()
 	}, true
 }
@@ -439,7 +462,7 @@ func (s *Service) runClean(ctx context.Context, rs *store.RunServer, apply bool,
 	}
 	var rep proto.CleanReport
 	cctx, cancel := context.WithTimeout(ctx, cleanTimeout)
-	err := s.pool.Call(cctx, ep, &rep, "clean", args...)
+	err := s.maintenanceCall(cctx, ep, &rep, "clean", args...)
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -481,7 +504,7 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 
 	var pc proto.Precheck
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	err := s.pool.Call(cctx, ep, &pc, "upgrade-precheck")
+	err := s.maintenanceCall(cctx, ep, &pc, "upgrade-precheck")
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -527,7 +550,7 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 	}
 
 	cctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
-	err = s.pool.Call(cctx, ep, nil, "upgrade-start", args...)
+	err = s.maintenanceCall(cctx, ep, nil, "upgrade-start", args...)
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -549,7 +572,7 @@ func (s *Service) followUpgrade(ctx context.Context, run store.Run, rs *store.Ru
 		case <-time.After(upgradePollEvery):
 		}
 		cctx, cancel := context.WithTimeout(ctx, time.Minute)
-		lastErr = s.pool.Call(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(run.ID, 10))
+		lastErr = s.maintenanceCall(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(run.ID, 10))
 		cancel()
 		if lastErr != nil {
 			var mismatch *remote.HostKeyMismatchError
@@ -624,7 +647,7 @@ func (s *Service) readHealth(ctx context.Context, ep remote.Endpoint) (serviceHe
 	var snap proto.Status
 	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	if err := s.pool.Call(cctx, ep, &snap, "status"); err != nil {
+	if err := s.maintenanceCall(cctx, ep, &snap, "status"); err != nil {
 		return serviceHealth{}, err
 	}
 	h := serviceHealth{FailedUnits: append([]string(nil), snap.FailedUnits...)}
@@ -707,18 +730,18 @@ func (s *Service) runReboot(ctx context.Context, run store.Run, rs *store.RunSer
 func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverID int64) error {
 	var before proto.Status
 	cctx, cancel := context.WithTimeout(ctx, pollTimeout)
-	err := s.pool.Call(cctx, ep, &before, "status")
+	err := s.maintenanceCall(cctx, ep, &before, "status")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("read status before reboot: %w", err)
 	}
 	var running []proto.Container
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	_ = s.pool.Call(cctx, ep, &running, "containers")
+	_ = s.maintenanceCall(cctx, ep, &running, "containers")
 	cancel()
 
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	err = s.pool.Call(cctx, ep, nil, "reboot")
+	err = s.maintenanceCall(cctx, ep, nil, "reboot")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("schedule reboot: %w", err)
@@ -737,7 +760,7 @@ func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverI
 		case <-time.After(15 * time.Second):
 		}
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := s.pool.Call(cctx, ep, &after, "status")
+		err := s.maintenanceCall(cctx, ep, &after, "status")
 		cancel()
 		if err != nil {
 			s.pool.Forget(serverID)
@@ -757,7 +780,7 @@ func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverI
 	time.Sleep(20 * time.Second)
 	var now []proto.Container
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	err = s.pool.Call(cctx, ep, &now, "containers")
+	err = s.maintenanceCall(cctx, ep, &now, "containers")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("list containers after reboot: %w", err)
@@ -861,8 +884,15 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 		return
 	}
 	for _, run := range runs {
-		unlock, ok := s.tryRunLock(ctx, run.ID)
+		parent := s.baseCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		runCtx, stopOwnership := maintenanceContext(s.netCtx(parent))
+		lockCtx := context.WithValue(ctx, maintenanceOwnershipKey{}, ownershipFrom(runCtx))
+		unlock, ok := s.tryRunLock(lockCtx, run.ID)
 		if !ok {
+			stopOwnership()
 			s.log.Info("unfinished run is still held", "run_id", run.ID)
 			continue
 		}
@@ -874,10 +904,13 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 			}
 			s.finishRun(ctx, run.ID)
 			unlock()
+			stopOwnership()
 			continue
 		}
 		run := run
-		s.background(func(ctx context.Context) {
+		s.background(func(_ context.Context) {
+			ctx := runCtx
+			defer stopOwnership()
 			defer unlock()
 			var opts RunOptions
 			_ = run.Options.Decode(&opts)
@@ -938,7 +971,7 @@ func resumeState(servers []store.RunServer) (failed, running []int) {
 func (s *Service) upgradeNotStarted(ctx context.Context, ep remote.Endpoint, runID int64) bool {
 	var res proto.UpgradeResult
 	cctx, cancel := context.WithTimeout(ctx, time.Minute)
-	err := s.pool.Call(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(runID, 10))
+	err := s.maintenanceCall(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(runID, 10))
 	cancel()
 	var he *remote.HelperError
 	return errors.As(err, &he) && he.Code == proto.CodeBadRequest && strings.Contains(he.Message, "no upgrade with run id")

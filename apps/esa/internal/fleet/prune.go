@@ -45,3 +45,41 @@ func (s *Service) countOldAudit(ctx context.Context, cutoff time.Time) int64 {
 	_ = s.db.WithContext(ctx).Model(&store.AuditEntry{}).Where("created_at < ?", cutoff).Count(&n).Error
 	return n
 }
+
+// PruneReports removes expired resolved-notice history and superseded scan
+// snapshots. The latest scan survives even when stale, so absence never looks
+// like a clean scan. Recovery idempotency records and run reports are retained.
+func (s *Service) PruneReports(ctx context.Context) {
+	if s.reportRetention <= 0 || (!s.auditHoldUntil.IsZero() && s.now().Before(s.auditHoldUntil)) {
+		return
+	}
+	if !s.claimJob(ctx, "reports", 30*time.Minute) {
+		return
+	}
+	cutoff := s.now().Add(-s.reportRetention)
+	var deleted, eligible int64
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		db := q.Raw().WithContext(ctx)
+		if err := db.Raw(`SELECT (SELECT count(*) FROM security_incidents WHERE state = 'resolved' AND resolved_at < ?) + (SELECT count(*) FROM scan_imports candidate WHERE candidate.imported_at < ? AND EXISTS (SELECT 1 FROM scan_imports newer WHERE newer.account_id = candidate.account_id AND newer.server_id = candidate.server_id AND (newer.imported_at,newer.id) > (candidate.imported_at,candidate.id)))`, cutoff, cutoff).Scan(&eligible).Error; err != nil {
+			return err
+		}
+		for _, query := range []string{
+			`DELETE FROM security_incidents WHERE id IN (SELECT id FROM security_incidents WHERE state = 'resolved' AND resolved_at < ? ORDER BY resolved_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`,
+			`DELETE FROM scan_imports old WHERE old.id IN (SELECT candidate.id FROM scan_imports candidate WHERE candidate.imported_at < ? AND EXISTS (SELECT 1 FROM scan_imports newer WHERE newer.account_id = candidate.account_id AND newer.server_id = candidate.server_id AND (newer.imported_at,newer.id) > (candidate.imported_at,candidate.id)) ORDER BY candidate.imported_at LIMIT 1000 FOR UPDATE SKIP LOCKED)`,
+		} {
+			result := db.Exec(query, cutoff)
+			if result.Error != nil {
+				return result.Error
+			}
+			deleted += result.RowsAffected
+		}
+		if err := db.Create(&store.RetentionRun{Kind: "reports", Cutoff: cutoff, Eligible: eligible, Deleted: deleted, CreatedAt: s.now()}).Error; err != nil {
+			return err
+		}
+		s.audit(ctx, q, System(0), "reports.prune", "", map[string]any{"cutoff": cutoff, "deleted": deleted})
+		return nil
+	})
+	if err != nil {
+		s.log.Error("prune report history", "err", err)
+	}
+}

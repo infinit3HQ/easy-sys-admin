@@ -132,8 +132,8 @@ There is no command that re-encrypts old secrets under a new master key. To rota
 From the project's status notes:
 
 - One control plane instance. Locks, rate limits, the notification queue, and poll back-off are in memory.
-- `apt` only. No `dnf`.
-- No agent mode for servers without inbound SSH.
+- `apt` on Debian and Ubuntu, plus a narrow DNF path for Rocky Linux 9. Rocky needs `dnf-utils`. Other RHEL-family releases remain unsupported.
+- An optional [outbound agent](/outbound-agent) supports servers without inbound SSH.
 - No live log follow. The poll interval is fixed at one minute.
 - The helper protocol version is not checked.
 - The audit log is not pruned.

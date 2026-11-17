@@ -85,7 +85,7 @@ func toPlan(v fleet.PlanView) FixPlan {
 		body.BuildCache, body.Vscode, body.Journal = &buildCache, &vscode, &journal
 	}
 	return FixPlan{
-		Id: v.ID, Status: FixPlanStatus(v.Status), Fingerprint: v.Fingerprint, Body: body,
+		Approvals: v.Approvals, ApprovalsRequired: v.ApprovalsRequired, Id: v.ID, Status: FixPlanStatus(v.Status), Fingerprint: v.Fingerprint, Body: body,
 		ExpiresAt: v.ExpiresAt, RunId: v.RunID, Reason: v.Reason, CreatedAt: v.CreatedAt,
 	}
 }

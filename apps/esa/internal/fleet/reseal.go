@@ -46,7 +46,11 @@ func (s *Service) Reseal(ctx context.Context, dry bool) (ResealReport, error) {
 	if err != nil {
 		return rep, err
 	}
-	rep.Classes = []ResealClass{keys, logins, channels}
+	tasks, err := s.resealAgentTasks(ctx, dry)
+	if err != nil {
+		return rep, err
+	}
+	rep.Classes = []ResealClass{keys, logins, channels, tasks}
 	for _, c := range rep.Classes {
 		if c.Failed > 0 || c.Left > 0 {
 			rep.Ready = false
@@ -154,4 +158,38 @@ func (s *Service) resealOne(out *ResealClass, dry bool, sealed, context string, 
 		return
 	}
 	out.Resealed++
+}
+
+// Task payloads normally live for seconds, but are included so key rotation
+// can drain even an outstanding ten-minute command without discarding it.
+func (s *Service) resealAgentTasks(ctx context.Context, dry bool) (ResealClass, error) {
+	var rows []store.AgentTask
+	if err := s.db.WithContext(ctx).Where("command_enc <> '' OR result_enc <> ''").Find(&rows).Error; err != nil {
+		return ResealClass{}, err
+	}
+	out := ResealClass{Name: "agent task payloads"}
+	for _, row := range rows {
+		for _, kind := range []string{"command", "result"} {
+			sealed := row.CommandEnc
+			if kind == "result" {
+				sealed = row.ResultEnc
+			}
+			if sealed == "" {
+				continue
+			}
+			out.Total++
+			column := kind + "_enc"
+			s.resealOne(&out, dry, sealed, agentContext(row.ID, kind), func(next, prev string) error {
+				res := s.db.WithContext(ctx).Model(&store.AgentTask{}).Where("id = ? AND "+column+" = ?", row.ID, prev).Update(column, next)
+				if res.Error != nil {
+					return res.Error
+				}
+				if res.RowsAffected == 0 {
+					return errResealRaced
+				}
+				return nil
+			})
+		}
+	}
+	return out, nil
 }

@@ -19,10 +19,18 @@ var Features = []string{
 	// FeatureUpgradeAllow: upgrade-start and upgrade-exec take --allow and
 	// install only those packages, refusing anything apt would add.
 	FeatureUpgradeAllow,
+	FeatureUpgradeIdempotent,
+	FeatureRPMUpdates,
 }
 
 // FeatureUpgradeAllow is the --allow flag of upgrade-start.
 const FeatureUpgradeAllow = "upgrade-allow"
+
+// FeatureUpgradeIdempotent keeps repeated starts and executions of one run from installing again.
+const FeatureUpgradeIdempotent = "upgrade-idempotent"
+
+// FeatureRPMUpdates supports inventory and approved DNF transactions on Rocky Linux 9.
+const FeatureRPMUpdates = "rpm-updates"
 
 // AllowNone is the --allow value for an empty list. It is not a valid
 // package name, so it cannot be confused with one.

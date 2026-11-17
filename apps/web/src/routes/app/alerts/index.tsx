@@ -74,12 +74,13 @@ function NeedsReview() {
               </div>
               <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
                 {noticeKind(item.kind)} · {item.serverName} ·{' '}
+                {item.assigneeName ? `Assigned to ${item.assigneeName} · ` : ''}{' '}
                 <Ago iso={item.lastSeen} />
               </div>
             </div>
             {item.canReview && (
               <div className="flex gap-2">
-                {item.kind !== 'host_key' && (
+                {item.canHold && (
                   <Button
                     size="sm"
                     variant="outline"

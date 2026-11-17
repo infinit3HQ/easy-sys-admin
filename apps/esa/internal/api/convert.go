@@ -66,7 +66,8 @@ func toMe(me fleet.Me, a fleet.Actor) Me {
 
 func toServer(v fleet.ServerView) Server {
 	s := Server{
-		Id: v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
+		Connection: optional(ServerConnection(v.Connection)),
+		Id:         v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
 		GroupId: v.GroupID, GroupName: optional(v.GroupName), Enrollment: ServerEnrollment(v.Enrollment),
 		HostKeyFingerprint: v.HostKeyFingerprint, HelperVersion: v.HelperVersion, Arch: v.Arch,
 		HelperMissing: ptrTo(nonNil(v.HelperMissing)), HelperCheckedAt: v.HelperCheckedAt,
@@ -155,7 +156,7 @@ func toGroup(g fleet.GroupView) Group {
 		Updates: UpdatePolicy{
 			Enabled: g.Updates.Enabled, Mode: UpdatePolicyMode(g.Updates.Mode), Days: toDays(g.Updates.Days),
 			Time: g.Updates.Time, Hold: nonNil(g.Updates.Hold), RebootIfRequired: g.Updates.RebootIfRequired,
-			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures, PlanRequired: g.Updates.PlanRequired,
+			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures, PlanRequired: g.Updates.PlanRequired, TwoApprovers: g.Updates.TwoApprovers,
 		},
 		Checks: toAPIChecks(g.Checks),
 	}
@@ -229,8 +230,8 @@ func toAlert(a fleet.AlertView) Alert {
 
 func toIncident(v fleet.IncidentView) Incident {
 	out := Incident{
-		Id: v.ID, ServerId: v.ServerID, ServerName: v.ServerName, Kind: v.Kind, Subject: v.Subject,
-		State: IncidentState(v.State), Message: v.Message, NextStep: v.NextStep, FirstSeen: v.FirstSeen, LastSeen: v.LastSeen, AckedAt: v.AckedAt, CanReview: v.CanReview,
+		Id: v.ID, ServerId: v.ServerID, ServerName: v.ServerName, Kind: v.Kind, Subject: v.Subject, AssigneeId: v.AssigneeID, AssigneeName: optional(v.AssigneeName),
+		State: IncidentState(v.State), Message: v.Message, NextStep: v.NextStep, FirstSeen: v.FirstSeen, LastSeen: v.LastSeen, AckedAt: v.AckedAt, CanReview: v.CanReview, CanHold: v.CanHold,
 		ResolvedAt: v.ResolvedAt, Recurrences: ptrTo(v.Recurrences), Note: ptrTo(v.Note), SnoozeUntil: v.Until, SnoozeReason: ptrTo(v.Reason),
 	}
 	if v.Events != nil {

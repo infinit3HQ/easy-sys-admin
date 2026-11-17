@@ -32,7 +32,7 @@ func (s *Service) ListIncidents(ctx context.Context, a Actor, f IncidentFilter) 
 		return nil, err
 	}
 	s.returnExpired(ctx)
-	q := s.incidentScope(ctx, a).Preload("Server").Order("last_seen DESC").Limit(100)
+	q := s.incidentScope(ctx, a).Preload("Server").Preload("Assignee").Order("last_seen DESC").Limit(100)
 	if !f.All {
 		q = q.Where("state = ?", "open")
 	}
@@ -54,7 +54,7 @@ func (s *Service) GetIncident(ctx context.Context, a Actor, id int64) (IncidentV
 	}
 	s.returnExpired(ctx)
 	var row store.SecurityIncident
-	if err := s.incidentScope(ctx, a).Preload("Server").Where("security_incidents.id = ?", id).Take(&row).Error; err != nil {
+	if err := s.incidentScope(ctx, a).Preload("Server").Preload("Assignee").Where("security_incidents.id = ?", id).Take(&row).Error; err != nil {
 		return IncidentView{}, mapStore(err)
 	}
 	v := s.incidentView(a, row)
@@ -91,13 +91,22 @@ func (s *Service) GetIncident(ctx context.Context, a Actor, id int64) (IncidentV
 }
 
 func (s *Service) incidentView(a Actor, r store.SecurityIncident) IncidentView {
-	return IncidentView{
+	v := IncidentView{
 		ID: r.ID, ServerID: r.ServerID, ServerName: r.Server.Name, Kind: r.Kind, Subject: r.Subject, State: r.State,
 		Message: r.Message, NextStep: incidentNextStep(r.Kind), FirstSeen: r.FirstSeen, LastSeen: r.LastSeen,
 		AckedAt: r.AckedAt, ResolvedAt: r.ResolvedAt, Recurrences: r.Recurrences, Note: r.Note,
 		Until: r.SnoozeUntil, Reason: r.SnoozeReason,
 		CanReview: r.AccountID == a.AccountID && a.can(RoleAdmin, ScopeAdmin) == nil,
 	}
+	if r.AccountID == a.AccountID && r.Assignee != nil {
+		v.AssigneeID, v.AssigneeName = r.AssigneeID, r.Assignee.Name
+	}
+	v.CanHold = v.CanReview && !protectedIncident(r)
+	return v
+}
+
+func protectedIncident(r store.SecurityIncident) bool {
+	return r.Kind == string(AlertHostKey) || r.Kind == string(AlertNewKey) || r.Kind == "access" || r.Kind == "vuln" || (r.Kind == string(AlertExposure) && (r.Subject == "empty-password" || r.Subject == "extra-root"))
 }
 
 // ownIncident loads a notice of the actor's own space for a triage change.
@@ -106,7 +115,7 @@ func (s *Service) ownIncident(ctx context.Context, a Actor, id int64) (store.Sec
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return row, err
 	}
-	err := s.db.WithContext(ctx).Preload("Server").Where("id = ? AND account_id = ?", id, a.AccountID).Take(&row).Error
+	err := s.db.WithContext(ctx).Preload("Server").Preload("Assignee").Where("id = ? AND account_id = ?", id, a.AccountID).Take(&row).Error
 	return row, mapStore(err)
 }
 
@@ -171,8 +180,8 @@ func (s *Service) holdIncident(ctx context.Context, a Actor, id int64, until tim
 	if err != nil {
 		return IncidentView{}, err
 	}
-	if row.Kind == string(AlertHostKey) {
-		return IncidentView{}, invalid("until", "a host key change cannot be snoozed or accepted")
+	if protectedIncident(row) {
+		return IncidentView{}, invalid("until", "critical and access-change notices cannot be snoozed or accepted")
 	}
 	if row.State == "resolved" {
 		return IncidentView{}, invalid("state", "a resolved notice needs no review")
@@ -206,4 +215,52 @@ func (s *Service) userNames(ctx context.Context, ids []int64) (map[int64]string,
 		out[r.ID] = r.Name
 	}
 	return out, nil
+}
+
+// AssignIncident changes responsibility without granting access or resolving evidence.
+func (s *Service) AssignIncident(ctx context.Context, a Actor, id int64, userID *int64) (IncidentView, error) {
+	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+		return IncidentView{}, err
+	}
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		_, members, err := s.lockMembers(ctx, q, a)
+		if err != nil {
+			return err
+		}
+		me, ok := findMember(members, a.UserID)
+		if !ok || !Role(me.Role).AtLeast(RoleAdmin) {
+			return ErrForbidden
+		}
+		var row store.SecurityIncident
+		db := q.Raw().WithContext(ctx)
+		if err := db.Where("id = ? AND account_id = ?", id, a.AccountID).Take(&row).Error; err != nil {
+			return mapStore(err)
+		}
+		if userID != nil {
+			if _, ok := findMember(members, *userID); !ok {
+				return invalid("userId", "choose a current member of this space")
+			}
+		}
+		if (row.AssigneeID == nil && userID == nil) || (row.AssigneeID != nil && userID != nil && *row.AssigneeID == *userID) {
+			return nil
+		}
+		if err := db.Model(&row).Update("assignee_id", userID).Error; err != nil {
+			return err
+		}
+		kind := "assigned"
+		detail := "assigned to a member of the owning space"
+		if userID == nil {
+			kind, detail = "unassigned", "assignment cleared"
+		}
+		ev := store.IncidentEvent{IncidentID: id, Kind: kind, ActorID: store.OptionalID(a.UserID), Detail: detail, At: s.now()}
+		if err := db.Omit("Incident").Create(&ev).Error; err != nil {
+			return err
+		}
+		s.audit(ctx, q, a, "incident.assign", row.Subject, map[string]any{"incident_id": id, "user_id": userID})
+		return nil
+	})
+	if err != nil {
+		return IncidentView{}, err
+	}
+	return s.GetIncident(ctx, a, id)
 }

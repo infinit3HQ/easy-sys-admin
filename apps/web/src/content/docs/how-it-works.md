@@ -92,5 +92,5 @@ Passwords are hashed. Server logins you choose to keep, the space's SSH private 
 - The helper's protocol version is reported and not checked. A new helper action needs a reinstall on older servers.
 - There is no step that re-encrypts old secrets when you rotate `ESA_MASTER_KEY`. Keep old keys in the list.
 - The audit log is not pruned.
-- There is no agent for servers that cannot accept inbound SSH.
+- Servers without inbound SSH can use the [outbound agent](/outbound-agent).
 - Logs are not followed live. The poll interval is fixed at one minute.

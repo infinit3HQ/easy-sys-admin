@@ -34,11 +34,14 @@ var aptDpkgOpts = []string{
 // "Inst base-files [13ubuntu10.4] (13ubuntu10.5 Ubuntu:24.04/noble-updates [arm64])"
 var instRe = regexp.MustCompile(`^Inst (\S+) (?:\[([^\]]+)\] )?\((\S+) (.+?) \[[^\]]+\]\)`)
 
-var pkgNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]*(:[a-z0-9]+)?$`)
+var pkgNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]*(:[A-Za-z0-9]+)?$`)
 
 // PendingUpdates lists upgradable packages. With refresh it runs
 // `apt-get update` first; otherwise it uses the lists apt already has.
 func (h *Host) PendingUpdates(ctx context.Context, refresh bool) (proto.PendingUpdates, error) {
+	if h.rocky9() {
+		return h.pendingRPM(ctx, refresh)
+	}
 	if !lookPath("apt-get") {
 		return proto.PendingUpdates{}, &BadRequestError{Reason: "this server does not use apt"}
 	}
@@ -156,11 +159,14 @@ func (h *Host) heldPackages(ctx context.Context) []string {
 func (h *Host) packageManagerBusy() string {
 	for _, args := range h.processArgs() {
 		switch filepath.Base(args[0]) {
-		case "apt", "apt-get", "dpkg", "aptitude", "unattended-upgrade", "unattended-upgrades":
+		case "apt", "apt-get", "dpkg", "aptitude", "unattended-upgrade", "unattended-upgrades", "dnf", "dnf4", "yum", "rpm":
 			return filepath.Base(args[0]) + " is running"
 		}
 		// unattended-upgrade runs as a python script.
 		for _, a := range args[1:] {
+			if strings.Contains(a, "ESA_DNF_TXN") {
+				return "a DNF upgrade is running"
+			}
 			if strings.HasSuffix(a, "/unattended-upgrade") {
 				return "unattended-upgrade is running"
 			}
@@ -190,12 +196,26 @@ func (h *Host) UpgradePrecheck(ctx context.Context) (proto.Precheck, error) {
 			pc.Problems = append(pc.Problems, fmt.Sprintf("%s has %s free, needs %s", mount, humanBytes(avail), humanBytes(need)))
 		}
 	}
-	if out, err := h.output(ctx, time.Minute, "dpkg", "--audit"); err != nil {
+	if h.rocky9() {
+		if result, err := h.Run.Run(ctx, 30*time.Second, "needs-restarting", "--help"); err != nil || result.Exit != 0 {
+			pc.Problems = append(pc.Problems, "dnf-utils needs-restarting is required for reboot detection")
+		}
+		if h.dnfVersionLocks() {
+			pc.Problems = append(pc.Problems, "system DNF versionlocks require manual package management")
+		}
+		if _, err := h.dnfOutput(ctx, time.Minute, "-q", "check"); err != nil {
+			pc.Problems = append(pc.Problems, "dnf check failed")
+		}
+	} else if out, err := h.output(ctx, time.Minute, "dpkg", "--audit"); err != nil {
 		pc.Problems = append(pc.Problems, "dpkg --audit failed: "+err.Error())
 	} else if out != "" {
 		pc.Problems = append(pc.Problems, "dpkg reports broken or half-installed packages: "+firstLine([]byte(out)))
 	}
-	pc.Held = h.heldPackages(ctx)
+	if h.rocky9() {
+		pc.Held = []string{}
+	} else {
+		pc.Held = h.heldPackages(ctx)
+	}
 	sort.Strings(pc.Problems)
 	pc.OK = len(pc.Problems) == 0
 	return pc, nil
@@ -252,6 +272,23 @@ func (h *Host) UpgradeStart(ctx context.Context, self string, o UpgradeOptions) 
 	if err := o.validate(); err != nil {
 		return proto.UpgradeStarted{}, err
 	}
+	unlock, err := h.upgradeLock(upgradeStartLockName(o.RunID))
+	if err != nil {
+		var busy *BusyError
+		if errors.As(err, &busy) {
+			return proto.UpgradeStarted{Unit: upgradeUnit(o.RunID) + ".service"}, nil
+		}
+		return proto.UpgradeStarted{}, err
+	}
+	defer unlock()
+	if previous, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
+		if previous.RunID != o.RunID {
+			return proto.UpgradeStarted{}, &RefusedError{Reason: "stored upgrade result has a different run id"}
+		}
+		return proto.UpgradeStarted{Unit: upgradeUnit(o.RunID) + ".service"}, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return proto.UpgradeStarted{}, &RefusedError{Reason: "stored upgrade result cannot be read; it will not be overwritten"}
+	}
 	pc, err := h.UpgradePrecheck(ctx)
 	if err != nil {
 		return proto.UpgradeStarted{}, err
@@ -301,6 +338,24 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	if err := o.validate(); err != nil {
 		return err
 	}
+	unlock, err := h.upgradeLock("upgrade-exec.lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if previous, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
+		if previous.RunID != o.RunID {
+			return &RefusedError{Reason: "stored upgrade result has a different run id"}
+		}
+		if previous.State == "succeeded" {
+			return nil
+		}
+		if previous.State != "running" {
+			return &RefusedError{Reason: "this upgrade already finished unsuccessfully; use a new run id"}
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return &RefusedError{Reason: "stored upgrade result cannot be read; it will not be overwritten"}
+	}
 	res := proto.UpgradeResult{RunID: o.RunID, State: "running", Mode: o.Mode, StartedAt: time.Now().UTC(), Packages: []string{}}
 	if prev, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
 		res.StartedAt = prev.StartedAt
@@ -313,12 +368,18 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 		if err != nil {
 			res.State, res.Error = "failed", err.Error()
 		}
-		_, statErr := os.Stat(h.path("/var/run/reboot-required"))
-		res.RebootRequired = statErr == nil
+		if !h.rocky9() {
+			_, statErr := os.Stat(h.path("/var/run/reboot-required"))
+			res.RebootRequired = statErr == nil
+		}
 		if werr := writeJSONAtomic(h.resultPath(o.RunID), res); werr != nil {
 			return werr
 		}
 		return err
+	}
+
+	if h.rocky9() {
+		return h.upgradeRPM(ctx, o, &res, finish)
 	}
 
 	upd, err := h.Run.Run(ctx, 10*time.Minute, "apt-get", "update", "-q", "-o", "Dpkg::Lock::Timeout=120")
@@ -393,7 +454,13 @@ func readUpgradeResult(path string) (proto.UpgradeResult, error) {
 	if err != nil {
 		return r, err
 	}
-	return r, json.Unmarshal(raw, &r)
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return r, err
+	}
+	if r.RunID <= 0 || (r.State != "running" && r.State != "succeeded" && r.State != "failed") {
+		return r, errors.New("stored upgrade result is invalid")
+	}
+	return r, nil
 }
 
 func writeJSONAtomic(path string, v any) error {

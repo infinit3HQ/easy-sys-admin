@@ -88,7 +88,10 @@ function ServerPage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:block sm:text-right">
           <StatusBadge status={s.status} />
           <div className="font-mono text-[11px] text-muted-foreground sm:mt-1">
-            {s.host}:{s.port} · seen <Ago iso={s.lastSeenAt} />
+            {s.connection === 'outbound'
+              ? 'Outbound HTTPS'
+              : `${s.host}:${s.port}`}{' '}
+            · seen <Ago iso={s.lastSeenAt} />
           </div>
         </div>
       </PageHeader>

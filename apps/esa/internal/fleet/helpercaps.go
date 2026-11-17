@@ -45,7 +45,11 @@ func (s *Service) helperCapabilities(ctx context.Context, srv store.Server, ep r
 	if srv.HelperCheckedAt != nil && now.Sub(*srv.HelperCheckedAt) < helperCheckEvery {
 		return storedCapabilities(srv)
 	}
-	if last, ok := s.helperTried.Load(srv.ID); ok && now.Sub(last.(time.Time)) < helperRetryEvery {
+	retryEvery := helperRetryEvery
+	if srv.Connection == "outbound" {
+		retryEvery = time.Minute
+	}
+	if last, ok := s.helperTried.Load(srv.ID); ok && now.Sub(last.(time.Time)) < retryEvery {
 		return storedCapabilities(srv)
 	}
 	s.helperTried.Store(srv.ID, now)

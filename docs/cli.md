@@ -310,3 +310,9 @@ Read actions: `version`, `status`, `updates [--refresh]`, `upgrade-precheck`, `u
 Write actions: `clean --apply [--only buildcache,vscode,journal] [--journal-size 200M]`, `upgrade-start --run-id N --mode security|all [--hold pkg,pkg]`, `service --unit U --action start|stop|restart`, `container --name C --action start|stop|restart [--confirm NAME] [--protect a,b]`, `container-update --name C [--confirm NAME] [--protect a,b]`, `reboot`, `uninstall`.
 
 Every action except `version` must run as root. `ssh-dispatch` is the forced command on the esa SSH key. It runs as the esa user, accepts only `sudo -n /usr/local/lib/esa/esa-helper <action> ...` from `SSH_ORIGINAL_COMMAND`, and hands that to sudo.
+
+## Reachability from another machine
+
+Run `esa servers probe web-01 --source office --port 443` from a machine on the network you want to test. The CLI tries a TCP connection to the server's enrolled host for at most 5 seconds and records the result. Use a stable source label with at most 40 letters, digits, dots, underscores, or hyphens. `--json` writes a JSON result. The saved login or `ESA_URL` and `ESA_TOKEN` select the control plane. The token needs read and actions scopes, and its user must be an admin of the server's group in the owning space. A shared group's operator cannot submit evidence for its owner.
+
+Repeat the command every 5 minutes with a scheduler you control. Observations become stale after 15 minutes. A refused or timed-out TCP connection is recorded as not reached from that probe. DNS and local network errors are unknown. A result applies only to this probe's network. Esa does not start a probe service or change any firewall.

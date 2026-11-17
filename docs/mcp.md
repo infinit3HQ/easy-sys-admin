@@ -144,3 +144,5 @@ A typical agent flow with a read-only token:
 4. `get_run` with the run id for the per-server errors.
 
 With an `actions` token, `start_run` with `kind: "measure"` and `group: "production"` reports how much a cleanup would free before anyone runs `clean`.
+
+`get_reachability_evidence` reads operator-submitted TCP observations for a visible server. It needs the read scope and never runs a probe. Stale or missing evidence is unknown. A successful observation applies only to the named probe location.

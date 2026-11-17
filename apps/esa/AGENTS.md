@@ -1,6 +1,6 @@
 # AGENTS.md: apps/esa
 
-This Go module builds three things: the control plane (`esa serve`), the `esa` CLI, and `esa-helper`, the root helper on managed servers. HTTP handlers are thin. The `fleet` package holds every permission check, account boundary, and audit entry. The helper is the only code that changes a host. Read this file before you change anything here, and follow the rules exactly.
+This Go module builds the control plane (`esa serve`), the `esa` CLI, `esa-helper`, and `esa-agent`. HTTP handlers are thin. The `fleet` package holds every permission check, account boundary, and audit entry. The helper is the only code that changes a host. Read this file before you change anything here, and follow the rules exactly.
 
 ## Layout
 
@@ -76,7 +76,7 @@ This Go module builds three things: the control plane (`esa serve`), the `esa` C
 - A new action needs: a case in `run` and the `usage` text in `cmd/esa-helper/main.go`, a timeout in `timeoutFor` if it is slow, a `hostops` method, and types in `hostops/proto`.
 - Run programs through `Host.Run` with fixed names and typed, validated arguments. No shell, no free text in arguments. The helper sets `PATH` to `hostops.SafePath`.
 - Return `RefusedError` for safety refusals, `BadRequestError` for bad input, `BusyError` when work is in progress.
-- `proto.Version` is the helper protocol version, reported by `esa-helper version`. Nothing checks it yet, so a new action on an old helper fails with `unknown action` until the helper is reinstalled. Bump it only for incompatible changes.
+- `proto.Version` is the helper protocol version, reported by `esa-helper version`. The control plane refuses a mismatched protocol and actions the helper did not advertise. Compatible older releases remain supported by protocol, capabilities, and report revision, without a fixed release count. Bump it only for incompatible changes.
 - `ssh-dispatch` accepts only `sudo -n /usr/local/lib/esa/esa-helper <action> ...`. Do not widen it.
 
 ### Safety rules
@@ -87,7 +87,7 @@ These are enforced in `hostops` and pinned by `hostops/safety_test.go`. Do not w
 - Build cache prune never uses `all=true`, and is skipped while a build runs.
 - Cleanups never restart, stop, or kill Docker or containers.
 - VS Code cleanup keeps the newest copy and any copy a running process uses, keeps staging folders younger than an hour, never follows symlinks, and checks every directory is owned by the home's owner.
-- Protected units can be started and restarted but never stopped: `ssh`, `sshd`, `docker`, `containerd`, `systemd-journald`, `systemd-logind`, `dbus`, `systemd-resolved`.
+- Protected units can be started and restarted but never stopped: `esa-agent`, `ssh`, `sshd`, `docker`, `containerd`, `systemd-journald`, `systemd-logind`, `dbus`, `systemd-resolved`.
 - Network and firewall units (`networking`, `systemd-networkd`, `NetworkManager`, `ufw`, `nftables`, `iptables`, `ip6tables`, `netfilter-persistent`, `firewalld`) are never started, stopped, or restarted.
 - Power, reboot, suspend, rescue, and emergency units are never started or restarted.
 - Unit names must match `unitNameRe` (`.service` only). Reject anything with shell syntax.
@@ -127,3 +127,10 @@ pnpm --filter @esa/esa build    # bin/esa plus bin/esa-helper-linux-{amd64,arm64
 pnpm --filter @esa/esa dev      # helpers, then esa serve with ../../.env
 pnpm generate                   # Go and TypeScript code from openapi.yaml
 ```
+
+## Outbound and RPM safety
+
+- `cmd/esa-agent` polls HTTPS and invokes only `/usr/bin/sudo -n /usr/local/lib/esa/esa-helper` with direct argv. Never accept a program path, shell, redirect, or arbitrary environment from the network.
+- Agent credentials identify one server and generation. Claims and result writes lock that credential; rotation cancels pending tasks. Never redeliver claimed tasks. Keep payloads sealed and erase them after consumption. Revocation never falls back to SSH.
+- Outbound upgrades require `upgrade-idempotent`. The agent cannot call internal `upgrade-exec` or uninstall itself. Bootstrap remains an explicit root operation.
+- Rocky Linux 9 DNF transactions must inspect and commit the same resolved transaction. Refuse unapproved dependencies, erasures, kernel removal, missing advisory metadata, versionlocks, unavailable repositories, and untrusted signing keys. Never auto-import a key, prune a kernel, or treat a failed reboot check as no reboot needed.

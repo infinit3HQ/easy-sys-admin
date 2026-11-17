@@ -64,11 +64,21 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 		}
 		changes["note"] = note
 	}
-	if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Updates(changes).Error; err != nil {
-		return ServerView{}, mapStore(err)
+	if err := s.store.InTx(ctx, func(q *store.Queries) error {
+		if a.isPerson() {
+			if err := q.Raw().Exec("SELECT set_config('esa.person_write','true',true)").Error; err != nil {
+				return err
+			}
+		}
+		if err := q.Raw().Model(&store.Server{}).Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Updates(changes).Error; err != nil {
+			return mapStore(err)
+		}
+		delete(changes, "updated_at")
+		s.audit(ctx, q, a, "server.update", srv.Name, changes)
+		return nil
+	}); err != nil {
+		return ServerView{}, err
 	}
-	delete(changes, "updated_at")
-	s.audit(ctx, nil, a, "server.update", srv.Name, changes)
 	return s.GetServer(ctx, a, id)
 }
 
@@ -91,9 +101,12 @@ func (s *Service) keepPlanGroup(ctx context.Context, srv store.Server, in Update
 	}
 	if !in.ClearGroup && in.GroupID != nil {
 		var to store.Group
-		if err := s.db.WithContext(ctx).Where("id = ?", *in.GroupID).Take(&to).Error; err == nil && to.PlanRequired {
+		if err := s.db.WithContext(ctx).Where("id = ?", *in.GroupID).Take(&to).Error; err == nil && to.PlanRequired && (!from.TwoApprovers || to.TwoApprovers) {
 			return nil
 		}
+	}
+	if from.TwoApprovers {
+		return errPersonOnly("move a server into a group with fewer required approvals")
 	}
 	return errPersonOnly("move a server out of a group that requires a plan")
 }

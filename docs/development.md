@@ -218,7 +218,7 @@ The control plane calls the helper over SSH as `sudo -n /usr/local/lib/esa/esa-h
 3. Dispatch the action in `run` in `apps/esa/cmd/esa-helper/main.go`: add a `case`, add any flags to the flag set, add the action to the usage text, and add it to `timeoutFor` if it needs more than the default 2 minutes. The SSH forced command (`cmd/esa-helper/dispatch.go` and `hostops.DispatchArgs`) passes any action through sudo, so it needs no change.
 4. Call the action from `apps/esa/internal/fleet/hostcalls.go`. Check `a.can(role, scope)` first. Use `s.call` for reads on any server the caller can see. For actions that change a server, get the server with `operableServer` and use `s.callServer`, then audit the action.
 5. Add tests in `hostops` for parsing and safety rules, like `parse_test.go` and `safety_test.go`.
-6. Rebuild the helpers with `pnpm --filter @esa/esa build:helpers`. Servers keep the helper they have until it is reinstalled, so an older helper answers a new action with `unknown action`. Change `proto.Version` only for incompatible changes. Nothing checks it yet, so reinstall the helper on servers that need the new action.
+6. Rebuild the helpers with `pnpm --filter @esa/esa build:helpers`. Servers keep the helper they have until it is reinstalled, so an older helper answers a new action with `unknown action`. Change `proto.Version` only for incompatible changes. The control plane checks that protocol and sends only advertised actions. Reinstall the helper on servers that need the new action.
 
 Then expose the action through an API endpoint as described above.
 
@@ -231,3 +231,27 @@ Then expose the action through an API endpoint as described above.
 - Only `esbuild` and `lightningcss` may run install scripts (`allowBuilds` in `pnpm-workspace.yaml`). pnpm blocks the rest.
 - pnpm 11 and later refuse to install a package version published less than a day ago (`minimumReleaseAge`, 1440 minutes by default). The repository keeps that default. It protects against hijacked releases, which are usually found and pulled within hours. When a dependency's newest release is younger than a day, `pnpm install` fails to resolve it. The `overrides` in `pnpm-workspace.yaml` pin `electron-to-chromium`, `node-releases`, `seroval`, `tslib`, and `ws` to releases that had passed that window. You can raise or drop a pin once the newer release is more than a day old.
 - Commit subjects are short, in the imperative, in sentence case, and without a trailing period, for example `Add ESA_ALLOW_PRIVATE_NETWORKS setting`. Changes that only touch the web app start with `web:`, for example `web: scan only src for Tailwind classes`. The body explains why the change was made. Larger changes list their parts as bullets. Run `git log --oneline -15` to see recent examples.
+
+## Rolling executable matrix
+
+`TestRollingUpgradeBinaryMatrix` starts the baseline and current control planes against the same disposable PostgreSQL database. It exercises current then baseline migrations, proposals from each executable, and approval attempts from each executable. One person cannot finish two-admin approval through the baseline executable. The baseline is `b74e5f241820ea437d548922ddba06e5db080b18`.
+
+CI builds both binaries and runs this matrix after the ordinary tests. Locally, build the baseline in a separate checkout or archive, build the current `bin/esa`, and run:
+
+```sh
+go test -race -count=1 ./internal/fleet -run TestRollingUpgradeBinaryMatrix -args -rolling-old-binary=/absolute/path/to/baseline/esa -rolling-new-binary=/absolute/path/to/current/bin/esa
+```
+
+Use `ESA_TEST_DATABASE_URL` as for the other fleet tests. Do not run this matrix concurrently with another test run using the same database. Without the two binary flags the test skips, so ordinary development tests need no second checkout.
+
+## Playground verification
+
+Use isolated containers without host mounts or published ports for distro package experiments. Never replace a playground's installed helper or update its existing services to test a new distro path. Rocky 9 fixture tests exercise RPM epochs and architectures, a signed local fixture upgrade, signature refusal, and fail-closed repository metadata. The container shares the host kernel, so this does not verify a Rocky VM reboot.
+
+The outbound client accepts numeric loopback HTTP for an isolated local test. A reverse SSH forward can carry that loopback connection from a playground to a local development control plane. Keep credentials in protected files and remove temporary files and only the test container afterward. No public development API listener is needed.
+
+During a rolling deployment, finish upgrading all control planes before enabling new outbound servers. The baseline binary safely refuses a server with no SSH host key, but does not understand outbound transport.
+
+On 18 November 2026, `Server_Paid` verified Rocky Linux 9.9, RPM 4.16.1.3, and DNF 4.14.0 on ARM64 in `rockylinux@sha256:03303863808e9cd79f0c58c833db3e5f9cde9f2abe16804a267b05dc54af86e4`. The fixed DNF transaction refused a signed fixture before its test key was trusted, then upgraded version 1 to 2 after an explicit test-key import. The full esa-helper path upgraded only the approved `esa-roadmap-fixture.noarch` from `2-1` to `3-1`, confirmed those RPM versions, and reported no reboot required. The helper also read native RPM inventory and refreshed update metadata. No host package or existing container was changed.
+
+The ARM64 outbound agent ran from a temporary file through a loopback-only reverse SSH forward to the disposable local control plane. Its existing installed helper provided real status, which appeared on the board. The new helper was not installed on the playground. Desktop and phone checks covered outbound registration, one-time credential display, connection labels, permission-hidden controls, and unknown/stale probe evidence.

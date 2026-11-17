@@ -10,23 +10,35 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
-// Inventory lists installed deb packages. It does not contact a network.
-// A failed dpkg-query is an error, not an empty list.
+// Inventory lists installed distro packages without contacting a network.
+// A failed package-manager query is an error, not an empty list.
 func (h *Host) Inventory(ctx context.Context) (proto.PackageInventory, error) {
 	rep := proto.PackageInventory{Packages: []proto.InstalledPackage{}, Gaps: []string{}}
 	id, release := h.distro()
 	rep.Distro, rep.Release = id, release
-	out, err := h.output(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n`)
-	if err != nil {
-		return rep, fmt.Errorf("dpkg-query failed: %w", err)
-	}
-	pkgs, truncated := parseDpkg(out)
-	if len(pkgs) == 0 {
-		return rep, errors.New("dpkg-query listed no installed packages")
-	}
-	rep.Packages = pkgs
-	if truncated {
-		rep.Gaps = append(rep.Gaps, "truncated")
+	if h.rocky9() {
+		pkgs, truncated, err := h.rpmInventory(ctx)
+		if err != nil {
+			return rep, err
+		}
+		rep.Packages = pkgs
+		if truncated {
+			rep.Gaps = append(rep.Gaps, "truncated")
+		}
+	} else {
+		out, err := h.output(ctx, 30*time.Second, "dpkg-query", "-W", "-f", `${db:Status-Status}\t${Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n`)
+		if err != nil {
+			return rep, fmt.Errorf("dpkg-query failed: %w", err)
+		}
+		pkgs, truncated := parseDpkg(out)
+		if len(pkgs) == 0 {
+			return rep, errors.New("dpkg-query listed no installed packages")
+		}
+		rep.Packages = pkgs
+		if truncated {
+			rep.Gaps = append(rep.Gaps, "truncated")
+		}
+
 	}
 	if h.Docker != nil {
 		imgs, err := h.Docker.localImages(ctx)

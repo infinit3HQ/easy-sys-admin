@@ -9,7 +9,7 @@ A browser sends the session cookie set by `/auth/callback`. The CLI and other cl
 
 Every error has the shape `{"error": {"code": "...", "message": "..."}}`. Codes include `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), and `unavailable` (502).
 
-Paths marked Public do not need a session or a token.
+Paths marked Public do not need a session or a token. The outbound agent sends X-Esa-Agent-Token, bound to one server. It cannot use a browser session or a user API token for these machine endpoints.
 
 ## session
 
@@ -26,8 +26,16 @@ Paths marked Public do not need a session or a token.
 | GET | `/fleet/overview` | Session or token | Every server in the current account with its latest status, worst first |
 | GET | `/keys` | Session or token | SSH key fingerprints seen in standard authorized_keys files |
 | PUT | `/keys` | Session or token | Name a fingerprint in this space, or clear the name |
+| GET | `/evidence` | Session or token | Download of the key, update, and exposure evidence this account can see |
+| GET | `/datasets` | Session or token | Named backup datasets and how old a success may be |
+| POST | `/datasets` | Session or token | Add a dataset policy (admin) |
+| DELETE | `/datasets/{datasetId}` | Session or token | Remove a dataset policy (admin). This does not change a server. |
 | POST | `/servers/{serverId}/key-baseline` | Session or token | Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current. |
+| POST | `/servers/{serverId}/access-baseline` | Session or token | Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server. |
 | GET | `/servers/{serverId}/key-baseline/versions` | Session or token | Earlier key approvals of this server, newest first |
+| GET | `/servers/{serverId}/key-exceptions` | Session or token | Fingerprints expected on this server until a date. This does not change the server. |
+| POST | `/servers/{serverId}/key-exceptions` | Session or token | Expect one fingerprint on one login until a date |
+| DELETE | `/servers/{serverId}/key-exceptions/{exceptionId}` | Session or token | Remove a key exception. This does not change the server. |
 | GET | `/identities` | Session or token | Owners of keys in this space, with how many grants carry their keys |
 | PUT | `/identities` | Session or token | Record what an owner is and their status. The name is the key label. This does not change a server. |
 | GET | `/offboarding` | Session or token | Keys with this name from the files a current helper has read |
@@ -46,6 +54,11 @@ Paths marked Public do not need a session or a token.
 | POST | `/servers/{serverId}/host-key` | Session or token | Accept the new host key a server presented |
 | POST | `/servers/{serverId}/helper` | Session or token | Reinstall or update esa-helper with a sudo login (or the stored one) |
 | GET | `/servers/{serverId}/metrics` | Session or token | Chart points for CPU, memory, disk, and load |
+| POST | `/agent-servers` | Session or token | Register an outbound server. Requires a recently signed-in space admin. The credential is shown once. |
+| POST | `/servers/{serverId}/agent-credential` | Session or token | Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin. |
+| DELETE | `/servers/{serverId}/agent-credential` | Session or token | Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server. |
+| GET | `/servers/{serverId}/reachability` | Session or token | Read connection evidence submitted by probes an operator runs. |
+| POST | `/servers/{serverId}/reachability` | Session or token | Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server. |
 
 ## server live
 
@@ -64,9 +77,12 @@ Live data read from a server through esa-helper.
 | GET | `/servers/{serverId}/security` | Session or token | Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades |
 | GET | `/servers/{serverId}/jobs` | Session or token | Cron entries and systemd timers |
 | GET | `/servers/{serverId}/recovery` | Session or token | Backup reports an operator wrote on the server |
-| GET | `/servers/{serverId}/sbom` | Session or token | The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. |
+| POST | `/servers/{serverId}/recovery` | Session or token | Store one backup result. The same Idempotency-Key returns the first result and does not change it. |
+| GET | `/servers/{serverId}/sbom` | Session or token | The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. |
 | GET | `/servers/{serverId}/scan` | Session or token | The newest vulnerability scan of this server, ranked, with the scanner and database age |
 | POST | `/servers/{serverId}/scan` | Session or token | Import a Grype JSON report made from this server's SBOM. Up to 10 MiB. |
+| POST | `/servers/{serverId}/vuln-exceptions` | Session or token | Set one scan match aside until a date. The match stays in the list. An exception is not a fix. |
+| DELETE | `/servers/{serverId}/vuln-exceptions/{exceptionId}` | Session or token | Remove a scan exception. This does not change the server or the scan. |
 | GET | `/servers/{serverId}/advisories` | Session or token | Exact affected versions from an imported local feed |
 
 ## groups
@@ -105,6 +121,7 @@ Live data read from a server through esa-helper.
 | DELETE | `/maintenance/{windowId}` | Session or token | Remove a maintenance window |
 | GET | `/incidents` | Session or token | Security notices that still need a person to look at them |
 | GET | `/incidents/{incidentId}` | Session or token | One security notice with its history |
+| PUT | `/incidents/{incidentId}/assignee` | Session or token | Assign a notice to a member of its owning space, or clear the assignment. |
 | POST | `/incidents/{incidentId}/accept` | Session or token | Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes. |
 | POST | `/incidents/{incidentId}/snooze` | Session or token | Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed. |
 | POST | `/incidents/{incidentId}/acknowledge` | Session or token | Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server. |
@@ -173,4 +190,11 @@ An organization can share a group, and the servers in it, with another organizat
 | DELETE | `/group-shares/{shareId}` | Session or token | Stop sharing (admins of the owning team), or remove a group shared with you (admins of the receiving team) |
 | GET | `/shares/{token}` | Session or token | What a share link offers, and which of the caller's teams can accept it |
 | POST | `/shares/{token}/accept` | Session or token | Add the shared group to one of your teams (you must be an owner or admin there; browser sessions only) |
+
+## agent
+
+| Method | Path | Auth | Summary |
+| --- | --- | --- | --- |
+| POST | `/agent/poll` | Server agent token | Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered. |
+| POST | `/agent/result` | Server agent token | Return a claimed helper result. The first result wins. Expired and rotated commands are refused. |
 

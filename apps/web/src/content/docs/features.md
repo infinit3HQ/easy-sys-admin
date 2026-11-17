@@ -130,3 +130,29 @@ A token works in the space where it was created. Demoting or removing a member l
 ## Audit log
 
 The activity page is the audit log. Each change is recorded with the actor and a short detail. Calls are marked web, API, MCP, or system. The log is not pruned. It does not contain passwords, private keys, or token secrets.
+
+## Responsibility and two-admin approvals
+
+The notice page lets an admin assign one current member of the owning space. Assignment does not grant access, resolve the notice, or change the server. The notice history records assignment changes. A member leaving the space clears their assignments. People viewing a shared server do not see the owning space's assignee names.
+
+A group's settings can require two different admins to approve maintenance plans. Add a second admin before enabling it. Both admins must have signed in within the last 15 minutes. The first approval expires after 30 minutes; the second cannot extend it. An approver leaving or losing the admin role prevents execution. Tokens cannot approve or lower this requirement.
+
+Critical exposure, host-key changes, new SSH keys, known-exploited advisories, and approved-access changes cannot be snoozed or accepted as a risk. You can still mark them reviewed and add a note.
+
+## Reachability from a probe you run
+
+The security tab shows TCP observations submitted by machines you choose. Run `esa servers probe web-01 --source office --port 443` from the network you want to check. Use your scheduler to repeat it every 5 minutes. Evidence becomes stale after 15 minutes. A successful connection means reached from that probe, not from the whole internet. A refused or timed-out connection means not reached from that probe. A DNS or local network error is unknown. The last complete observation stays visible after an unknown attempt. Changing the server's enrolled address invalidates its old observations.
+
+Only an admin of the owning group can submit evidence, using an API token with the actions scope. A viewer can read evidence for servers they can see. Esa does not start an external probe service or alter a firewall. No probe evidence means unknown reachability.
+
+## Retention
+
+The hosted retention policy is 365 days for audit entries and 90 days for resolved notice history and superseded vulnerability scan reports after the operator enables pruning. While pruning is off, those records stay longer. Open, reviewed, snoozed, and accepted notices stay. The latest scan stays even if it is stale, so an expired result does not look clean. Run reports and backup evidence receipts stay until the account is deleted. An audit hold pauses pruning.
+
+Self-hosted installs keep all of this history by default. The operator can configure `ESA_AUDIT_RETENTION` and `ESA_REPORT_RETENTION` in the environment. A person in the app cannot shorten them.
+
+## Outbound connections and Rocky Linux 9
+
+Servers without incoming SSH can use the [outbound agent](/outbound-agent). Registration and credential rotation require a recently signed-in space admin. The agent runs the same typed helper actions, with expiring commands and no automatic replay after a disconnect.
+
+Rocky Linux 9 supports RPM inventory, security metadata, and approved DNF updates. Install `dnf-utils` for reboot checks. The helper refuses unapproved dependencies, package erasures, kernel removal, versionlocks, and untrusted signatures. Other RHEL-family releases remain unsupported.

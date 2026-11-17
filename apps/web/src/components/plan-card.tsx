@@ -113,6 +113,10 @@ export function PlanCard({
             </Link>
           )}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Approvals: {plan.approvals} of {plan.approvalsRequired}. Each approver
+          must be a different current admin.
+        </p>
         {canAct && plan.status === 'submitted' && <Decide id={plan.id} />}
         {canAct && plan.status === 'approved' && <Execute plan={plan} />}
         {canAct && plan.status === 'approved' && <Cancel id={plan.id} />}

@@ -17,6 +17,7 @@ import (
 //	every 12 hours check TLS certificates
 func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, log *slog.Logger) {
 	fl.ResumeRuns(ctx)
+	go every(ctx, log, "agent receipts", time.Minute, time.Minute, fl.PruneAgentTasks)
 	go every(ctx, log, "poll", time.Minute, 5*time.Second, fl.PollAll)
 	go every(ctx, log, "resume", time.Minute, 20*time.Second, fl.ResumeRuns)
 	go every(ctx, log, "deliver", time.Minute, 10*time.Second, fl.DrainDeliveries)
@@ -28,6 +29,7 @@ func startJobs(ctx context.Context, fl *fleet.Service, sessions *auth.Sessions, 
 	go every(ctx, log, "scan", time.Hour, 6*time.Minute, fl.AutoScan)
 	go every(ctx, log, "certs", 12*time.Hour, 3*time.Minute, fl.CheckCerts)
 	go every(ctx, log, "audit", time.Hour, 4*time.Minute, fl.PruneAudit)
+	go every(ctx, log, "reports", time.Hour, 5*time.Minute, fl.PruneReports)
 }
 
 // every runs fn after delay and then on each interval. A panic in one run

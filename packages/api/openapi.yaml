@@ -751,12 +751,133 @@ paths:
           description: Stored. A later result does not replace an earlier one. This does not run a backup or a restore.
         default: { $ref: '#/components/responses/Error' }
 
+  /agent-servers:
+    post:
+      operationId: createAgentServer
+      summary: Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                groupId: { type: integer, format: int64, nullable: true }
+      responses:
+        '201':
+          description: Registered server and one-time credential.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCredential' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/agent-credential:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: rotateAgentCredential
+      summary: Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+      tags: [servers]
+      responses:
+        '200':
+          description: One-time replacement credential. The previous credential stops working immediately.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCredential' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: revokeAgentCredential
+      summary: Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+      tags: [servers]
+      responses:
+        '204': { description: Revoked. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agent/poll:
+    post:
+      operationId: pollAgent
+      summary: Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+      tags: [agent]
+      security: [{ agentToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgentToken'
+      responses:
+        '200':
+          description: No command, or one command with a bounded expiry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { $ref: '#/components/schemas/AgentCommand' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agent/result:
+    post:
+      operationId: submitAgentResult
+      summary: Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+      tags: [agent]
+      security: [{ agentToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgentToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, output, exit]
+              properties:
+                id: { type: integer, format: int64 }
+                output: { type: string, maxLength: 4194304 }
+                exit: { type: integer }
+      responses:
+        '204': { description: Result recorded. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/reachability:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getReachability
+      summary: Read connection evidence submitted by probes an operator runs.
+      tags: [servers]
+      responses:
+        '200':
+          description: Observations from each probe. Missing evidence is unknown.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 128
+                    items: { $ref: '#/components/schemas/ProbeObservation' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: submitReachability
+      summary: Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeInput' }
+      responses:
+        '204': { description: Observation recorded. An older or repeated observation does not replace newer evidence. }
+        default: { $ref: '#/components/responses/Error' }
+
   /servers/{serverId}/sbom:
     parameters:
       - $ref: '#/components/parameters/ServerId'
     get:
       operationId: getServerSbom
-      summary: The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+      summary: The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
       tags: [server-live]
       responses:
         '200':
@@ -1558,6 +1679,31 @@ paths:
               schema: { $ref: '#/components/schemas/Incident' }
         default: { $ref: '#/components/responses/Error' }
 
+  /incidents/{incidentId}/assignee:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    put:
+      operationId: assignIncident
+      summary: Assign a notice to a member of its owning space, or clear the assignment.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  { type: integer, format: int64, nullable: true, minimum: 1 }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
   /incidents/{incidentId}/accept:
     parameters:
       - $ref: '#/components/parameters/IncidentId'
@@ -1922,6 +2068,10 @@ paths:
 
 components:
   securitySchemes:
+    agentToken:
+      type: apiKey
+      in: header
+      name: X-Esa-Agent-Token
     sessionCookie:
       type: apiKey
       in: cookie
@@ -1932,6 +2082,11 @@ components:
       description: An API token (esa_...) from Settings > API tokens.
 
   parameters:
+    AgentToken:
+      name: X-Esa-Agent-Token
+      in: header
+      required: true
+      schema: { type: string, maxLength: 200 }
     PlanId:
       name: planId
       in: path
@@ -2650,6 +2805,20 @@ components:
         fingerprint: { type: string }
         label: { type: string, maxLength: 80, description: Empty clears the name. }
 
+    AgentCredential:
+      type: object
+      required: [serverId, token]
+      properties:
+        serverId: { type: integer, format: int64 }
+        token: { type: string, description: "Shown once. Save in a protected file, never in a URL or command argument." }
+    AgentCommand:
+      type: object
+      required: [id, action, args, expiresAt]
+      properties:
+        id: { type: integer, format: int64 }
+        action: { type: string }
+        args: { type: array, maxItems: 256, items: { type: string, maxLength: 65536 } }
+        expiresAt: { type: string, format: date-time }
     Server:
       type: object
       required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole, note]
@@ -2664,6 +2833,7 @@ components:
         username: { type: string, description: 'SSH user the control plane uses, normally esa.' }
         groupId: { type: integer, format: int64, nullable: true }
         groupName: { type: string, nullable: true }
+        connection: { type: string, enum: [ssh, outbound], description: Outbound servers do not accept incoming SSH connections from esa. }
         enrollment: { type: string, enum: [pending, ready] }
         hostKeyFingerprint: { type: string }
         helperVersion: { type: string }
@@ -3291,7 +3461,7 @@ components:
 
     UpdatePolicy:
       type: object
-      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures, planRequired]
+      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures, planRequired, twoApprovers]
       properties:
         enabled: { type: boolean }
         mode: { type: string, enum: [security, all] }
@@ -3311,6 +3481,7 @@ components:
           maximum: 1000
           default: 1
           description: Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
+        twoApprovers: { type: boolean, description: Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule. }
         planRequired:
           type: boolean
           description: An interactive update or cleanup must be an approved plan. A schedule still runs.
@@ -3611,15 +3782,42 @@ components:
           readOnly: true
           description: The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
 
+    ProbeInput:
+      type: object
+      required: [source, host, port, state, reason, observedAt]
+      properties:
+        source: { type: string, maxLength: 40, pattern: '^[A-Za-z0-9._-]+$', description: A stable label for the probe location. }
+        host: { type: string, maxLength: 253, description: Must equal the server's enrolled host. }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        state: { type: string, enum: [reachable, not_reached, unknown] }
+        reason: { type: string, enum: [none, refused, timeout, dns_failed, network_error] }
+        observedAt: { type: string, format: date-time }
+
+    ProbeObservation:
+      type: object
+      required: [source, host, port, state, reason, attemptedAt, stale]
+      properties:
+        source: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        state: { type: string, enum: [reachable, not_reached, unknown], description: Only this probe's latest attempt. Not a result for the whole internet. }
+        reason: { type: string }
+        attemptedAt: { type: string, format: date-time }
+        stale: { type: boolean, description: True after 15 minutes without a current attempt. Stale evidence is unknown. }
+        lastKnownState: { type: string, description: The last reachable or not_reached result. An unknown attempt does not erase it. }
+        lastKnownAt: { type: string, format: date-time, nullable: true }
+
     FixPlan:
       type: object
-      required: [id, status, fingerprint, body, reason, createdAt]
+      required: [id, status, fingerprint, body, reason, createdAt, approvals, approvalsRequired]
       properties:
         id: { type: integer, format: int64 }
         status:
           type: string
           enum: [submitted, approved, rejected, cancelled, executing, succeeded, partial, failed, skipped, expired, invalidated]
           description: executing until the run finishes, then the run's status.
+        approvals: { type: integer, minimum: 0, maximum: 2 }
+        approvalsRequired: { type: integer, minimum: 1, maximum: 2 }
         fingerprint: { type: string }
         body: { $ref: '#/components/schemas/PlanBody' }
         expiresAt: { type: string, format: date-time, nullable: true }
@@ -3673,11 +3871,14 @@ components:
 
     Incident:
       type: object
-      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen, canReview]
+      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen, canReview, canHold]
       properties:
         id: { type: integer, format: int64 }
         serverId: { type: integer, format: int64 }
         serverName: { type: string }
+        assigneeId: { type: integer, format: int64, nullable: true, description: Assigned member. Hidden from other spaces. }
+        assigneeName: { type: string, description: Assigned member display name. Hidden from other spaces. }
+        canHold: { type: boolean, description: Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot. }
         canReview:
           type: boolean
           description: True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
@@ -3738,7 +3939,7 @@ components:
       type: object
       required: [kind, actor, detail, at]
       properties:
-        kind: { type: string, enum: [opened, reopened, recurred, snooze_broken, resolved, acknowledged, snoozed, accepted, returned] }
+        kind: { type: string, enum: [opened, reopened, recurred, snooze_broken, resolved, acknowledged, snoozed, accepted, returned, assigned, unassigned] }
         actor: { type: string, description: esa for the control plane. People of another organization are not named. }
         detail: { type: string }
         at: { type: string, format: date-time }

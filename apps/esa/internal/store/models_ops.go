@@ -117,7 +117,9 @@ type SecurityIncident struct {
 	Note string `gorm:"not null;default:''"`
 	// Sockets keeps every socket named by a new-port notice, including those
 	// omitted from the shortened message. Nil means the list is unknown.
-	Sockets JSON
+	Sockets    JSON
+	AssigneeID *int64
+	Assignee   *User `gorm:"foreignKey:AssigneeID;constraint:OnDelete:SET NULL"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
@@ -225,20 +227,22 @@ type CertTarget struct {
 // FixPlan is a typed maintenance request. A token can propose or execute it.
 // Only a browser session can approve it. The body is the authority; prose is not stored.
 type FixPlan struct {
-	ID              int64  `gorm:"primaryKey"`
-	AccountID       int64  `gorm:"not null;index"`
-	Status          string `gorm:"not null"`
-	Fingerprint     string `gorm:"not null;size:64"`
-	Body            JSON   `gorm:"type:jsonb;not null"`
-	ExpiresAt       *time.Time
-	CreatedBy       int64 `gorm:"not null"`
-	ProposerTokenID int64 `gorm:"not null;default:0"`
-	ApprovedBy      *int64
-	ApprovedAt      *time.Time
-	Reason          string `gorm:"not null;default:''"`
-	RunID           *int64
-	CreatedAt       time.Time `gorm:"not null"`
-	UpdatedAt       time.Time `gorm:"not null"`
+	ID                int64  `gorm:"primaryKey"`
+	AccountID         int64  `gorm:"not null;index"`
+	Status            string `gorm:"not null"`
+	Fingerprint       string `gorm:"not null;size:64"`
+	Body              JSON   `gorm:"type:jsonb;not null"`
+	ExpiresAt         *time.Time
+	CreatedBy         int64 `gorm:"not null"`
+	ProposerTokenID   int64 `gorm:"not null;default:0"`
+	ApprovedBy        *int64
+	ApprovedAt        *time.Time
+	SecondApprovedBy  *int64
+	ApprovalsRequired int    `gorm:"not null;default:1"`
+	Reason            string `gorm:"not null;default:''"`
+	RunID             *int64
+	CreatedAt         time.Time `gorm:"not null"`
+	UpdatedAt         time.Time `gorm:"not null"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 }

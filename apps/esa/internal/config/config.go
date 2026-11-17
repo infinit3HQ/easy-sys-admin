@@ -65,7 +65,8 @@ type Config struct {
 	Scanner string
 	// AuditRetention is ESA_AUDIT_RETENTION. Zero keeps the audit log until
 	// the account is deleted. Hosted installs leave it zero.
-	AuditRetention time.Duration
+	AuditRetention  time.Duration
+	ReportRetention time.Duration
 	// AuditHoldUntil is ESA_AUDIT_HOLD_UNTIL. While it is in the future,
 	// pruning deletes nothing. Zero means no hold.
 	AuditHoldUntil time.Time
@@ -276,6 +277,11 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 	if s := get("ESA_AUDIT_RETENTION", ""); s != "" {
 		if cfg.AuditRetention, err = parseDuration(s, 24*time.Hour, 0); err != nil {
 			return fmt.Errorf("ESA_AUDIT_RETENTION: %w", err)
+		}
+	}
+	if value := get("ESA_REPORT_RETENTION", ""); value != "" {
+		if cfg.ReportRetention, err = parseDuration(value, 24*time.Hour, 0); err != nil {
+			return fmt.Errorf("ESA_REPORT_RETENTION: %w", err)
 		}
 	}
 	if s := get("ESA_AUDIT_HOLD_UNTIL", ""); s != "" {

@@ -263,3 +263,19 @@ By hand, check out the older commit on the host and run the compose command agai
 git checkout <commit>
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 ```
+
+## Control plane compatibility during upgrades
+
+New columns are additive. Two-admin approval requirements are also enforced by a PostgreSQL trigger so an older control plane cannot approve or execute a protected plan with one approval. A group constraint prevents older code from turning off required plans while the two-admin policy remains on. An older application can report a database error for those refused writes; use the current web and control plane versions for the full approval flow.
+
+Each current maintenance worker checks the original connections that hold its advisory locks, before helper calls and every 5 seconds while waiting. A lost connection cancels the worker even if the database becomes reachable again. The next worker resumes unfinished upgrades. An install already sent to a host remains detached and is followed rather than sent again. Older executables without these connection checks do not gain them from a schema migration. Drain their maintenance runs before replacing those executables.
+
+## Hosted retention settings
+
+The published hosted policy is 365 days for audit rows and 90 days for resolved notice history and superseded vulnerability scan reports. Configure `ESA_AUDIT_RETENTION=8760h` and `ESA_REPORT_RETENTION=2160h` to enable that pruning. Compose and the deploy workflow pass these variables through; an unset variable keeps all history. Deployment does not enable deletion implicitly.
+
+`ESA_AUDIT_HOLD_UNTIL` pauses both kinds of pruning. Unresolved notices and the latest scanner snapshot stay even when old. Keeping a stale latest snapshot prevents an expired scan from turning into a clean-looking empty list. Run reports, backup evidence receipts, and their idempotency keys remain until account deletion. Report pruning deletes at most 1000 resolved notices and 1000 superseded scans per hour, records a retention ledger row, and writes an audit entry. A second control plane cannot claim the same prune interval.
+
+## Outbound servers
+
+The control-plane image includes esa-agent and esa-helper for amd64 and arm64. Reviewed bootstrap artifacts are served under `/enroll/outbound/`, through the existing web proxy. No incoming agent port or new control-plane environment variable is needed. Allow outgoing HTTPS from the managed host to the public esa origin. See [outbound-agent.md](outbound-agent.md) for installation, rotation, and removal. Agent result bodies have a dedicated 8 MiB limit at both proxies; other API body limits stay unchanged.

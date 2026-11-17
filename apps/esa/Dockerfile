@@ -17,7 +17,8 @@ ARG LDFLAGS="-s -w -X github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/v
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags "$LDFLAGS" -o /out/esa ./cmd/esa && \
     for arch in amd64 arm64; do \
-      GOOS=linux GOARCH=$arch go build -ldflags "$LDFLAGS" -o /out/helpers/esa-helper-linux-$arch ./cmd/esa-helper; \
+      GOOS=linux GOARCH=$arch go build -ldflags "$LDFLAGS" -o /out/helpers/esa-helper-linux-$arch ./cmd/esa-helper && \
+      GOOS=linux GOARCH=$arch go build -ldflags "$LDFLAGS" -o /out/helpers/esa-agent-linux-$arch ./cmd/esa-agent || exit 1; \
     done
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab

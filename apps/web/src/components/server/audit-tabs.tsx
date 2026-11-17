@@ -15,6 +15,7 @@ import { Badge } from '#/components/ui/badge'
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { useServerAccess } from '#/components/server/use-access'
+import { ReachabilityPanel } from '#/components/server/reachability-panel'
 import { ScanPanel } from '#/components/server/scan-panel'
 import {
   Table,
@@ -392,12 +393,25 @@ export function SecurityTab({ serverId }: { serverId: number }) {
   const r = useQuery(q.security(serverId))
   const recovery = useQuery(q.recovery(serverId))
   const advisories = useQuery(q.advisories(serverId))
-  if (r.isLoading) return <Loading />
-  if (r.error || !r.data) return <ErrorBanner error={r.error} />
+  if (r.isLoading)
+    return (
+      <>
+        <ReachabilityPanel serverId={serverId} />
+        <Loading />
+      </>
+    )
+  if (r.error || !r.data)
+    return (
+      <>
+        <ReachabilityPanel serverId={serverId} />
+        <ErrorBanner error={r.error} />
+      </>
+    )
   const d = r.data
   const exposed = (a: string) => a === '0.0.0.0' || a === '::' || a === '*'
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]">
+      <ReachabilityPanel serverId={serverId} />
       {d.gaps.includes('helper') && (
         <Notice className="xl:col-span-2">
           This helper is too old for a complete security report. Reinstall it.

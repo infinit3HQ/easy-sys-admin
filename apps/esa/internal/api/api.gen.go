@@ -447,6 +447,7 @@ func (e IncidentState) Valid() bool {
 const (
 	IncidentEventKindAccepted     IncidentEventKind = "accepted"
 	IncidentEventKindAcknowledged IncidentEventKind = "acknowledged"
+	IncidentEventKindAssigned     IncidentEventKind = "assigned"
 	IncidentEventKindOpened       IncidentEventKind = "opened"
 	IncidentEventKindRecurred     IncidentEventKind = "recurred"
 	IncidentEventKindReopened     IncidentEventKind = "reopened"
@@ -454,6 +455,7 @@ const (
 	IncidentEventKindReturned     IncidentEventKind = "returned"
 	IncidentEventKindSnoozeBroken IncidentEventKind = "snooze_broken"
 	IncidentEventKindSnoozed      IncidentEventKind = "snoozed"
+	IncidentEventKindUnassigned   IncidentEventKind = "unassigned"
 )
 
 // Valid indicates whether the value is a known member of the IncidentEventKind enum.
@@ -462,6 +464,8 @@ func (e IncidentEventKind) Valid() bool {
 	case IncidentEventKindAccepted:
 		return true
 	case IncidentEventKindAcknowledged:
+		return true
+	case IncidentEventKindAssigned:
 		return true
 	case IncidentEventKindOpened:
 		return true
@@ -476,6 +480,8 @@ func (e IncidentEventKind) Valid() bool {
 	case IncidentEventKindSnoozeBroken:
 		return true
 	case IncidentEventKindSnoozed:
+		return true
+	case IncidentEventKindUnassigned:
 		return true
 	default:
 		return false
@@ -515,6 +521,75 @@ func (e PlanBodyUpdateMode) Valid() bool {
 	case PlanBodyUpdateModeAll:
 		return true
 	case PlanBodyUpdateModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeInputReason.
+const (
+	DnsFailed    ProbeInputReason = "dns_failed"
+	NetworkError ProbeInputReason = "network_error"
+	None         ProbeInputReason = "none"
+	Refused      ProbeInputReason = "refused"
+	Timeout      ProbeInputReason = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the ProbeInputReason enum.
+func (e ProbeInputReason) Valid() bool {
+	switch e {
+	case DnsFailed:
+		return true
+	case NetworkError:
+		return true
+	case None:
+		return true
+	case Refused:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeInputState.
+const (
+	ProbeInputStateNotReached ProbeInputState = "not_reached"
+	ProbeInputStateReachable  ProbeInputState = "reachable"
+	ProbeInputStateUnknown    ProbeInputState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProbeInputState enum.
+func (e ProbeInputState) Valid() bool {
+	switch e {
+	case ProbeInputStateNotReached:
+		return true
+	case ProbeInputStateReachable:
+		return true
+	case ProbeInputStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeObservationState.
+const (
+	ProbeObservationStateNotReached ProbeObservationState = "not_reached"
+	ProbeObservationStateReachable  ProbeObservationState = "reachable"
+	ProbeObservationStateUnknown    ProbeObservationState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProbeObservationState enum.
+func (e ProbeObservationState) Valid() bool {
+	switch e {
+	case ProbeObservationStateNotReached:
+		return true
+	case ProbeObservationStateReachable:
+		return true
+	case ProbeObservationStateUnknown:
 		return true
 	default:
 		return false
@@ -707,6 +782,24 @@ func (e Scope) Valid() bool {
 	case ScopeLogsRead:
 		return true
 	case ScopeRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ServerConnection.
+const (
+	Outbound ServerConnection = "outbound"
+	Ssh      ServerConnection = "ssh"
+)
+
+// Valid indicates whether the value is a known member of the ServerConnection enum.
+func (e ServerConnection) Valid() bool {
+	switch e {
+	case Outbound:
+		return true
+	case Ssh:
 		return true
 	default:
 		return false
@@ -934,6 +1027,22 @@ type AddServerRequest struct {
 
 // AdvisoryReport defines model for AdvisoryReport.
 type AdvisoryReport = fleet.AdvisoryReport
+
+// AgentCommand defines model for AgentCommand.
+type AgentCommand struct {
+	Action    string    `json:"action"`
+	Args      []string  `json:"args"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        int64     `json:"id"`
+}
+
+// AgentCredential defines model for AgentCredential.
+type AgentCredential struct {
+	ServerId int64 `json:"serverId"`
+
+	// Token Shown once. Save in a protected file, never in a URL or command argument.
+	Token string `json:"token"`
+}
 
 // Alert defines model for Alert.
 type Alert struct {
@@ -1337,13 +1446,15 @@ type Exposure struct {
 
 // FixPlan defines model for FixPlan.
 type FixPlan struct {
-	Body        PlanBody   `json:"body"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	Fingerprint string     `json:"fingerprint"`
-	Id          int64      `json:"id"`
-	Reason      string     `json:"reason"`
-	RunId       *int64     `json:"runId,omitempty"`
+	Approvals         int        `json:"approvals"`
+	ApprovalsRequired int        `json:"approvalsRequired"`
+	Body              PlanBody   `json:"body"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	ExpiresAt         *time.Time `json:"expiresAt,omitempty"`
+	Fingerprint       string     `json:"fingerprint"`
+	Id                int64      `json:"id"`
+	Reason            string     `json:"reason"`
+	RunId             *int64     `json:"runId,omitempty"`
 
 	// Status executing until the run finishes, then the run's status.
 	Status FixPlanStatus `json:"status"`
@@ -1521,6 +1632,15 @@ type ImageCheckList struct {
 // Incident defines model for Incident.
 type Incident struct {
 	AckedAt *time.Time `json:"ackedAt,omitempty"`
+
+	// AssigneeId Assigned member. Hidden from other spaces.
+	AssigneeId *int64 `json:"assigneeId,omitempty"`
+
+	// AssigneeName Assigned member display name. Hidden from other spaces.
+	AssigneeName *string `json:"assigneeName,omitempty"`
+
+	// CanHold Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot.
+	CanHold bool `json:"canHold"`
 
 	// CanReview True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
 	CanReview bool `json:"canReview"`
@@ -1944,6 +2064,47 @@ type PlanList struct {
 	Items []FixPlan `json:"items"`
 }
 
+// ProbeInput defines model for ProbeInput.
+type ProbeInput struct {
+	// Host Must equal the server's enrolled host.
+	Host       string           `json:"host"`
+	ObservedAt time.Time        `json:"observedAt"`
+	Port       int              `json:"port"`
+	Reason     ProbeInputReason `json:"reason"`
+
+	// Source A stable label for the probe location.
+	Source string          `json:"source"`
+	State  ProbeInputState `json:"state"`
+}
+
+// ProbeInputReason defines model for ProbeInput.Reason.
+type ProbeInputReason string
+
+// ProbeInputState defines model for ProbeInput.State.
+type ProbeInputState string
+
+// ProbeObservation defines model for ProbeObservation.
+type ProbeObservation struct {
+	AttemptedAt time.Time  `json:"attemptedAt"`
+	Host        string     `json:"host"`
+	LastKnownAt *time.Time `json:"lastKnownAt,omitempty"`
+
+	// LastKnownState The last reachable or not_reached result. An unknown attempt does not erase it.
+	LastKnownState *string `json:"lastKnownState,omitempty"`
+	Port           int     `json:"port"`
+	Reason         string  `json:"reason"`
+	Source         string  `json:"source"`
+
+	// Stale True after 15 minutes without a current attempt. Stale evidence is unknown.
+	Stale bool `json:"stale"`
+
+	// State Only this probe's latest attempt. Not a result for the whole internet.
+	State ProbeObservationState `json:"state"`
+}
+
+// ProbeObservationState Only this probe's latest attempt. Not a result for the whole internet.
+type ProbeObservationState string
+
 // ProbeRequest defines model for ProbeRequest.
 type ProbeRequest struct {
 	Host string `json:"host"`
@@ -2117,10 +2278,13 @@ type SecurityReport = proto.SecurityReport
 // Server defines model for Server.
 type Server struct {
 	// Access own: the group belongs to the current account. view or operate: another team shares it.
-	Access     GroupAccess      `json:"access"`
-	Arch       string           `json:"arch"`
-	CreatedAt  time.Time        `json:"createdAt"`
-	Enrollment ServerEnrollment `json:"enrollment"`
+	Access GroupAccess `json:"access"`
+	Arch   string      `json:"arch"`
+
+	// Connection Outbound servers do not accept incoming SSH connections from esa.
+	Connection *ServerConnection `json:"connection,omitempty"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	Enrollment ServerEnrollment  `json:"enrollment"`
 
 	// Exposure Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
 	Exposure       *Exposure `json:"exposure,omitempty"`
@@ -2173,6 +2337,9 @@ type Server struct {
 	// organization when they are an owner.
 	YourRole EffectiveRole `json:"yourRole"`
 }
+
+// ServerConnection Outbound servers do not accept incoming SSH connections from esa.
+type ServerConnection string
 
 // ServerEnrollment defines model for Server.Enrollment.
 type ServerEnrollment string
@@ -2388,6 +2555,9 @@ type UpdatePolicy struct {
 
 	// Time Example: 04:00
 	Time string `json:"time"`
+
+	// TwoApprovers Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule.
+	TwoApprovers bool `json:"twoApprovers"`
 }
 
 // UpdatePolicyMode defines model for UpdatePolicy.Mode.
@@ -2432,6 +2602,9 @@ type VulnExceptionInput struct {
 	Until    time.Time `json:"until"`
 }
 
+// AgentToken defines model for AgentToken.
+type AgentToken = string
+
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
@@ -2471,6 +2644,29 @@ type ListActivityParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateAgentServerJSONBody defines parameters for CreateAgentServer.
+type CreateAgentServerJSONBody struct {
+	GroupId *int64 `json:"groupId,omitempty"`
+	Name    string `json:"name"`
+}
+
+// PollAgentParams defines parameters for PollAgent.
+type PollAgentParams struct {
+	XEsaAgentToken AgentToken `json:"X-Esa-Agent-Token"`
+}
+
+// SubmitAgentResultJSONBody defines parameters for SubmitAgentResult.
+type SubmitAgentResultJSONBody struct {
+	Exit   int    `json:"exit"`
+	Id     int64  `json:"id"`
+	Output string `json:"output"`
+}
+
+// SubmitAgentResultParams defines parameters for SubmitAgentResult.
+type SubmitAgentResultParams struct {
+	XEsaAgentToken AgentToken `json:"X-Esa-Agent-Token"`
+}
+
 // ListAlertsParams defines parameters for ListAlerts.
 type ListAlertsParams struct {
 	All   *bool `form:"all,omitempty" json:"all,omitempty"`
@@ -2492,6 +2688,11 @@ type ListIncidentsParams struct {
 // AcknowledgeIncidentJSONBody defines parameters for AcknowledgeIncident.
 type AcknowledgeIncidentJSONBody struct {
 	Note *string `json:"note,omitempty"`
+}
+
+// AssignIncidentJSONBody defines parameters for AssignIncident.
+type AssignIncidentJSONBody struct {
+	UserId *int64 `json:"userId"`
 }
 
 // OffboardingParams defines parameters for Offboarding.
@@ -2579,6 +2780,12 @@ type SubmitServerRecoveryParams struct {
 // ImportServerScanJSONBody defines parameters for ImportServerScan.
 type ImportServerScanJSONBody map[string]interface{}
 
+// CreateAgentServerJSONRequestBody defines body for CreateAgentServer for application/json ContentType.
+type CreateAgentServerJSONRequestBody CreateAgentServerJSONBody
+
+// SubmitAgentResultJSONRequestBody defines body for SubmitAgentResult for application/json ContentType.
+type SubmitAgentResultJSONRequestBody SubmitAgentResultJSONBody
+
 // SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
 type SetRoutingJSONRequestBody = Routing
 
@@ -2617,6 +2824,9 @@ type AcceptIncidentJSONRequestBody = IncidentHold
 
 // AcknowledgeIncidentJSONRequestBody defines body for AcknowledgeIncident for application/json ContentType.
 type AcknowledgeIncidentJSONRequestBody AcknowledgeIncidentJSONBody
+
+// AssignIncidentJSONRequestBody defines body for AssignIncident for application/json ContentType.
+type AssignIncidentJSONRequestBody AssignIncidentJSONBody
 
 // SnoozeIncidentJSONRequestBody defines body for SnoozeIncident for application/json ContentType.
 type SnoozeIncidentJSONRequestBody = IncidentHold
@@ -2693,6 +2903,9 @@ type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 // CreateKeyExceptionJSONRequestBody defines body for CreateKeyException for application/json ContentType.
 type CreateKeyExceptionJSONRequestBody = KeyExceptionInput
 
+// SubmitReachabilityJSONRequestBody defines body for SubmitReachability for application/json ContentType.
+type SubmitReachabilityJSONRequestBody = ProbeInput
+
 // SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
 type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
 
@@ -2713,6 +2926,15 @@ type ServerInterface interface {
 	// ListActivity Audit log of the account, newest first (admins)
 	// (GET /activity)
 	ListActivity(w http.ResponseWriter, r *http.Request, params ListActivityParams)
+	// CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	// (POST /agent-servers)
+	CreateAgentServer(w http.ResponseWriter, r *http.Request)
+	// PollAgent Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+	// (POST /agent/poll)
+	PollAgent(w http.ResponseWriter, r *http.Request, params PollAgentParams)
+	// SubmitAgentResult Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	// (POST /agent/result)
+	SubmitAgentResult(w http.ResponseWriter, r *http.Request, params SubmitAgentResultParams)
 	// ListAlerts Open alerts, or recent alerts including resolved ones
 	// (GET /alerts)
 	ListAlerts(w http.ResponseWriter, r *http.Request, params ListAlertsParams)
@@ -2824,6 +3046,9 @@ type ServerInterface interface {
 	// AcknowledgeIncident Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server.
 	// (POST /incidents/{incidentId}/acknowledge)
 	AcknowledgeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId)
+	// AssignIncident Assign a notice to a member of its owning space, or clear the assignment.
+	// (PUT /incidents/{incidentId}/assignee)
+	AssignIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId)
 	// SnoozeIncident Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
 	// (POST /incidents/{incidentId}/snooze)
 	SnoozeIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId)
@@ -2968,6 +3193,12 @@ type ServerInterface interface {
 	// GetServerAdvisories Exact affected versions from an imported local feed
 	// (GET /servers/{serverId}/advisories)
 	GetServerAdvisories(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+	// (DELETE /servers/{serverId}/agent-credential)
+	RevokeAgentCredential(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	// (POST /servers/{serverId}/agent-credential)
+	RotateAgentCredential(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// ListContainers Docker containers on the server
 	// (GET /servers/{serverId}/containers)
 	ListContainers(w http.ResponseWriter, r *http.Request, serverId ServerId)
@@ -3010,13 +3241,19 @@ type ServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(w http.ResponseWriter, r *http.Request, serverId ServerId, params GetServerMetricsParams)
+	// GetReachability Read connection evidence submitted by probes an operator runs.
+	// (GET /servers/{serverId}/reachability)
+	GetReachability(w http.ResponseWriter, r *http.Request, serverId ServerId)
+	// SubmitReachability Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	// (POST /servers/{serverId}/reachability)
+	SubmitReachability(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
 	// (POST /servers/{serverId}/recovery)
 	SubmitServerRecovery(w http.ResponseWriter, r *http.Request, serverId ServerId, params SubmitServerRecoveryParams)
-	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// GetServerSbom The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	// (GET /servers/{serverId}/sbom)
 	GetServerSbom(w http.ResponseWriter, r *http.Request, serverId ServerId)
 	// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
@@ -3099,6 +3336,110 @@ func (siw *ServerInterfaceWrapper) ListActivity(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListActivity(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentServer operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentServer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentServer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PollAgent operation middleware
+func (siw *ServerInterfaceWrapper) PollAgent(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PollAgentParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Esa-Agent-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Esa-Agent-Token")]; found {
+		var XEsaAgentToken AgentToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Esa-Agent-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Esa-Agent-Token", valueList[0], &XEsaAgentToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Esa-Agent-Token", Err: err})
+			return
+		}
+
+		params.XEsaAgentToken = XEsaAgentToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Esa-Agent-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Esa-Agent-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PollAgent(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitAgentResult operation middleware
+func (siw *ServerInterfaceWrapper) SubmitAgentResult(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubmitAgentResultParams
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-Esa-Agent-Token" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Esa-Agent-Token")]; found {
+		var XEsaAgentToken AgentToken
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Esa-Agent-Token", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Esa-Agent-Token", valueList[0], &XEsaAgentToken, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Esa-Agent-Token", Err: err})
+			return
+		}
+
+		params.XEsaAgentToken = XEsaAgentToken
+
+	} else {
+		err := fmt.Errorf("Header parameter X-Esa-Agent-Token is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-Esa-Agent-Token", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitAgentResult(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3903,6 +4244,32 @@ func (siw *ServerInterfaceWrapper) AcknowledgeIncident(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AcknowledgeIncident(w, r, incidentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AssignIncident operation middleware
+func (siw *ServerInterfaceWrapper) AssignIncident(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "incidentId" -------------
+	var incidentId IncidentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "incidentId", r.PathValue("incidentId"), &incidentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "incidentId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AssignIncident(w, r, incidentId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5027,6 +5394,58 @@ func (siw *ServerInterfaceWrapper) GetServerAdvisories(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// RevokeAgentCredential operation middleware
+func (siw *ServerInterfaceWrapper) RevokeAgentCredential(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeAgentCredential(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateAgentCredential operation middleware
+func (siw *ServerInterfaceWrapper) RotateAgentCredential(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateAgentCredential(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListContainers operation middleware
 func (siw *ServerInterfaceWrapper) ListContainers(w http.ResponseWriter, r *http.Request) {
 
@@ -5493,6 +5912,58 @@ func (siw *ServerInterfaceWrapper) GetServerMetrics(w http.ResponseWriter, r *ht
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetServerMetrics(w, r, serverId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetReachability operation middleware
+func (siw *ServerInterfaceWrapper) GetReachability(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReachability(w, r, serverId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubmitReachability operation middleware
+func (siw *ServerInterfaceWrapper) SubmitReachability(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "serverId" -------------
+	var serverId ServerId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverId", r.PathValue("serverId"), &serverId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubmitReachability(w, r, serverId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6153,6 +6624,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/jobs", wrapper.GetServerJobs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.GetServerRecovery)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/recovery", wrapper.SubmitServerRecovery)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent-servers", wrapper.CreateAgentServer)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/servers/{serverId}/agent-credential", wrapper.RevokeAgentCredential)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/agent-credential", wrapper.RotateAgentCredential)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent/poll", wrapper.PollAgent)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/agent/result", wrapper.SubmitAgentResult)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/reachability", wrapper.GetReachability)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/reachability", wrapper.SubmitReachability)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/sbom", wrapper.GetServerSbom)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.GetServerScan)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers/{serverId}/scan", wrapper.ImportServerScan)
@@ -6204,6 +6682,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/maintenance/{windowId}", wrapper.DeleteMaintenance)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents", wrapper.ListIncidents)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/incidents/{incidentId}", wrapper.GetIncident)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/incidents/{incidentId}/assignee", wrapper.AssignIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/accept", wrapper.AcceptIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/snooze", wrapper.SnoozeIncident)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/incidents/{incidentId}/acknowledge", wrapper.AcknowledgeIncident)
@@ -6261,6 +6740,120 @@ type ListActivitydefaultJSONResponse struct {
 }
 
 func (response ListActivitydefaultJSONResponse) VisitListActivityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentServerRequestObject struct {
+	Body *CreateAgentServerJSONRequestBody
+}
+
+type CreateAgentServerResponseObject interface {
+	VisitCreateAgentServerResponse(w http.ResponseWriter) error
+}
+
+type CreateAgentServer201JSONResponse AgentCredential
+
+func (response CreateAgentServer201JSONResponse) VisitCreateAgentServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentServerdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response CreateAgentServerdefaultJSONResponse) VisitCreateAgentServerResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollAgentRequestObject struct {
+	Params PollAgentParams
+}
+
+type PollAgentResponseObject interface {
+	VisitPollAgentResponse(w http.ResponseWriter) error
+}
+
+type PollAgent200JSONResponse struct {
+	Command *AgentCommand `json:"command,omitempty"`
+}
+
+func (response PollAgent200JSONResponse) VisitPollAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PollAgentdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response PollAgentdefaultJSONResponse) VisitPollAgentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitAgentResultRequestObject struct {
+	Params SubmitAgentResultParams
+	Body   *SubmitAgentResultJSONRequestBody
+}
+
+type SubmitAgentResultResponseObject interface {
+	VisitSubmitAgentResultResponse(w http.ResponseWriter) error
+}
+
+type SubmitAgentResult204Response struct {
+}
+
+func (response SubmitAgentResult204Response) VisitSubmitAgentResultResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SubmitAgentResultdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SubmitAgentResultdefaultJSONResponse) VisitSubmitAgentResultResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7659,6 +8252,46 @@ type AcknowledgeIncidentdefaultJSONResponse struct {
 }
 
 func (response AcknowledgeIncidentdefaultJSONResponse) VisitAcknowledgeIncidentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AssignIncidentRequestObject struct {
+	IncidentId IncidentId `json:"incidentId"`
+	Body       *AssignIncidentJSONRequestBody
+}
+
+type AssignIncidentResponseObject interface {
+	VisitAssignIncidentResponse(w http.ResponseWriter) error
+}
+
+type AssignIncident200JSONResponse Incident
+
+func (response AssignIncident200JSONResponse) VisitAssignIncidentResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AssignIncidentdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response AssignIncidentdefaultJSONResponse) VisitAssignIncidentResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9491,6 +10124,78 @@ func (response GetServerAdvisoriesdefaultJSONResponse) VisitGetServerAdvisoriesR
 	return err
 }
 
+type RevokeAgentCredentialRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type RevokeAgentCredentialResponseObject interface {
+	VisitRevokeAgentCredentialResponse(w http.ResponseWriter) error
+}
+
+type RevokeAgentCredential204Response struct {
+}
+
+func (response RevokeAgentCredential204Response) VisitRevokeAgentCredentialResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RevokeAgentCredentialdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RevokeAgentCredentialdefaultJSONResponse) VisitRevokeAgentCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateAgentCredentialRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type RotateAgentCredentialResponseObject interface {
+	VisitRotateAgentCredentialResponse(w http.ResponseWriter) error
+}
+
+type RotateAgentCredential200JSONResponse AgentCredential
+
+func (response RotateAgentCredential200JSONResponse) VisitRotateAgentCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateAgentCredentialdefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response RotateAgentCredentialdefaultJSONResponse) VisitRotateAgentCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListContainersRequestObject struct {
 	ServerId ServerId `json:"serverId"`
 }
@@ -10024,6 +10729,81 @@ type GetServerMetricsdefaultJSONResponse struct {
 }
 
 func (response GetServerMetricsdefaultJSONResponse) VisitGetServerMetricsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReachabilityRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+}
+
+type GetReachabilityResponseObject interface {
+	VisitGetReachabilityResponse(w http.ResponseWriter) error
+}
+
+type GetReachability200JSONResponse struct {
+	Items []ProbeObservation `json:"items"`
+}
+
+func (response GetReachability200JSONResponse) VisitGetReachabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetReachabilitydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response GetReachabilitydefaultJSONResponse) VisitGetReachabilityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubmitReachabilityRequestObject struct {
+	ServerId ServerId `json:"serverId"`
+	Body     *SubmitReachabilityJSONRequestBody
+}
+
+type SubmitReachabilityResponseObject interface {
+	VisitSubmitReachabilityResponse(w http.ResponseWriter) error
+}
+
+type SubmitReachability204Response struct {
+}
+
+func (response SubmitReachability204Response) VisitSubmitReachabilityResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SubmitReachabilitydefaultJSONResponse struct {
+	Body       Error
+	StatusCode int
+}
+
+func (response SubmitReachabilitydefaultJSONResponse) VisitSubmitReachabilityResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -10724,6 +11504,15 @@ type StrictServerInterface interface {
 	// ListActivity Audit log of the account, newest first (admins)
 	// (GET /activity)
 	ListActivity(ctx context.Context, request ListActivityRequestObject) (ListActivityResponseObject, error)
+	// CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	// (POST /agent-servers)
+	CreateAgentServer(ctx context.Context, request CreateAgentServerRequestObject) (CreateAgentServerResponseObject, error)
+	// PollAgent Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+	// (POST /agent/poll)
+	PollAgent(ctx context.Context, request PollAgentRequestObject) (PollAgentResponseObject, error)
+	// SubmitAgentResult Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	// (POST /agent/result)
+	SubmitAgentResult(ctx context.Context, request SubmitAgentResultRequestObject) (SubmitAgentResultResponseObject, error)
 	// ListAlerts Open alerts, or recent alerts including resolved ones
 	// (GET /alerts)
 	ListAlerts(ctx context.Context, request ListAlertsRequestObject) (ListAlertsResponseObject, error)
@@ -10835,6 +11624,9 @@ type StrictServerInterface interface {
 	// AcknowledgeIncident Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server.
 	// (POST /incidents/{incidentId}/acknowledge)
 	AcknowledgeIncident(ctx context.Context, request AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error)
+	// AssignIncident Assign a notice to a member of its owning space, or clear the assignment.
+	// (PUT /incidents/{incidentId}/assignee)
+	AssignIncident(ctx context.Context, request AssignIncidentRequestObject) (AssignIncidentResponseObject, error)
 	// SnoozeIncident Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
 	// (POST /incidents/{incidentId}/snooze)
 	SnoozeIncident(ctx context.Context, request SnoozeIncidentRequestObject) (SnoozeIncidentResponseObject, error)
@@ -10979,6 +11771,12 @@ type StrictServerInterface interface {
 	// GetServerAdvisories Exact affected versions from an imported local feed
 	// (GET /servers/{serverId}/advisories)
 	GetServerAdvisories(ctx context.Context, request GetServerAdvisoriesRequestObject) (GetServerAdvisoriesResponseObject, error)
+	// RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+	// (DELETE /servers/{serverId}/agent-credential)
+	RevokeAgentCredential(ctx context.Context, request RevokeAgentCredentialRequestObject) (RevokeAgentCredentialResponseObject, error)
+	// RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	// (POST /servers/{serverId}/agent-credential)
+	RotateAgentCredential(ctx context.Context, request RotateAgentCredentialRequestObject) (RotateAgentCredentialResponseObject, error)
 	// ListContainers Docker containers on the server
 	// (GET /servers/{serverId}/containers)
 	ListContainers(ctx context.Context, request ListContainersRequestObject) (ListContainersResponseObject, error)
@@ -11021,13 +11819,19 @@ type StrictServerInterface interface {
 	// GetServerMetrics Chart points for CPU, memory, disk, and load
 	// (GET /servers/{serverId}/metrics)
 	GetServerMetrics(ctx context.Context, request GetServerMetricsRequestObject) (GetServerMetricsResponseObject, error)
+	// GetReachability Read connection evidence submitted by probes an operator runs.
+	// (GET /servers/{serverId}/reachability)
+	GetReachability(ctx context.Context, request GetReachabilityRequestObject) (GetReachabilityResponseObject, error)
+	// SubmitReachability Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	// (POST /servers/{serverId}/reachability)
+	SubmitReachability(ctx context.Context, request SubmitReachabilityRequestObject) (SubmitReachabilityResponseObject, error)
 	// GetServerRecovery Backup reports an operator wrote on the server
 	// (GET /servers/{serverId}/recovery)
 	GetServerRecovery(ctx context.Context, request GetServerRecoveryRequestObject) (GetServerRecoveryResponseObject, error)
 	// SubmitServerRecovery Store one backup result. The same Idempotency-Key returns the first result and does not change it.
 	// (POST /servers/{serverId}/recovery)
 	SubmitServerRecovery(ctx context.Context, request SubmitServerRecoveryRequestObject) (SubmitServerRecoveryResponseObject, error)
-	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// GetServerSbom The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	// (GET /servers/{serverId}/sbom)
 	GetServerSbom(ctx context.Context, request GetServerSbomRequestObject) (GetServerSbomResponseObject, error)
 	// GetServerScan The newest vulnerability scan of this server, ranked, with the scanner and database age
@@ -11135,6 +11939,96 @@ func (sh *strictHandler) ListActivity(w http.ResponseWriter, r *http.Request, pa
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListActivityResponseObject); ok {
 		if err := validResponse.VisitListActivityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentServer operation middleware
+func (sh *strictHandler) CreateAgentServer(w http.ResponseWriter, r *http.Request) {
+	var request CreateAgentServerRequestObject
+
+	var body CreateAgentServerJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentServer(ctx, request.(CreateAgentServerRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentServer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentServerResponseObject); ok {
+		if err := validResponse.VisitCreateAgentServerResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PollAgent operation middleware
+func (sh *strictHandler) PollAgent(w http.ResponseWriter, r *http.Request, params PollAgentParams) {
+	var request PollAgentRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PollAgent(ctx, request.(PollAgentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PollAgent")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PollAgentResponseObject); ok {
+		if err := validResponse.VisitPollAgentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitAgentResult operation middleware
+func (sh *strictHandler) SubmitAgentResult(w http.ResponseWriter, r *http.Request, params SubmitAgentResultParams) {
+	var request SubmitAgentResultRequestObject
+
+	request.Params = params
+
+	var body SubmitAgentResultJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitAgentResult(ctx, request.(SubmitAgentResultRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitAgentResult")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitAgentResultResponseObject); ok {
+		if err := validResponse.VisitSubmitAgentResultResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -12159,6 +13053,39 @@ func (sh *strictHandler) AcknowledgeIncident(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AcknowledgeIncidentResponseObject); ok {
 		if err := validResponse.VisitAcknowledgeIncidentResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AssignIncident operation middleware
+func (sh *strictHandler) AssignIncident(w http.ResponseWriter, r *http.Request, incidentId IncidentId) {
+	var request AssignIncidentRequestObject
+
+	request.IncidentId = incidentId
+
+	var body AssignIncidentJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AssignIncident(ctx, request.(AssignIncidentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AssignIncident")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AssignIncidentResponseObject); ok {
+		if err := validResponse.VisitAssignIncidentResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -13520,6 +14447,58 @@ func (sh *strictHandler) GetServerAdvisories(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// RevokeAgentCredential operation middleware
+func (sh *strictHandler) RevokeAgentCredential(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request RevokeAgentCredentialRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RevokeAgentCredential(ctx, request.(RevokeAgentCredentialRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RevokeAgentCredential")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RevokeAgentCredentialResponseObject); ok {
+		if err := validResponse.VisitRevokeAgentCredentialResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateAgentCredential operation middleware
+func (sh *strictHandler) RotateAgentCredential(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request RotateAgentCredentialRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateAgentCredential(ctx, request.(RotateAgentCredentialRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateAgentCredential")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateAgentCredentialResponseObject); ok {
+		if err := validResponse.VisitRotateAgentCredentialResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListContainers operation middleware
 func (sh *strictHandler) ListContainers(w http.ResponseWriter, r *http.Request, serverId ServerId) {
 	var request ListContainersRequestObject
@@ -13920,6 +14899,65 @@ func (sh *strictHandler) GetServerMetrics(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetServerMetricsResponseObject); ok {
 		if err := validResponse.VisitGetServerMetricsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetReachability operation middleware
+func (sh *strictHandler) GetReachability(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request GetReachabilityRequestObject
+
+	request.ServerId = serverId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetReachability(ctx, request.(GetReachabilityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetReachability")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetReachabilityResponseObject); ok {
+		if err := validResponse.VisitGetReachabilityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubmitReachability operation middleware
+func (sh *strictHandler) SubmitReachability(w http.ResponseWriter, r *http.Request, serverId ServerId) {
+	var request SubmitReachabilityRequestObject
+
+	request.ServerId = serverId
+
+	var body SubmitReachabilityJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubmitReachability(ctx, request.(SubmitReachabilityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubmitReachability")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubmitReachabilityResponseObject); ok {
+		if err := validResponse.VisitSubmitReachabilityResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

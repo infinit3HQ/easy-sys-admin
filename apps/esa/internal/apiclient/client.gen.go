@@ -446,6 +446,7 @@ func (e IncidentState) Valid() bool {
 const (
 	IncidentEventKindAccepted     IncidentEventKind = "accepted"
 	IncidentEventKindAcknowledged IncidentEventKind = "acknowledged"
+	IncidentEventKindAssigned     IncidentEventKind = "assigned"
 	IncidentEventKindOpened       IncidentEventKind = "opened"
 	IncidentEventKindRecurred     IncidentEventKind = "recurred"
 	IncidentEventKindReopened     IncidentEventKind = "reopened"
@@ -453,6 +454,7 @@ const (
 	IncidentEventKindReturned     IncidentEventKind = "returned"
 	IncidentEventKindSnoozeBroken IncidentEventKind = "snooze_broken"
 	IncidentEventKindSnoozed      IncidentEventKind = "snoozed"
+	IncidentEventKindUnassigned   IncidentEventKind = "unassigned"
 )
 
 // Valid indicates whether the value is a known member of the IncidentEventKind enum.
@@ -461,6 +463,8 @@ func (e IncidentEventKind) Valid() bool {
 	case IncidentEventKindAccepted:
 		return true
 	case IncidentEventKindAcknowledged:
+		return true
+	case IncidentEventKindAssigned:
 		return true
 	case IncidentEventKindOpened:
 		return true
@@ -475,6 +479,8 @@ func (e IncidentEventKind) Valid() bool {
 	case IncidentEventKindSnoozeBroken:
 		return true
 	case IncidentEventKindSnoozed:
+		return true
+	case IncidentEventKindUnassigned:
 		return true
 	default:
 		return false
@@ -514,6 +520,75 @@ func (e PlanBodyUpdateMode) Valid() bool {
 	case PlanBodyUpdateModeAll:
 		return true
 	case PlanBodyUpdateModeSecurity:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeInputReason.
+const (
+	DnsFailed    ProbeInputReason = "dns_failed"
+	NetworkError ProbeInputReason = "network_error"
+	None         ProbeInputReason = "none"
+	Refused      ProbeInputReason = "refused"
+	Timeout      ProbeInputReason = "timeout"
+)
+
+// Valid indicates whether the value is a known member of the ProbeInputReason enum.
+func (e ProbeInputReason) Valid() bool {
+	switch e {
+	case DnsFailed:
+		return true
+	case NetworkError:
+		return true
+	case None:
+		return true
+	case Refused:
+		return true
+	case Timeout:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeInputState.
+const (
+	ProbeInputStateNotReached ProbeInputState = "not_reached"
+	ProbeInputStateReachable  ProbeInputState = "reachable"
+	ProbeInputStateUnknown    ProbeInputState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProbeInputState enum.
+func (e ProbeInputState) Valid() bool {
+	switch e {
+	case ProbeInputStateNotReached:
+		return true
+	case ProbeInputStateReachable:
+		return true
+	case ProbeInputStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProbeObservationState.
+const (
+	ProbeObservationStateNotReached ProbeObservationState = "not_reached"
+	ProbeObservationStateReachable  ProbeObservationState = "reachable"
+	ProbeObservationStateUnknown    ProbeObservationState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ProbeObservationState enum.
+func (e ProbeObservationState) Valid() bool {
+	switch e {
+	case ProbeObservationStateNotReached:
+		return true
+	case ProbeObservationStateReachable:
+		return true
+	case ProbeObservationStateUnknown:
 		return true
 	default:
 		return false
@@ -706,6 +781,24 @@ func (e Scope) Valid() bool {
 	case ScopeLogsRead:
 		return true
 	case ScopeRead:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ServerConnection.
+const (
+	Outbound ServerConnection = "outbound"
+	Ssh      ServerConnection = "ssh"
+)
+
+// Valid indicates whether the value is a known member of the ServerConnection enum.
+func (e ServerConnection) Valid() bool {
+	switch e {
+	case Outbound:
+		return true
+	case Ssh:
 		return true
 	default:
 		return false
@@ -933,6 +1026,22 @@ type AddServerRequest struct {
 
 // AdvisoryReport defines model for AdvisoryReport.
 type AdvisoryReport = fleet.AdvisoryReport
+
+// AgentCommand defines model for AgentCommand.
+type AgentCommand struct {
+	Action    string    `json:"action"`
+	Args      []string  `json:"args"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Id        int64     `json:"id"`
+}
+
+// AgentCredential defines model for AgentCredential.
+type AgentCredential struct {
+	ServerId int64 `json:"serverId"`
+
+	// Token Shown once. Save in a protected file, never in a URL or command argument.
+	Token string `json:"token"`
+}
 
 // Alert defines model for Alert.
 type Alert struct {
@@ -1336,13 +1445,15 @@ type Exposure struct {
 
 // FixPlan defines model for FixPlan.
 type FixPlan struct {
-	Body        PlanBody   `json:"body"`
-	CreatedAt   time.Time  `json:"createdAt"`
-	ExpiresAt   *time.Time `json:"expiresAt,omitempty"`
-	Fingerprint string     `json:"fingerprint"`
-	Id          int64      `json:"id"`
-	Reason      string     `json:"reason"`
-	RunId       *int64     `json:"runId,omitempty"`
+	Approvals         int        `json:"approvals"`
+	ApprovalsRequired int        `json:"approvalsRequired"`
+	Body              PlanBody   `json:"body"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	ExpiresAt         *time.Time `json:"expiresAt,omitempty"`
+	Fingerprint       string     `json:"fingerprint"`
+	Id                int64      `json:"id"`
+	Reason            string     `json:"reason"`
+	RunId             *int64     `json:"runId,omitempty"`
 
 	// Status executing until the run finishes, then the run's status.
 	Status FixPlanStatus `json:"status"`
@@ -1520,6 +1631,15 @@ type ImageCheckList struct {
 // Incident defines model for Incident.
 type Incident struct {
 	AckedAt *time.Time `json:"ackedAt,omitempty"`
+
+	// AssigneeId Assigned member. Hidden from other spaces.
+	AssigneeId *int64 `json:"assigneeId,omitempty"`
+
+	// AssigneeName Assigned member display name. Hidden from other spaces.
+	AssigneeName *string `json:"assigneeName,omitempty"`
+
+	// CanHold Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot.
+	CanHold bool `json:"canHold"`
 
 	// CanReview True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
 	CanReview bool `json:"canReview"`
@@ -1943,6 +2063,47 @@ type PlanList struct {
 	Items []FixPlan `json:"items"`
 }
 
+// ProbeInput defines model for ProbeInput.
+type ProbeInput struct {
+	// Host Must equal the server's enrolled host.
+	Host       string           `json:"host"`
+	ObservedAt time.Time        `json:"observedAt"`
+	Port       int              `json:"port"`
+	Reason     ProbeInputReason `json:"reason"`
+
+	// Source A stable label for the probe location.
+	Source string          `json:"source"`
+	State  ProbeInputState `json:"state"`
+}
+
+// ProbeInputReason defines model for ProbeInput.Reason.
+type ProbeInputReason string
+
+// ProbeInputState defines model for ProbeInput.State.
+type ProbeInputState string
+
+// ProbeObservation defines model for ProbeObservation.
+type ProbeObservation struct {
+	AttemptedAt time.Time  `json:"attemptedAt"`
+	Host        string     `json:"host"`
+	LastKnownAt *time.Time `json:"lastKnownAt,omitempty"`
+
+	// LastKnownState The last reachable or not_reached result. An unknown attempt does not erase it.
+	LastKnownState *string `json:"lastKnownState,omitempty"`
+	Port           int     `json:"port"`
+	Reason         string  `json:"reason"`
+	Source         string  `json:"source"`
+
+	// Stale True after 15 minutes without a current attempt. Stale evidence is unknown.
+	Stale bool `json:"stale"`
+
+	// State Only this probe's latest attempt. Not a result for the whole internet.
+	State ProbeObservationState `json:"state"`
+}
+
+// ProbeObservationState Only this probe's latest attempt. Not a result for the whole internet.
+type ProbeObservationState string
+
 // ProbeRequest defines model for ProbeRequest.
 type ProbeRequest struct {
 	Host string `json:"host"`
@@ -2116,10 +2277,13 @@ type SecurityReport = proto.SecurityReport
 // Server defines model for Server.
 type Server struct {
 	// Access own: the group belongs to the current account. view or operate: another team shares it.
-	Access     GroupAccess      `json:"access"`
-	Arch       string           `json:"arch"`
-	CreatedAt  time.Time        `json:"createdAt"`
-	Enrollment ServerEnrollment `json:"enrollment"`
+	Access GroupAccess `json:"access"`
+	Arch   string      `json:"arch"`
+
+	// Connection Outbound servers do not accept incoming SSH connections from esa.
+	Connection *ServerConnection `json:"connection,omitempty"`
+	CreatedAt  time.Time         `json:"createdAt"`
+	Enrollment ServerEnrollment  `json:"enrollment"`
 
 	// Exposure Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
 	Exposure       *Exposure `json:"exposure,omitempty"`
@@ -2172,6 +2336,9 @@ type Server struct {
 	// organization when they are an owner.
 	YourRole EffectiveRole `json:"yourRole"`
 }
+
+// ServerConnection Outbound servers do not accept incoming SSH connections from esa.
+type ServerConnection string
 
 // ServerEnrollment defines model for Server.Enrollment.
 type ServerEnrollment string
@@ -2387,6 +2554,9 @@ type UpdatePolicy struct {
 
 	// Time Example: 04:00
 	Time string `json:"time"`
+
+	// TwoApprovers Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule.
+	TwoApprovers bool `json:"twoApprovers"`
 }
 
 // UpdatePolicyMode defines model for UpdatePolicy.Mode.
@@ -2431,6 +2601,9 @@ type VulnExceptionInput struct {
 	Until    time.Time `json:"until"`
 }
 
+// AgentToken defines model for AgentToken.
+type AgentToken = string
+
 // ChannelId defines model for ChannelId.
 type ChannelId = int64
 
@@ -2470,6 +2643,29 @@ type ListActivityParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateAgentServerJSONBody defines parameters for CreateAgentServer.
+type CreateAgentServerJSONBody struct {
+	GroupId *int64 `json:"groupId,omitempty"`
+	Name    string `json:"name"`
+}
+
+// PollAgentParams defines parameters for PollAgent.
+type PollAgentParams struct {
+	XEsaAgentToken AgentToken `json:"X-Esa-Agent-Token"`
+}
+
+// SubmitAgentResultJSONBody defines parameters for SubmitAgentResult.
+type SubmitAgentResultJSONBody struct {
+	Exit   int    `json:"exit"`
+	Id     int64  `json:"id"`
+	Output string `json:"output"`
+}
+
+// SubmitAgentResultParams defines parameters for SubmitAgentResult.
+type SubmitAgentResultParams struct {
+	XEsaAgentToken AgentToken `json:"X-Esa-Agent-Token"`
+}
+
 // ListAlertsParams defines parameters for ListAlerts.
 type ListAlertsParams struct {
 	All   *bool `form:"all,omitempty" json:"all,omitempty"`
@@ -2491,6 +2687,11 @@ type ListIncidentsParams struct {
 // AcknowledgeIncidentJSONBody defines parameters for AcknowledgeIncident.
 type AcknowledgeIncidentJSONBody struct {
 	Note *string `json:"note,omitempty"`
+}
+
+// AssignIncidentJSONBody defines parameters for AssignIncident.
+type AssignIncidentJSONBody struct {
+	UserId *int64 `json:"userId"`
 }
 
 // OffboardingParams defines parameters for Offboarding.
@@ -2578,6 +2779,12 @@ type SubmitServerRecoveryParams struct {
 // ImportServerScanJSONBody defines parameters for ImportServerScan.
 type ImportServerScanJSONBody map[string]interface{}
 
+// CreateAgentServerJSONRequestBody defines body for CreateAgentServer for application/json ContentType.
+type CreateAgentServerJSONRequestBody CreateAgentServerJSONBody
+
+// SubmitAgentResultJSONRequestBody defines body for SubmitAgentResult for application/json ContentType.
+type SubmitAgentResultJSONRequestBody SubmitAgentResultJSONBody
+
 // SetRoutingJSONRequestBody defines body for SetRouting for application/json ContentType.
 type SetRoutingJSONRequestBody = Routing
 
@@ -2616,6 +2823,9 @@ type AcceptIncidentJSONRequestBody = IncidentHold
 
 // AcknowledgeIncidentJSONRequestBody defines body for AcknowledgeIncident for application/json ContentType.
 type AcknowledgeIncidentJSONRequestBody AcknowledgeIncidentJSONBody
+
+// AssignIncidentJSONRequestBody defines body for AssignIncident for application/json ContentType.
+type AssignIncidentJSONRequestBody AssignIncidentJSONBody
 
 // SnoozeIncidentJSONRequestBody defines body for SnoozeIncident for application/json ContentType.
 type SnoozeIncidentJSONRequestBody = IncidentHold
@@ -2691,6 +2901,9 @@ type ApproveKeyBaselineJSONRequestBody ApproveKeyBaselineJSONBody
 
 // CreateKeyExceptionJSONRequestBody defines body for CreateKeyException for application/json ContentType.
 type CreateKeyExceptionJSONRequestBody = KeyExceptionInput
+
+// SubmitReachabilityJSONRequestBody defines body for SubmitReachability for application/json ContentType.
+type SubmitReachabilityJSONRequestBody = ProbeInput
 
 // SubmitServerRecoveryJSONRequestBody defines body for SubmitServerRecovery for application/json ContentType.
 type SubmitServerRecoveryJSONRequestBody SubmitServerRecoveryJSONBody
@@ -2785,6 +2998,39 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /activity (the `ListActivity` operationId).
 	ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAgentServerWithBody Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+	CreateAgentServerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+	CreateAgentServer(ctx context.Context, body CreateAgentServerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PollAgent Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+	//
+	// Corresponds with POST /agent/poll (the `PollAgent` operationId).
+	PollAgent(ctx context.Context, params *PollAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitAgentResultWithBody Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+	SubmitAgentResultWithBody(ctx context.Context, params *SubmitAgentResultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitAgentResult Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+	SubmitAgentResult(ctx context.Context, params *SubmitAgentResultParams, body SubmitAgentResultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListAlerts Open alerts, or recent alerts including resolved ones
 	//
@@ -3087,6 +3333,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 	AcknowledgeIncident(ctx context.Context, incidentId IncidentId, body AcknowledgeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AssignIncidentWithBody Assign a notice to a member of its owning space, or clear the assignment.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+	AssignIncidentWithBody(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AssignIncident Assign a notice to a member of its owning space, or clear the assignment.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+	AssignIncident(ctx context.Context, incidentId IncidentId, body AssignIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SnoozeIncidentWithBody Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
 	//
@@ -3512,6 +3772,16 @@ type ClientInterface interface {
 	// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
 	GetServerAdvisories(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+	//
+	// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
+	RevokeAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	//
+	// Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
+	RotateAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListContainers Docker containers on the server
 	//
 	// Corresponds with GET /servers/{serverId}/containers (the `ListContainers` operationId).
@@ -3631,6 +3901,25 @@ type ClientInterface interface {
 	// Corresponds with GET /servers/{serverId}/metrics (the `GetServerMetrics` operationId).
 	GetServerMetrics(ctx context.Context, serverId ServerId, params *GetServerMetricsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetReachability Read connection evidence submitted by probes an operator runs.
+	//
+	// Corresponds with GET /servers/{serverId}/reachability (the `GetReachability` operationId).
+	GetReachability(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitReachabilityWithBody Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+	SubmitReachabilityWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitReachability Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+	SubmitReachability(ctx context.Context, serverId ServerId, body SubmitReachabilityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetServerRecovery Backup reports an operator wrote on the server
 	//
 	// Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
@@ -3650,7 +3939,7 @@ type ClientInterface interface {
 	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
 	SubmitServerRecovery(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// GetServerSbom The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	//
 	// Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
 	GetServerSbom(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3772,6 +4061,89 @@ type ClientInterface interface {
 // Corresponds with GET /activity (the `ListActivity` operationId).
 func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListActivityRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAgentServerWithBody Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+func (c *Client) CreateAgentServerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentServerRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+func (c *Client) CreateAgentServer(ctx context.Context, body CreateAgentServerJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentServerRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PollAgent Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+//
+// Corresponds with POST /agent/poll (the `PollAgent` operationId).
+func (c *Client) PollAgent(ctx context.Context, params *PollAgentParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPollAgentRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitAgentResultWithBody Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+func (c *Client) SubmitAgentResultWithBody(ctx context.Context, params *SubmitAgentResultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitAgentResultRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitAgentResult Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+func (c *Client) SubmitAgentResult(ctx context.Context, params *SubmitAgentResultParams, body SubmitAgentResultJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitAgentResultRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -4574,6 +4946,40 @@ func (c *Client) AcknowledgeIncidentWithBody(ctx context.Context, incidentId Inc
 // Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 func (c *Client) AcknowledgeIncident(ctx context.Context, incidentId IncidentId, body AcknowledgeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAcknowledgeIncidentRequest(c.Server, incidentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AssignIncidentWithBody Assign a notice to a member of its owning space, or clear the assignment.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+func (c *Client) AssignIncidentWithBody(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAssignIncidentRequestWithBody(c.Server, incidentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AssignIncident Assign a notice to a member of its owning space, or clear the assignment.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+func (c *Client) AssignIncident(ctx context.Context, incidentId IncidentId, body AssignIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAssignIncidentRequest(c.Server, incidentId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5688,6 +6094,36 @@ func (c *Client) GetServerAdvisories(ctx context.Context, serverId ServerId, req
 	return c.Client.Do(req)
 }
 
+// RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+//
+// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
+func (c *Client) RevokeAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRevokeAgentCredentialRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+//
+// Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
+func (c *Client) RotateAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateAgentCredentialRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListContainers Docker containers on the server
 //
 // Corresponds with GET /servers/{serverId}/containers (the `ListContainers` operationId).
@@ -5997,6 +6433,55 @@ func (c *Client) GetServerMetrics(ctx context.Context, serverId ServerId, params
 	return c.Client.Do(req)
 }
 
+// GetReachability Read connection evidence submitted by probes an operator runs.
+//
+// Corresponds with GET /servers/{serverId}/reachability (the `GetReachability` operationId).
+func (c *Client) GetReachability(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetReachabilityRequest(c.Server, serverId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitReachabilityWithBody Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+func (c *Client) SubmitReachabilityWithBody(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitReachabilityRequestWithBody(c.Server, serverId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitReachability Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+func (c *Client) SubmitReachability(ctx context.Context, serverId ServerId, body SubmitReachabilityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitReachabilityRequest(c.Server, serverId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetServerRecovery Backup reports an operator wrote on the server
 //
 // Corresponds with GET /servers/{serverId}/recovery (the `GetServerRecovery` operationId).
@@ -6046,7 +6531,7 @@ func (c *Client) SubmitServerRecovery(ctx context.Context, serverId ServerId, pa
 	return c.Client.Do(req)
 }
 
-// GetServerSbom The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+// GetServerSbom The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 //
 // Corresponds with GET /servers/{serverId}/sbom (the `GetServerSbom` operationId).
 func (c *Client) GetServerSbom(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -6411,6 +6896,139 @@ func NewListActivityRequest(server string, params *ListActivityParams) (*http.Re
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateAgentServerRequest calls the generic CreateAgentServer builder with application/json body
+func NewCreateAgentServerRequest(server string, body CreateAgentServerJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAgentServerRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateAgentServerRequestWithBody constructs an http.Request for the CreateAgentServer method, with any body, and a specified content type
+func NewCreateAgentServerRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agent-servers")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPollAgentRequest constructs an http.Request for the PollAgent method
+func NewPollAgentRequest(server string, params *PollAgentParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agent/poll")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Esa-Agent-Token", params.XEsaAgentToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Esa-Agent-Token", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewSubmitAgentResultRequest calls the generic SubmitAgentResult builder with application/json body
+func NewSubmitAgentResultRequest(server string, params *SubmitAgentResultParams, body SubmitAgentResultJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitAgentResultRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewSubmitAgentResultRequestWithBody constructs an http.Request for the SubmitAgentResult method, with any body, and a specified content type
+func NewSubmitAgentResultRequestWithBody(server string, params *SubmitAgentResultParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/agent/result")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "X-Esa-Agent-Token", params.XEsaAgentToken, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("X-Esa-Agent-Token", headerParam0)
+
 	}
 
 	return req, nil
@@ -7794,6 +8412,53 @@ func NewAcknowledgeIncidentRequestWithBody(server string, incidentId IncidentId,
 	}
 
 	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAssignIncidentRequest calls the generic AssignIncident builder with application/json body
+func NewAssignIncidentRequest(server string, incidentId IncidentId, body AssignIncidentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAssignIncidentRequestWithBody(server, incidentId, "application/json", bodyReader)
+}
+
+// NewAssignIncidentRequestWithBody constructs an http.Request for the AssignIncident method, with any body, and a specified content type
+func NewAssignIncidentRequestWithBody(server string, incidentId IncidentId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "incidentId", incidentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/incidents/%s/assignee", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -9696,6 +10361,74 @@ func NewGetServerAdvisoriesRequest(server string, serverId ServerId) (*http.Requ
 	return req, nil
 }
 
+// NewRevokeAgentCredentialRequest constructs an http.Request for the RevokeAgentCredential method
+func NewRevokeAgentCredentialRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agent-credential", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRotateAgentCredentialRequest constructs an http.Request for the RotateAgentCredential method
+func NewRotateAgentCredentialRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/agent-credential", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListContainersRequest constructs an http.Request for the ListContainers method
 func NewListContainersRequest(server string, serverId ServerId) (*http.Request, error) {
 	var err error
@@ -10356,6 +11089,87 @@ func NewGetServerMetricsRequest(server string, serverId ServerId, params *GetSer
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetReachabilityRequest constructs an http.Request for the GetReachability method
+func NewGetReachabilityRequest(server string, serverId ServerId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/reachability", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSubmitReachabilityRequest calls the generic SubmitReachability builder with application/json body
+func NewSubmitReachabilityRequest(server string, serverId ServerId, body SubmitReachabilityJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitReachabilityRequestWithBody(server, serverId, "application/json", bodyReader)
+}
+
+// NewSubmitReachabilityRequestWithBody constructs an http.Request for the SubmitReachability method, with any body, and a specified content type
+func NewSubmitReachabilityRequestWithBody(server string, serverId ServerId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "serverId", serverId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/servers/%s/reachability", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -11101,6 +11915,41 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /activity (the `ListActivity` operationId).
 	ListActivityWithResponse(ctx context.Context, params *ListActivityParams, reqEditors ...RequestEditorFn) (*ListActivityResponse, error)
 
+	// CreateAgentServerWithBodyWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+	CreateAgentServerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentServerResponse, error)
+
+	// CreateAgentServerWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+	CreateAgentServerWithResponse(ctx context.Context, body CreateAgentServerJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentServerResponse, error)
+
+	// PollAgentWithResponse Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agent/poll (the `PollAgent` operationId).
+	PollAgentWithResponse(ctx context.Context, params *PollAgentParams, reqEditors ...RequestEditorFn) (*PollAgentResponse, error)
+
+	// SubmitAgentResultWithBodyWithResponse Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+	SubmitAgentResultWithBodyWithResponse(ctx context.Context, params *SubmitAgentResultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitAgentResultResponse, error)
+
+	// SubmitAgentResultWithResponse Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+	SubmitAgentResultWithResponse(ctx context.Context, params *SubmitAgentResultParams, body SubmitAgentResultJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitAgentResultResponse, error)
+
 	// ListAlertsWithResponse Open alerts, or recent alerts including resolved ones
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -11450,6 +12299,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /incidents/{incidentId}/acknowledge (the `AcknowledgeIncident` operationId).
 	AcknowledgeIncidentWithResponse(ctx context.Context, incidentId IncidentId, body AcknowledgeIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*AcknowledgeIncidentResponse, error)
+
+	// AssignIncidentWithBodyWithResponse Assign a notice to a member of its owning space, or clear the assignment.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+	AssignIncidentWithBodyWithResponse(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AssignIncidentResponse, error)
+
+	// AssignIncidentWithResponse Assign a notice to a member of its owning space, or clear the assignment.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+	AssignIncidentWithResponse(ctx context.Context, incidentId IncidentId, body AssignIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*AssignIncidentResponse, error)
 
 	// SnoozeIncidentWithBodyWithResponse Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
 	//
@@ -11931,6 +12794,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /servers/{serverId}/advisories (the `GetServerAdvisories` operationId).
 	GetServerAdvisoriesWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetServerAdvisoriesResponse, error)
 
+	// RevokeAgentCredentialWithResponse Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
+	RevokeAgentCredentialWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*RevokeAgentCredentialResponse, error)
+
+	// RotateAgentCredentialWithResponse Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
+	RotateAgentCredentialWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*RotateAgentCredentialResponse, error)
+
 	// ListContainersWithResponse Docker containers on the server
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -12068,6 +12945,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /servers/{serverId}/metrics (the `GetServerMetrics` operationId).
 	GetServerMetricsWithResponse(ctx context.Context, serverId ServerId, params *GetServerMetricsParams, reqEditors ...RequestEditorFn) (*GetServerMetricsResponse, error)
 
+	// GetReachabilityWithResponse Read connection evidence submitted by probes an operator runs.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /servers/{serverId}/reachability (the `GetReachability` operationId).
+	GetReachabilityWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetReachabilityResponse, error)
+
+	// SubmitReachabilityWithBodyWithResponse Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+	SubmitReachabilityWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitReachabilityResponse, error)
+
+	// SubmitReachabilityWithResponse Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+	SubmitReachabilityWithResponse(ctx context.Context, serverId ServerId, body SubmitReachabilityJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitReachabilityResponse, error)
+
 	// GetServerRecoveryWithResponse Backup reports an operator wrote on the server
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -12089,7 +12987,7 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /servers/{serverId}/recovery (the `SubmitServerRecovery` operationId).
 	SubmitServerRecoveryWithResponse(ctx context.Context, serverId ServerId, params *SubmitServerRecoveryParams, body SubmitServerRecoveryJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitServerRecoveryResponse, error)
 
-	// GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+	// GetServerSbomWithResponse The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -12272,6 +13170,147 @@ func (r ListActivityResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListActivityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateAgentServerResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *AgentCredential
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateAgentServerResponse) GetJSON201() *AgentCredential {
+	return r.JSON201
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r CreateAgentServerResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateAgentServerResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateAgentServerResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateAgentServerResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateAgentServerResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PollAgentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Command *AgentCommand `json:"command,omitempty"`
+	}
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PollAgentResponse) GetJSON200() *struct {
+	Command *AgentCommand `json:"command,omitempty"`
+} {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PollAgentResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PollAgentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PollAgentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PollAgentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PollAgentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SubmitAgentResultResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SubmitAgentResultResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SubmitAgentResultResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitAgentResultResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitAgentResultResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubmitAgentResultResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -13999,6 +15038,54 @@ func (r AcknowledgeIncidentResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AcknowledgeIncidentResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AssignIncidentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Incident
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AssignIncidentResponse) GetJSON200() *Incident {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r AssignIncidentResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AssignIncidentResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AssignIncidentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AssignIncidentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AssignIncidentResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -16246,6 +17333,95 @@ func (r GetServerAdvisoriesResponse) ContentType() string {
 	return ""
 }
 
+type RevokeAgentCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RevokeAgentCredentialResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RevokeAgentCredentialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RevokeAgentCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RevokeAgentCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RevokeAgentCredentialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RotateAgentCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AgentCredential
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RotateAgentCredentialResponse) GetJSON200() *AgentCredential {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r RotateAgentCredentialResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RotateAgentCredentialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateAgentCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateAgentCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RotateAgentCredentialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListContainersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -16898,6 +18074,99 @@ func (r GetServerMetricsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetServerMetricsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetReachabilityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *struct {
+		Items []ProbeObservation `json:"items"`
+	}
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetReachabilityResponse) GetJSON200() *struct {
+	Items []ProbeObservation `json:"items"`
+} {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetReachabilityResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetReachabilityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetReachabilityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetReachabilityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetReachabilityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SubmitReachabilityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r SubmitReachabilityResponse) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SubmitReachabilityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitReachabilityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitReachabilityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubmitReachabilityResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -17753,6 +19022,71 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 	return ParseListActivityResponse(rsp)
 }
 
+// CreateAgentServerWithBodyWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+func (c *ClientWithResponses) CreateAgentServerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentServerResponse, error) {
+	rsp, err := c.CreateAgentServerWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentServerResponse(rsp)
+}
+
+// CreateAgentServerWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
+func (c *ClientWithResponses) CreateAgentServerWithResponse(ctx context.Context, body CreateAgentServerJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentServerResponse, error) {
+	rsp, err := c.CreateAgentServer(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentServerResponse(rsp)
+}
+
+// PollAgentWithResponse Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agent/poll (the `PollAgent` operationId).
+func (c *ClientWithResponses) PollAgentWithResponse(ctx context.Context, params *PollAgentParams, reqEditors ...RequestEditorFn) (*PollAgentResponse, error) {
+	rsp, err := c.PollAgent(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePollAgentResponse(rsp)
+}
+
+// SubmitAgentResultWithBodyWithResponse Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+func (c *ClientWithResponses) SubmitAgentResultWithBodyWithResponse(ctx context.Context, params *SubmitAgentResultParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitAgentResultResponse, error) {
+	rsp, err := c.SubmitAgentResultWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitAgentResultResponse(rsp)
+}
+
+// SubmitAgentResultWithResponse Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /agent/result (the `SubmitAgentResult` operationId).
+func (c *ClientWithResponses) SubmitAgentResultWithResponse(ctx context.Context, params *SubmitAgentResultParams, body SubmitAgentResultJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitAgentResultResponse, error) {
+	rsp, err := c.SubmitAgentResult(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitAgentResultResponse(rsp)
+}
+
 // ListAlertsWithResponse Open alerts, or recent alerts including resolved ones
 //
 // Returns a wrapper object for the known response body format(s).
@@ -18401,6 +19735,32 @@ func (c *ClientWithResponses) AcknowledgeIncidentWithResponse(ctx context.Contex
 		return nil, err
 	}
 	return ParseAcknowledgeIncidentResponse(rsp)
+}
+
+// AssignIncidentWithBodyWithResponse Assign a notice to a member of its owning space, or clear the assignment.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+func (c *ClientWithResponses) AssignIncidentWithBodyWithResponse(ctx context.Context, incidentId IncidentId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AssignIncidentResponse, error) {
+	rsp, err := c.AssignIncidentWithBody(ctx, incidentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAssignIncidentResponse(rsp)
+}
+
+// AssignIncidentWithResponse Assign a notice to a member of its owning space, or clear the assignment.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /incidents/{incidentId}/assignee (the `AssignIncident` operationId).
+func (c *ClientWithResponses) AssignIncidentWithResponse(ctx context.Context, incidentId IncidentId, body AssignIncidentJSONRequestBody, reqEditors ...RequestEditorFn) (*AssignIncidentResponse, error) {
+	rsp, err := c.AssignIncident(ctx, incidentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAssignIncidentResponse(rsp)
 }
 
 // SnoozeIncidentWithBodyWithResponse Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
@@ -19291,6 +20651,32 @@ func (c *ClientWithResponses) GetServerAdvisoriesWithResponse(ctx context.Contex
 	return ParseGetServerAdvisoriesResponse(rsp)
 }
 
+// RevokeAgentCredentialWithResponse Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
+func (c *ClientWithResponses) RevokeAgentCredentialWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*RevokeAgentCredentialResponse, error) {
+	rsp, err := c.RevokeAgentCredential(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRevokeAgentCredentialResponse(rsp)
+}
+
+// RotateAgentCredentialWithResponse Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
+func (c *ClientWithResponses) RotateAgentCredentialWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*RotateAgentCredentialResponse, error) {
+	rsp, err := c.RotateAgentCredential(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateAgentCredentialResponse(rsp)
+}
+
 // ListContainersWithResponse Docker containers on the server
 //
 // Returns a wrapper object for the known response body format(s).
@@ -19542,6 +20928,45 @@ func (c *ClientWithResponses) GetServerMetricsWithResponse(ctx context.Context, 
 	return ParseGetServerMetricsResponse(rsp)
 }
 
+// GetReachabilityWithResponse Read connection evidence submitted by probes an operator runs.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /servers/{serverId}/reachability (the `GetReachability` operationId).
+func (c *ClientWithResponses) GetReachabilityWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*GetReachabilityResponse, error) {
+	rsp, err := c.GetReachability(ctx, serverId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetReachabilityResponse(rsp)
+}
+
+// SubmitReachabilityWithBodyWithResponse Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+func (c *ClientWithResponses) SubmitReachabilityWithBodyWithResponse(ctx context.Context, serverId ServerId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitReachabilityResponse, error) {
+	rsp, err := c.SubmitReachabilityWithBody(ctx, serverId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitReachabilityResponse(rsp)
+}
+
+// SubmitReachabilityWithResponse Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /servers/{serverId}/reachability (the `SubmitReachability` operationId).
+func (c *ClientWithResponses) SubmitReachabilityWithResponse(ctx context.Context, serverId ServerId, body SubmitReachabilityJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitReachabilityResponse, error) {
+	rsp, err := c.SubmitReachability(ctx, serverId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitReachabilityResponse(rsp)
+}
+
 // GetServerRecoveryWithResponse Backup reports an operator wrote on the server
 //
 // Returns a wrapper object for the known response body format(s).
@@ -19581,7 +21006,7 @@ func (c *ClientWithResponses) SubmitServerRecoveryWithResponse(ctx context.Conte
 	return ParseSubmitServerRecoveryResponse(rsp)
 }
 
-// GetServerSbomWithResponse The server's installed deb packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+// GetServerSbomWithResponse The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -19861,6 +21286,103 @@ func ParseListActivityResponse(rsp *http.Response) (*ListActivityResponse, error
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateAgentServerResponse parses an HTTP response from a CreateAgentServerWithResponse call
+func ParseCreateAgentServerResponse(rsp *http.Response) (*CreateAgentServerResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateAgentServerResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest AgentCredential
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePollAgentResponse parses an HTTP response from a PollAgentWithResponse call
+func ParsePollAgentResponse(rsp *http.Response) (*PollAgentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PollAgentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Command *AgentCommand `json:"command,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitAgentResultResponse parses an HTTP response from a SubmitAgentResultWithResponse call
+func ParseSubmitAgentResultResponse(rsp *http.Response) (*SubmitAgentResultResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitAgentResultResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
@@ -21043,6 +22565,39 @@ func ParseAcknowledgeIncidentResponse(rsp *http.Response) (*AcknowledgeIncidentR
 	}
 
 	response := &AcknowledgeIncidentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Incident
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAssignIncidentResponse parses an HTTP response from a AssignIncidentWithResponse call
+func ParseAssignIncidentResponse(rsp *http.Response) (*AssignIncidentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AssignIncidentResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -22615,6 +24170,68 @@ func ParseGetServerAdvisoriesResponse(rsp *http.Response) (*GetServerAdvisoriesR
 	return response, nil
 }
 
+// ParseRevokeAgentCredentialResponse parses an HTTP response from a RevokeAgentCredentialWithResponse call
+func ParseRevokeAgentCredentialResponse(rsp *http.Response) (*RevokeAgentCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RevokeAgentCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRotateAgentCredentialResponse parses an HTTP response from a RotateAgentCredentialWithResponse call
+func ParseRotateAgentCredentialResponse(rsp *http.Response) (*RotateAgentCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateAgentCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentCredential
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListContainersResponse parses an HTTP response from a ListContainersWithResponse call
 func ParseListContainersResponse(rsp *http.Response) (*ListContainersResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -23056,6 +24673,70 @@ func ParseGetServerMetricsResponse(rsp *http.Response) (*GetServerMetricsRespons
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetReachabilityResponse parses an HTTP response from a GetReachabilityWithResponse call
+func ParseGetReachabilityResponse(rsp *http.Response) (*GetReachabilityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetReachabilityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Items []ProbeObservation `json:"items"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitReachabilityResponse parses an HTTP response from a SubmitReachabilityWithResponse call
+func ParseSubmitReachabilityResponse(rsp *http.Response) (*SubmitReachabilityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitReachabilityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
