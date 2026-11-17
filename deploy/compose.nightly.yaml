@@ -1,0 +1,15 @@
+# Bounds nightly resource use on the shared host. No production volumes or
+# network names are referenced. ESA_STACK_NAME must be esa-nightly.
+services:
+  postgres:
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 256
+  esa:
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 256
+  web:
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 256
