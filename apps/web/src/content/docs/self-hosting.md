@@ -1,141 +1,115 @@
 ---
 title: Self-hosting
-description: Requirements, Docker Compose, a binary install, Postgres, TLS, auth, upgrades, backups, and current limits.
+description: Install public container images or build from source, with PostgreSQL, TLS, authentication, upgrades, and backups.
 ---
 
-You can run this source for any use, including commercial use. There is no license fee and the license sets no usage cap. There is no separate packaged download. Build it from the repository, or use the Docker Compose file in `deploy/`.
+You can self-host from source or use the public container images in GitHub Container Registry. Both use the same AGPL-3.0-only source and have the same features. Docker images support Linux amd64 and arm64.
 
-With the beta caps left off, one account can hold 500 servers and one person can own 20 organizations besides their personal space. Raise or lower the server cap with `ESA_MAX_SERVERS_PER_ACCOUNT` (1 to 100000). That is a setting, not a license limit.
+## Choose a build
+
+| Channel | Control plane                                                       | Web                                                       | Use                                                                                         |
+| ------- | ------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Stable  | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:stable`            | `ghcr.io/infinit3hq/easy-sys-admin-web:stable`            | Builds from `main` after all checks pass.                                                   |
+| Nightly | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:nightly`           | `ghcr.io/infinit3hq/easy-sys-admin-web:nightly`           | Preview builds from `nightly`. Use a separate test database.                                |
+| Commit  | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:sha-<full-commit>` | `ghcr.io/infinit3hq/easy-sys-admin-web:sha-<full-commit>` | A matching production source revision. Nightly commit tags use `nightly-sha-<full-commit>`. |
+
+`latest` follows `stable`. Channel tags move. For a reproducible installation or rollback, copy the exact image digests from the successful GitHub Actions run and keep both image references together. The workflow publishes channel aliases only after both images build. Stable tags appear after the first successful `main` publication; nightly tags appear after the first successful nightly publication.
+
+Public images need no registry login. Source, revision, and licence labels are attached to both images. Builds include provenance and SBOM attestations. The control-plane image contains the helper and outbound agent for both supported server architectures.
+
+Self-hosting has no licence fee or usage cap. Leave `ESA_BETA_LIMITS` unset. The default operational cap is 500 servers per account and 20 organizations per person. `ESA_MAX_SERVERS_PER_ACCOUNT` changes the server cap.
 
 ## Requirements
 
-- A Linux host with Docker Engine and the Compose plugin, or a host where you can run the `esa` binary and Node for the web app.
-- PostgreSQL 18. Compose starts one for you. A binary install uses a database you already have.
-- A DNS name and TLS in front of the web app. The compose file expects Traefik on an external Docker network named `proxy`, with an entrypoint `websecure` and a certificate resolver. Those names are settings.
-- Outbound SSH from the control plane to each server you add, on that server's SSH port.
-- 32 random bytes for `ESA_MASTER_KEY`, from `openssl rand -base64 32`. Store a copy somewhere other than the host. Without it, stored server logins and notification credentials cannot be read.
+- A Linux host with Docker Engine and Compose 2.24.4 or newer. Building from source uses the Dockerfiles; a binary install needs Go, Node, and pnpm too.
+- PostgreSQL 18. Compose supplies it with a separate data volume and an internal database network.
+- One hostname and TLS. The Compose stack expects an existing Traefik proxy on a Docker network named `proxy`, an entrypoint `websecure`, and a certificate resolver `cloudflare`. These names are configurable.
+- A 32-byte `ESA_MASTER_KEY`, from `openssl rand -base64 32`. Back it up separately from the database.
+- Outgoing SSH for SSH-managed hosts, or outgoing HTTPS from hosts using the [outbound agent](/outbound-agent).
 
-Managed servers must be Linux on amd64 or arm64, with `sudo`. Package updates use `apt` only.
+Managed hosts use Linux amd64 or arm64 and `sudo`. Package operations support APT on Debian/Ubuntu and DNF on Rocky Linux 9 with `dnf-utils`. Other RHEL-family releases are not supported.
 
-## Docker Compose
+## Configure Docker Compose
 
-Traefik must already be running and attached to the `proxy` network. No ports are published. One hostname serves the board, `/api/v1`, `/auth`, `/mcp`, and `/enroll`.
+Clone the repository to obtain the Compose files and example settings. No Go or Node build tools are needed when using published images.
 
 ```sh
-docker network create proxy   # skip if it already exists
+git clone https://github.com/infinit3HQ/easy-sys-admin.git
+cd easy-sys-admin
 cp deploy/.env.example deploy/.env
 chmod 600 deploy/.env
+docker network create proxy  # skip when the existing proxy network is present
 ```
 
-Set at least:
+Set these in `deploy/.env`:
 
-- `ESA_HOST`, for example `esa.example.com`
-- `ESA_PUBLIC_URL=https://esa.example.com` with no path
-- `ESA_MASTER_KEY`
-- `POSTGRES_PASSWORD`, from `openssl rand -hex 24`, so the value is safe inside a database URL
+```ini
+ESA_HOST=esa.example.com
+ESA_PUBLIC_URL=https://esa.example.com
+ESA_MASTER_KEY=your-generated-key
+POSTGRES_PASSWORD=your-generated-hex-password
+ESA_AUTH_PASSWORD=true
+ESA_SIGNUP=false
+ESA_CONTROL_PLANE_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-control-plane:stable
+ESA_WEB_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-web:stable
+```
 
-Leave `ESA_BETA_LIMITS` unset. Leave `ESA_SEO` unset unless you want the public pages in search engines. Leave `ESA_SIGNUP` false unless you want anyone who can reach the site to create an account. The first account can always be created while the database has no users.
+Generate the database password with `openssl rand -hex 24`. Do not copy these placeholder credentials. Set `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER` if your proxy uses different names. Keep `ESA_SEO=false` for private installations.
+
+Create the first account before sharing access to the hostname. With sign-up off, the first user can still initialize an empty installation. To add more people while sign-up stays closed, configure a verified identity provider. `ESA_ALLOWED_EMAILS` restricts sign-in; its presence also disables general password registration.
+
+## Use published images
 
 ```sh
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
-docker compose -f deploy/compose.yaml --env-file deploy/.env ps
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env pull
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env up -d --no-build --wait
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env ps
 curl -fsS https://esa.example.com/healthz
 ```
 
-A healthy body is `{"web":"ok","controlPlane":"ok"}`.
+The image override removes every local build section. PostgreSQL, the control plane, and the web app start in dependency order. Only the web service joins Traefik. Neither PostgreSQL nor port 8080 is published. One hostname serves the board, API, auth, MCP, and helper downloads.
 
-The stack is three containers:
+## Build from source
 
-| Container  | Role                                                                                                                         |
-| ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `postgres` | PostgreSQL 18. The data volume is `<stack>_postgres`, `esa_postgres` by default. The database network has no outside access. |
-| `esa`      | Control plane on port 8080, inside the stack network. It is the only container that talks to PostgreSQL.                     |
-| `web`      | Web app on port 3000. Traefik sends the hostname to it. It proxies `/api`, `/auth`, and `/enroll` to `http://esa:8080`.      |
-
-If your Traefik names differ, set `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`.
-
-Register OIDC at `$ESA_PUBLIC_URL/auth/callback/oidc`, or Google at `$ESA_PUBLIC_URL/auth/callback/google`, when you turn those on. Password sign-in is on by default. At least one sign-in method must be on or the control plane will not start.
-
-Password confirmation and reset need `ESA_SMTP_HOST` and the rest of the SMTP settings. Leave the host empty to send no auth mail. A new password account cannot sign in until it opens the confirmation link when mail is on.
-
-## Binary install
-
-Build the control plane and the helpers, then the web app:
+Use a tested source commit and build locally:
 
 ```sh
-pnpm install
+# Keep the same configuration, but use local image names.
+# Remove ESA_CONTROL_PLANE_IMAGE and ESA_WEB_IMAGE from deploy/.env.
+docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build --wait
+```
+
+The source path uses the Dockerfiles in `apps/esa` and `apps/web`. Build tools run inside the build containers. To build binaries outside Docker, use Node 26, pnpm 12, Go 1.27, and PostgreSQL:
+
+```sh
+pnpm install --frozen-lockfile
 pnpm --filter @esa/esa build
 pnpm --filter @esa/web build
 ```
 
-Create a database and set the variables the control plane requires. The full list is in the repository file `docs/configuration.md`. The ones you cannot skip:
+Run `apps/esa/bin/esa serve` with `ESA_DATABASE_URL`, `ESA_MASTER_KEY`, `ESA_PUBLIC_URL`, and `ESA_HELPER_DIR=./apps/esa/bin`. Start the built web app with `ESA_API_URL=http://127.0.0.1:8080`, `HOST=127.0.0.1`, and `pnpm --filter @esa/web start`. Put TLS in front of the web app. Port 8080 also has unauthenticated operational metrics and must stay private.
 
-```sh
-export ESA_DATABASE_URL=postgres://esa:secret@localhost:5432/esa
-export ESA_MASTER_KEY=$(openssl rand -base64 32)
-export ESA_PUBLIC_URL=https://esa.example.com
-export ESA_LISTEN=127.0.0.1:8080
-export ESA_HELPER_DIR=./apps/esa/bin
-apps/esa/bin/esa serve
-```
+## Authentication and source offer
 
-In another terminal, the built web server:
+Google redirects to `$ESA_PUBLIC_URL/auth/callback/google`. A generic OIDC provider redirects to `$ESA_PUBLIC_URL/auth/callback/oidc`. Configure the corresponding client ID and secret. Password confirmation and reset need the SMTP settings; leaving `ESA_SMTP_HOST` empty sends no auth mail.
 
-```sh
-export ESA_API_URL=http://127.0.0.1:8080
-export HOST=127.0.0.1
-pnpm --filter @esa/web start
-```
+`ESA_SOURCE_URL` defaults to the upstream repository. Set it to your fork when you run modified code. `ESA_VERSION` and `ESA_COMMIT` identify the running source in the footer. Published web images carry their build revision; the deployment workflow also passes the exact revision explicitly. The AGPL source offer applies to modified builds served over a network.
 
-Put TLS in front of the web server. Enroll commands need `https` on `ESA_PUBLIC_URL`, except on localhost. Point the proxy at port 3000 and forward the original host. Do not publish the control plane's port 8080. `GET /metrics` on that port has no login. The web app does not proxy it.
+## Upgrades and rollbacks
 
-`ESA_HELPER_DIR` must contain `esa-helper-linux-amd64` and `esa-helper-linux-arm64`. `pnpm --filter @esa/esa build` writes them to `apps/esa/bin`.
+Back up the database and master key before upgrading. For image installs, update both image references to one tested revision, pull, then run the same `up -d --no-build --wait` command. For source installs, check out the tested commit and rebuild. The control plane applies additive migrations on startup.
 
-## Source offer
+An older image is not automatically a safe database rollback. Retain a pre-upgrade database dump and the keys used to encrypt its data. Restore a matching snapshot when schema compatibility has not been established. Do not restore or reuse a production database in nightly.
 
-The footer link "Source code" is how people get the source of the running build, which the AGPL requires when you let others use a modified version over a network.
+Managed-server helpers are updated only by an explicit installation. New actions are refused until the installed helper advertises them. Compatible older helpers can still run supported actions.
 
-| Variable         | Default                                        | Meaning                                                                                    |
-| ---------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `ESA_SOURCE_URL` | `https://github.com/infinit3HQ/easy-sys-admin` | Where the link goes. Set your fork or a source archive when you ship changes.              |
-| `ESA_VERSION`    | `dev`                                          | Shown next to the link.                                                                    |
-| `ESA_COMMIT`     | `none`                                         | Shown next to the link. A git sha on a GitHub repository URL links to `.../tree/<commit>`. |
-
-Set these on the web container. Compose passes them through. The deploy workflow writes `ESA_VERSION` and `ESA_COMMIT` from the commit it built.
-
-## Upgrades
-
-Pull the new commit and run the same `docker compose ... up -d --build`. The control plane migrates the database on start. Migrations add tables and columns. They do not drop or rename on their own.
-
-Servers keep the helper they already have. When a release adds helper actions, reinstall the helper from each server's settings. An old helper answers a new action with `unknown action`.
-
-Only one control plane process may run.
-
-## Backups
-
-Back up two things, and keep them apart:
-
-- The PostgreSQL data.
-- `ESA_MASTER_KEY`. A dump without the key loses every stored server login and channel credential.
+## Backups and operational settings
 
 ```sh
 docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T postgres \
   pg_dump -U esa -d esa --format=custom > esa-$(date +%F).dump
 ```
 
-Restore only after stopping the web and control plane containers. The dump has to be opened with the master key that was in use when it was taken.
+Keep the dump and `ESA_MASTER_KEY` separately. A dump without its key cannot recover stored credentials. Stop the web and control plane before restoring.
 
-There is no command that re-encrypts old secrets under a new master key. To rotate, set `ESA_MASTER_KEY` to `<new>,<old>` and restart. Keep every old key that still seals a secret.
-
-## Current limitations
-
-From the project's status notes:
-
-- One control plane instance. Locks, rate limits, the notification queue, and poll back-off are in memory.
-- `apt` on Debian and Ubuntu, plus a narrow DNF path for Rocky Linux 9. Rocky needs `dnf-utils`. Other RHEL-family releases remain unsupported.
-- An optional [outbound agent](/outbound-agent) supports servers without inbound SSH.
-- No live log follow. The poll interval is fixed at one minute.
-- The helper protocol version is not checked.
-- The audit log is not pruned.
-- CLI commands for organizations, teams, and sharing are not written yet.
-- On a run shared with another organization, the overall status can reflect servers that organization cannot see.
+Multiple control planes coordinate maintenance and jobs through PostgreSQL. Keep their versions compatible and finish upgrading every instance before enabling new features. Master-key rotation supports `esa reseal`, including a dry run; remove an old key only when all live data has been re-sealed. Optional audit/report retention and retention holds are deployment environment variables. They default off. See the repository's `docs/configuration.md` for the complete list.

@@ -164,3 +164,15 @@ These settings belong to the managed server's `esa-agent.service`, not the contr
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `ESA_AGENT_URL`        | HTTPS origin of this esa installation. No path, credentials, query, or redirects. Numeric loopback HTTP is allowed for development only. |
 | `ESA_AGENT_TOKEN_FILE` | Regular credential file with mode 0600 or 0640. The token is never an environment variable or command argument.                          |
+
+## Published images and deployment channels
+
+| Variable                  | Default                                               | Use                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `ESA_CONTROL_PLANE_IMAGE` | Local `esa-control-plane:<version>` for source builds | Control-plane image. Required with `deploy/compose.images.yaml`. Hosted workflows use a full GHCR digest.                                |
+| `ESA_WEB_IMAGE`           | Local `esa-web:<version>` for source builds           | Matching web image. Required with the image override. Hosted workflows use a full GHCR digest.                                           |
+| `NIGHTLY_DEPLOY_ENABLED`  | Unset/off                                             | Repository Actions variable enabling deployment of verified nightly images. `DEPLOY_ENABLED` separately controls production from `main`. |
+| `DEPLOY_ENVIRONMENT`      | Required by deploy scripts                            | `production` or `nightly`. Workflows set this from their checked channel; it is not an application setting.                              |
+| `ENV_FILE`                | Required by deploy scripts                            | Path to a temporary mode-0600 Compose env file, removed after deployment. It contains secrets and must not be committed.                 |
+
+The `nightly` GitHub environment holds its own `ESA_MASTER_KEY`, `POSTGRES_PASSWORD`, `ESA_HOST`, and `ESA_ALLOWED_EMAILS`. Its project and router must both be `esa-nightly`. Production settings stay in `production`; its project remains `esa`. Change the nightly allow list in GitHub Settings > Environments > nightly > Variables. An allow list restricts sign-in and disables general password sign-up. Creating another user's account requires a configured verified identity provider or an explicit administrative setup.

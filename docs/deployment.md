@@ -57,45 +57,61 @@ You need a Linux host with Docker Engine and the Compose plugin, and a DNS recor
 
 The control plane connects out to the SSH port of every server you add. When an enrollment completes, it also connects to the new server to confirm its host key. Make sure the host's firewall allows that outbound traffic.
 
-## Deploy with GitHub Actions
+## Publish and deploy with GitHub Actions
 
-`.github/workflows/deploy.yml` builds the images on the host and restarts the stack with compose. It runs on a self-hosted runner on that host.
+The `CI` workflow tests one exact source commit, publishes both multi-platform images to GHCR, then calls the reusable `Deploy` workflow with exact image digests. Production and nightly use the existing `esa-deploy` runner on Server One. Pull requests run checks only and never publish images or receive deployment secrets.
 
-### When it runs
+| Trigger                                | Source                           | Published tags                                        | Deployment environment     | Repository switch             |
+| -------------------------------------- | -------------------------------- | ----------------------------------------------------- | -------------------------- | ----------------------------- |
+| Push to `main`                         | That commit on `main`            | `stable`, `latest`, `sha-<full-commit>`               | `production`               | `DEPLOY_ENABLED=true`         |
+| Push to `nightly`                      | That commit on `nightly`         | `nightly`, dated nightly, `nightly-sha-<full-commit>` | `nightly`                  | `NIGHTLY_DEPLOY_ENABLED=true` |
+| Daily at 22:17 UTC, 03:47 Asia/Colombo | Current `nightly` commit         | Nightly tags                                          | `nightly`                  | `NIGHTLY_DEPLOY_ENABLED=true` |
+| Run `CI` manually                      | Selected `main` or `nightly` ref | That channel's tags                                   | That channel's environment | Same switch as a push         |
 
-- After the `CI` workflow (`.github/workflows/ci.yml`) completes on `main`. The `workflow_run` trigger deploys only when CI succeeded, CI was started by a push to `main` of this repository, and the repository variable `DEPLOY_ENABLED` is `true`. CI runs for pull requests and forks never deploy.
-- On demand with "Run workflow" (`workflow_dispatch`). The job runs only when the selected branch is `main`, and it does not check `DEPLOY_ENABLED`.
+The control-plane package is `ghcr.io/infinit3hq/easy-sys-admin-control-plane`. The web package is `ghcr.io/infinit3hq/easy-sys-admin-web`. Both publish Linux amd64 and arm64, source/revision/licence labels, provenance, and SBOM attestations. Channel aliases move only after both builds succeed. Automated deployments always pull the exact digests from the successful build; they never rebuild source or deploy a moving tag.
 
-Deploys share the concurrency group `deploy-production`. A new deploy waits for a running one to finish instead of cancelling it.
+GitHub schedules execute the workflow file on the default branch. The daily nightly schedule becomes active when this workflow reaches `main`; the source-selection job explicitly checks out `nightly`. A push to `nightly` works immediately while the workflow is still being reviewed. The workflow change does not merge nightly application code into production.
 
-### What the job does
+Deployment concurrency is separate for production and nightly, and a running deployment is never cancelled. Each channel has separate environment secrets, a Compose project, database volume, and private networks. The shared self-hosted runner and Docker daemon still have host-level access; only trusted branch maintainers should be able to change these deployment workflows.
 
-1. Checks out the commit CI tested (`workflow_run.head_sha`), or the head of `main` for a manual run. It does not keep Git credentials.
-2. Checks that `ESA_HOST`, `ESA_MASTER_KEY`, and `POSTGRES_PASSWORD` are set, and that no value contains a single quote or a line break.
-3. Writes the env file to `$RUNNER_TEMP/esa-$GITHUB_RUN_ID.env` with mode `0600`. It adds `ESA_PUBLIC_URL=https://$ESA_HOST`, `ESA_VERSION` (the short commit hash), and `ESA_COMMIT` (the full hash).
-4. Runs `docker compose build --pull`, then `docker compose up -d --remove-orphans --wait --wait-timeout 180`.
-5. Prints `docker compose ps` and fetches `http://127.0.0.1:3000/healthz` inside the web container.
-6. Deletes the env file, whether the job passed or failed.
+### Configure the GitHub environments
 
-### Set up the repository
+Keep production's settings in the `production` environment and restrict that environment to `main`. Set the repository variable `DEPLOY_ENABLED=true` to permit production deployments. Production keeps project `esa`, its existing secrets, and hostname `easysysadmin.app`.
 
-1. In Settings > Environments, create an environment named `production`. Under "Deployment branches and tags", choose "Selected branches and tags" and add `main`. This keeps the environment's secrets away from every other branch. You can also add a required reviewer. On private repositories that needs a paid GitHub plan.
-2. On the `production` environment, add secrets for anything that must stay hidden:
-   - `ESA_MASTER_KEY` (required)
-   - `POSTGRES_PASSWORD` (required)
-   - `ESA_OIDC_CLIENT_SECRET` (with OIDC)
-   - `ESA_GOOGLE_CLIENT_SECRET` (with Google)
-   - `ESA_SMTP_PASSWORD` (when system mail is on)
+Create a separate environment called `nightly`. Permit `nightly` and `main` as deployment branches, because the scheduled workflow executes from `main`. Configure:
 
-   Keep them as environment secrets, not repository secrets, so only jobs that deploy from `main` can read them. A secret is masked in logs and cannot be read back from GitHub.
+| Nightly variable     | Value                                                      |
+| -------------------- | ---------------------------------------------------------- |
+| `ESA_HOST`           | `nightly.easysysadmin.app`                                 |
+| `ESA_STACK_NAME`     | `esa-nightly`                                              |
+| `ESA_ROUTER`         | `esa-nightly`                                              |
+| `ESA_SEO`            | `false`                                                    |
+| `ESA_SIGNUP`         | `false`                                                    |
+| `ESA_AUTH_PASSWORD`  | `true`                                                     |
+| `ESA_ALLOWED_EMAILS` | The owner's email, updated in GitHub environment variables |
 
-3. On the same `production` environment, add variables for the rest. These are visible in the environment settings, which is fine because they are not credentials:
-   - `ESA_HOST`, for example `esa.example.com` (required)
-   - Any of `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_SEO`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_STACK_NAME`, `ESA_ROUTER`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER`. Unset ones get the defaults in [configuration.md](configuration.md). Set `ESA_BETA_LIMITS` to `true` for the hosted beta. Leave it unset for a self-hosted install. Set `ESA_SEO` to `true` only for a site that should appear in search engines. Leave `ESA_SMTP_HOST` empty to send no auth mail.
+Generate independent `ESA_MASTER_KEY` and `POSTGRES_PASSWORD` secrets for nightly. Do not copy production keys or data. The reusable workflow uses the selected environment's existing SMTP/OIDC/Google settings only when configured. Set the repository variable `NIGHTLY_DEPLOY_ENABLED=true` to deploy nightly.
 
-4. Add one repository variable, `DEPLOY_ENABLED=true`, once you want pushes to `main` to deploy. This one cannot live on the environment. The workflow checks it before GitHub selects the `production` environment, so an environment variable would be invisible there.
+The first nightly account is created through the application's local API before starting the public web container. Its initial password is stored mode 0600 at `$HOME/.local/state/easy-sys-admin/nightly/bootstrap-password` under the runner user on Server One. Retrieve it through your existing SSH administrator access. It never appears in GitHub logs or artifacts. With an allow list configured, general password registration stays closed after bootstrap. Adding verified identity providers is the normal way to admit more users later.
 
-5. Set up Traefik on the host as in step 1 of [Deploy with docker compose](#deploy-with-docker-compose).
+Nightly adds `deploy/compose.nightly.yaml`, which caps each service at 512 MiB, 0.75 CPU, and 256 processes. It keeps data in `esa-nightly_postgres`; it never names production's database volume. Its health check runs internally before a deployment is reported successful. Temporary Compose secrets and registry login files are removed after each job. Image deployment never runs a prune or deletes volumes.
+
+### DNS and package visibility
+
+On Server One, add **CNAME `nightly` pointing to `easysysadmin.app`**. An equivalent direct A record is `nightly.easysysadmin.app` to `129.146.103.99`. Use one or the other, not both. No API or registry subdomain is needed: the same web hostname handles every application endpoint, and images are served by `ghcr.io`.
+
+GHCR packages start private on first publication, even for a public source repository. After the first successful publication, set both package pages to public in GitHub package settings, then verify an anonymous image-manifest request. Deployments can pull with their scoped `GITHUB_TOKEN` during that initial setup. Public self-hosting pulls need no token. Docker actions and checkout are pinned to commit hashes; publication grants `packages:write` only to the publish job.
+
+### Use prebuilt images manually
+
+The public self-hosting guide describes both options. For a published image install, set both image references in `deploy/.env`, then use:
+
+```sh
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env pull
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env up -d --no-build --wait
+```
+
+For a source build, leave the image references unset and use the original single-file command with `--build`. Image installs require Compose 2.24.4 or newer for the override's `!reset` build removal. Pin matching digests for reproducible upgrades and rollbacks.
 
 ### Set up the self-hosted runner
 

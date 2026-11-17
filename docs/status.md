@@ -82,3 +82,7 @@ Two-admin plans have a database guard as well as API checks. A proposal written 
 [scanner-comparison.md](scanner-comparison.md) records actual offline Grype 0.122.0 and Trivy 0.76.2 results on one synthetic SBOM. Grype remains the supported optional scanner. The tools and databases are not bundled or redistributed. Their software licences are Apache-2.0; operators supply their own scanner and feeds, whose terms still apply. Fewer matches are not evidence of better accuracy.
 
 `ESA_REPORT_RETENTION` optionally prunes old resolved notices and superseded scans. The latest scan, unresolved notices, run reports, and backup receipts are kept. It defaults off. The audit hold also pauses report deletion. The published hosted policy uses these same settings; production deletion is enabled only by explicit deployment variables. See [configuration.md](configuration.md).
+
+## Build channels
+
+`main` is production; `nightly` is an isolated preview channel. CI validates the exact commit, publishes amd64/arm64 control-plane and web images to GHCR, then deploys their exact digests through the existing Server One runner. Nightly has independent secrets, restricted sign-in, its own database/networks/project, and bounded resource use. Pull requests never publish or deploy. The self-hosting guide covers source builds and published images. The daily nightly schedule activates when the workflow reaches the default branch. See [deployment.md](deployment.md).
