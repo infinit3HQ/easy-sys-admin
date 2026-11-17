@@ -3,9 +3,39 @@ title: Self-hosting
 description: Requirements, Docker Compose, a binary install, Postgres, TLS, auth, upgrades, backups, and current limits.
 ---
 
-You can run this source for any use, including commercial use. There is no license fee and the license sets no usage cap. There is no separate packaged download. Build it from the repository, or use the Docker Compose file in `deploy/`.
+You can run this source for any use, including commercial use. There is no license fee and the license sets no usage cap. Build from the repository or use the public Docker images from GitHub Container Registry. Feature availability follows the selected source revision; newer work stays on nightly until promoted to main.
 
 With the beta caps left off, one account can hold 500 servers and one person can own 20 organizations besides their personal space. Raise or lower the server cap with `ESA_MAX_SERVERS_PER_ACCOUNT` (1 to 100000). That is a setting, not a license limit.
+
+## Choose a build
+
+| Channel | Control plane                                                       | Web                                                       | Use                                                                                         |
+| ------- | ------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Stable  | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:stable`            | `ghcr.io/infinit3hq/easy-sys-admin-web:stable`            | Builds from `main` after all checks pass.                                                   |
+| Nightly | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:nightly`           | `ghcr.io/infinit3hq/easy-sys-admin-web:nightly`           | Preview builds from `nightly`. Use a separate test database.                                |
+| Commit  | `ghcr.io/infinit3hq/easy-sys-admin-control-plane:sha-<full-commit>` | `ghcr.io/infinit3hq/easy-sys-admin-web:sha-<full-commit>` | A matching production source revision. Nightly commit tags use `nightly-sha-<full-commit>`. |
+
+`latest` follows `stable`. Channel tags move. For a reproducible installation or rollback, copy the exact image digests from the successful GitHub Actions run and keep both image references together. The workflow publishes channel aliases only after both images build. Stable tags appear after the first successful `main` publication; nightly tags appear after the first successful nightly publication.
+
+Public images need no registry login. Source, revision, and licence labels are attached to both images. Builds include provenance and SBOM attestations. The control-plane image contains server helpers. Revisions supporting outbound transport also include the agent.
+
+## Use published images
+
+Clone this repository to get the Compose files, and follow the hostname, TLS, database-password, master-key, and authentication configuration below. Set a matching pair of image references in `deploy/.env`:
+
+```ini
+ESA_CONTROL_PLANE_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-control-plane:stable
+ESA_WEB_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-web:stable
+```
+
+With Compose 2.24.4 or newer, the image override removes every local build section. No Go or Node build tools are needed on your host:
+
+```sh
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env pull
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env up -d --no-build --wait
+```
+
+Leave both image variables unset when building from source with the original single-file Compose command. Keep the database dump and master key before upgrades. A pinned older image is not a safe database rollback unless its schema compatibility is known; restore a matching backup when necessary.
 
 ## Requirements
 

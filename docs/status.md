@@ -58,3 +58,7 @@ Measured with `TestPollLoad` (`apps/esa/internal/fleet/poll_load_test.go`): in-p
 |           1,000 |  50, after back-off |          64 | all 1,000           |     19.6 s |
 
 Concurrency 64 is the default. Going by the 1,000-server result, one control plane should poll about 2,500 servers a minute at that setting (not measured beyond 1,000); raise `ESA_POLL_CONCURRENCY` for more. Only one control plane process may run, because run locks, rate limits, the notification queue and poll back-off live in memory. The board loads every server of a space every 15 seconds, which is fine at the default cap of 500 servers per space.
+
+## Build channels
+
+`main` is production; `nightly` is an isolated preview channel. CI validates the exact commit, publishes amd64/arm64 control-plane and web images to GHCR, then deploys their exact digests through the existing Server One runner. Nightly has independent secrets, restricted sign-in, its own database/networks/project, and bounded resource use. Pull requests never publish or deploy. The self-hosting guide covers source builds and published images. The daily nightly schedule activates when the workflow reaches the default branch. See [deployment.md](deployment.md).

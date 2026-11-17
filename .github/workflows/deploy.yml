@@ -1,51 +1,55 @@
 name: Deploy
 
-# Builds the images on the server and restarts the stack with compose.
-# Runs on the self-hosted runner on Server_One, under its own user.
-# Secrets and variables both come from the production environment.
-# DEPLOY_ENABLED stays a repository variable, because the job checks it
-# before GitHub applies the environment. The env file exists only for the
-# length of the job.
-#
-# Pushes to main of this repository deploy after CI passes when the
-# repository variable DEPLOY_ENABLED is "true". "Run workflow" deploys on
-# demand, from main only. CI runs for pull requests and forks never deploy.
+# Called only after the exact source commit passes all checks and both images
+# are published. Production and nightly use separate GitHub environments.
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      control-plane-image:
+        required: true
+        type: string
+      web-image:
+        required: true
+        type: string
 
 permissions:
   contents: read
+  packages: read
 
 concurrency:
-  group: deploy-production
+  group: deploy-${{ inputs.environment }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' &&
-        vars.DEPLOY_ENABLED == 'true' &&
-        github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.event == 'push' &&
-        github.event.workflow_run.head_branch == 'main' &&
-        github.event.workflow_run.head_repository.full_name == github.repository)
+    if: inputs.environment == 'production' || inputs.environment == 'nightly'
     runs-on: [self-hosted, esa-deploy]
     environment:
-      name: production
+      name: ${{ inputs.environment }}
       url: https://${{ vars.ESA_HOST }}
+    env:
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ inputs.sha }}
           persist-credentials: false
-
       - name: Write env file from secrets
         env:
+          DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+          ESA_CONTROL_PLANE_IMAGE: ${{ inputs.control-plane-image }}
+          ESA_WEB_IMAGE: ${{ inputs.web-image }}
+          ESA_VERSION: ${{ inputs.version }}
+          ESA_COMMIT: ${{ inputs.sha }}
           ESA_HOST: ${{ vars.ESA_HOST }}
           ESA_SIGNUP: ${{ vars.ESA_SIGNUP || 'false' }}
           # Empty leaves the control plane default.
@@ -66,6 +70,9 @@ jobs:
           ESA_BETA_LIMITS: ${{ vars.ESA_BETA_LIMITS }}
           ESA_SEO: ${{ vars.ESA_SEO || 'false' }}
           ESA_SOURCE_URL: ${{ vars.ESA_SOURCE_URL }}
+          ESA_AUDIT_RETENTION: ${{ vars.ESA_AUDIT_RETENTION }}
+          ESA_AUDIT_HOLD_UNTIL: ${{ vars.ESA_AUDIT_HOLD_UNTIL }}
+          ESA_REPORT_RETENTION: ${{ vars.ESA_REPORT_RETENTION }}
           ESA_METRICS_RAW_RETENTION: ${{ vars.ESA_METRICS_RAW_RETENTION }}
           ESA_METRICS_HOURLY_RETENTION: ${{ vars.ESA_METRICS_HOURLY_RETENTION }}
           ESA_STACK_NAME: ${{ vars.ESA_STACK_NAME || 'esa' }}
@@ -81,11 +88,21 @@ jobs:
         run: |
           set -eu
           for v in ESA_HOST ESA_MASTER_KEY POSTGRES_PASSWORD; do
-            if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set (secrets belong to the production environment, variables to the repository)"; exit 1; fi
+            if [ -z "$(printenv "$v")" ]; then echo "::error::$v is not set (check the selected GitHub environment)"; exit 1; fi
           done
-          vars="ESA_HOST ESA_SIGNUP ESA_ALLOW_PRIVATE_NETWORKS ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME
+          if [ "$DEPLOY_ENVIRONMENT" = nightly ]; then
+            [ "$ESA_STACK_NAME" = esa-nightly ] && [ "$ESA_ROUTER" = esa-nightly ] || { echo '::error::Nightly requires its own esa-nightly project and router'; exit 1; }
+            [ "$ESA_HOST" != easysysadmin.app ] && [ -n "$ESA_ALLOWED_EMAILS" ] && [ "$ESA_SEO" = false ] || { echo '::error::Nightly needs its own host, restricted email list, and SEO off'; exit 1; }
+          fi
+          if [ "$DEPLOY_ENVIRONMENT" = production ]; then
+            [ "$ESA_STACK_NAME" = esa ] && [ "$ESA_ROUTER" = esa ] && [ "$ESA_HOST" = easysysadmin.app ] || { echo '::error::Production requires the existing esa project, router, and hostname'; exit 1; }
+          fi
+          for image in "$ESA_CONTROL_PLANE_IMAGE" "$ESA_WEB_IMAGE"; do
+            printf '%s' "$image" | grep -Eq '^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$' || { echo '::error::Deployments require exact GHCR image digests'; exit 1; }
+          done
+          vars="ESA_CONTROL_PLANE_IMAGE ESA_WEB_IMAGE ESA_VERSION ESA_COMMIT ESA_HOST ESA_SIGNUP ESA_ALLOW_PRIVATE_NETWORKS ESA_AUTH_PASSWORD ESA_ALLOWED_EMAILS ESA_OIDC_ISSUER ESA_OIDC_PROVIDER_NAME
                 ESA_OIDC_CLIENT_ID ESA_GOOGLE_CLIENT_ID ESA_SMTP_HOST ESA_SMTP_PORT ESA_SMTP_USERNAME ESA_SMTP_FROM ESA_MASTER_KEY POSTGRES_PASSWORD ESA_OIDC_CLIENT_SECRET ESA_GOOGLE_CLIENT_SECRET ESA_SMTP_PASSWORD
-                ESA_POLL_CONCURRENCY ESA_MAX_SERVERS_PER_ACCOUNT ESA_BETA_LIMITS ESA_SEO ESA_METRICS_RAW_RETENTION ESA_METRICS_HOURLY_RETENTION ESA_SOURCE_URL
+                ESA_POLL_CONCURRENCY ESA_MAX_SERVERS_PER_ACCOUNT ESA_BETA_LIMITS ESA_SEO ESA_AUDIT_RETENTION ESA_AUDIT_HOLD_UNTIL ESA_REPORT_RETENTION ESA_METRICS_RAW_RETENTION ESA_METRICS_HOURLY_RETENTION ESA_SOURCE_URL
                 ESA_STACK_NAME ESA_ROUTER TRAEFIK_NETWORK TRAEFIK_ENTRYPOINT TRAEFIK_CERT_RESOLVER"
           # Values are written in single quotes, so they cannot hold a single quote or a line break.
           nl='
@@ -96,28 +113,56 @@ jobs:
             esac
           done
           umask 077
-          f="$RUNNER_TEMP/esa-$GITHUB_RUN_ID.env"
+          f="$RUNNER_TEMP/esa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.env"
           {
             # Single quotes: compose takes the value literally.
             for v in $vars; do
               printf "%s='%s'\n" "$v" "$(printenv "$v")"
             done
             printf "ESA_PUBLIC_URL='https://%s'\n" "$ESA_HOST"
-            printf "ESA_VERSION='%s'\nESA_COMMIT='%s'\n" "$(git rev-parse --short HEAD)" "$(git rev-parse HEAD)"
           } > "$f"
-          echo "ENV_FILE=$f" >> "$GITHUB_ENV"
+          printf 'ENV_FILE=%s\nESA_TEMP_ENV_FILE=%s\n' "$f" "$f" >> "$GITHUB_ENV"
 
-      - name: Build images
-        run: docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" build --pull
+      - name: Pull verified images
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          export DOCKER_CONFIG="$RUNNER_TEMP/esa-docker-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$DOCKER_CONFIG"
+          printf 'DOCKER_CONFIG=%s\nESA_TEMP_DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG" "$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          deploy/run.sh pull
 
-      - name: Start
-        run: docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" up -d --remove-orphans --wait --wait-timeout 180
+      - name: Back up production before restart
+        if: inputs.environment == 'production'
+        env:
+          ESA_DEPLOY_BACKUP_DIR: ${{ vars.ESA_DEPLOY_BACKUP_DIR }}
+        run: deploy/backup-production.sh
+
+      - name: Close nightly public route during bootstrap
+        if: inputs.environment == 'nightly'
+        run: deploy/run.sh rm --stop --force web
+
+      - name: Start database and control plane
+        run: deploy/run.sh up -d --no-build --pull never --wait --wait-timeout 180 postgres esa
+
+      - name: Bootstrap private nightly account
+        if: inputs.environment == 'nightly'
+        env:
+          ESA_ALLOWED_EMAILS: ${{ vars.ESA_ALLOWED_EMAILS }}
+        run: deploy/bootstrap-nightly.sh
+
+      - name: Start web
+        run: deploy/run.sh up -d --no-build --pull never --wait --wait-timeout 180
 
       - name: Health
         run: |
-          docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" ps
-          docker compose -f deploy/compose.yaml --env-file "$ENV_FILE" exec -T web wget -qO- http://127.0.0.1:3000/healthz
+          deploy/run.sh ps
+          deploy/run.sh exec -T web wget -qO- http://127.0.0.1:3000/healthz
 
-      - name: Remove env file
+      - name: Remove temporary credentials
         if: always()
-        run: rm -f "$ENV_FILE"
+        run: |
+          if [ -n "${ESA_TEMP_ENV_FILE:-}" ]; then rm -f "$ESA_TEMP_ENV_FILE"; fi
+          if [ -n "${ESA_TEMP_DOCKER_CONFIG:-}" ]; then rm -rf "$ESA_TEMP_DOCKER_CONFIG"; fi

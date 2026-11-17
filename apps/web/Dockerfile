@@ -24,6 +24,9 @@ RUN pnpm --filter @esa/web build
 
 FROM node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
 WORKDIR /app
+ARG VERSION=dev
+ARG COMMIT=none
+ENV ESA_VERSION=$VERSION ESA_COMMIT=$COMMIT
 ENV NODE_ENV=production PORT=3000 HOST=0.0.0.0
 # Nitro bundles the server and its dependencies into .output.
 COPY --from=build --chown=node:node /repo/apps/web/.output ./.output

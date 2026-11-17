@@ -1,0 +1,8 @@
+# Prebuilt images. Combine with compose.yaml. Requires Compose 2.24.4+.
+services:
+  esa:
+    build: !reset null
+    image: ${ESA_CONTROL_PLANE_IMAGE:?set ESA_CONTROL_PLANE_IMAGE}
+  web:
+    build: !reset null
+    image: ${ESA_WEB_IMAGE:?set ESA_WEB_IMAGE}
