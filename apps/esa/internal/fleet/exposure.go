@@ -259,7 +259,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 			if prev.BaselineBindsSeeded {
 				prevBinds = prev.BaselineBinds
 			}
-			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ex.PublicPorts), ex.SpecificBinds...), prev.BaselineKeys, keys)
+			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ex.PublicPorts), ex.SpecificBinds...), prev.BaselineKeys, keys, !hasGap(ex.Gaps, "listening sockets") && !hasGap(ex.Gaps, "docker ports"))
 		}
 		ex.BaselineKeys = keyIDs(keys)
 	}
@@ -435,9 +435,12 @@ func added(prev, cur []string) []string {
 }
 
 // noteAdditions sends one-shot alerts for public ports and SSH keys that
-// were not in the previous report. The alerts are stored already resolved
-// so the next hour does not send a "resolved" message.
-func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts, ports, prevKeys []string, keys []keyUse) {
+// were not in the previous report. Socket notices resolve only when a
+// complete socket read no longer sees any socket recorded in the notice.
+func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts, ports, prevKeys []string, keys []keyUse, complete bool) {
+	if complete {
+		s.resolveGonePorts(ctx, srv, ports)
+	}
 	rules, err := s.rules(ctx, srv.AccountID)
 	if err != nil {
 		return
@@ -447,6 +450,37 @@ func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts
 	}
 	if rules[AlertNewKey].Enabled {
 		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, freshKeys(prevKeys, keys), "new SSH key")
+	}
+}
+
+func (s *Service) resolveGonePorts(ctx context.Context, srv store.Server, ports []string) {
+	have := map[string]bool{}
+	for _, p := range ports {
+		have[p] = true
+	}
+	var rows []store.SecurityIncident
+	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, string(AlertNewPort), "resolved").Find(&rows).Error; err != nil {
+		return
+	}
+	for _, row := range rows {
+		var sockets []string
+		if err := row.Sockets.Decode(&sockets); err != nil {
+			continue
+		}
+		if len(sockets) == 0 {
+			// A legacy single-socket subject is the complete evidence. A
+			// grouped message may be shortened, so never parse it as evidence.
+			if !strings.HasSuffix(row.Subject, "/tcp") && !strings.HasSuffix(row.Subject, "/udp") {
+				continue
+			}
+			sockets = []string{row.Subject}
+		}
+		if slices.ContainsFunc(sockets, func(socket string) bool { return have[socket] }) {
+			continue
+		}
+		if s.resolveIncident(ctx, srv.AccountID, srv.ID, string(AlertNewPort), row.Subject) {
+			s.notifyResolved(ctx, srv.AccountID, srv.ID, string(AlertNewPort), row.Message, "a fresh check no longer saw it")
+		}
 	}
 }
 
@@ -481,7 +515,11 @@ func (s *Service) oneShot(ctx context.Context, srv store.Server, rule store.Aler
 		if len(subject) > 200 {
 			subject = subject[:200]
 		}
-		if !s.openIncident(ctx, srv.AccountID, srv.ID, string(kind), subject, msg, true) {
+		var sockets []string
+		if kind == AlertNewPort {
+			sockets = items
+		}
+		if !s.openIncidentWithSockets(ctx, srv.AccountID, srv.ID, string(kind), subject, msg, true, sockets) {
 			return
 		}
 		al := store.Alert{

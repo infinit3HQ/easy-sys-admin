@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"gorm.io/gorm"
@@ -78,6 +79,10 @@ func (s *Service) incidentEvent(ctx context.Context, incidentID int64, kind stri
 //
 // A condition that merely persists stays where it is.
 func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, kind, subject, message string, event bool) (opened bool) {
+	return s.openIncidentWithSockets(ctx, accountID, serverID, kind, subject, message, event, nil)
+}
+
+func (s *Service) openIncidentWithSockets(ctx context.Context, accountID, serverID int64, kind, subject, message string, event bool, sockets []string) (opened bool) {
 	if len(subject) > 200 {
 		subject = subject[:200]
 	}
@@ -88,6 +93,9 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 		row = store.SecurityIncident{
 			AccountID: accountID, ServerID: serverID, Kind: kind, Subject: subject,
 			State: "open", Message: message, FirstSeen: now, LastSeen: now,
+		}
+		if sockets != nil {
+			row.Sockets = store.MustJSON(sockets)
 		}
 		if err := s.db.WithContext(ctx).Omit("Account", "Server").Create(&row).Error; err != nil {
 			s.log.Error("open incident", "err", err)
@@ -119,6 +127,21 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 		}
 	}
 	changes := map[string]any{"last_seen": now, "message": message}
+	if sockets != nil {
+		if row.State == "resolved" {
+			changes["sockets"] = store.MustJSON(sockets)
+		} else {
+			// Keep earlier sockets while this notice is unresolved. A later
+			// batch of additions must not erase a socket that still listens.
+			// Legacy grouped notices have no complete list; keep it unknown.
+			var previous []string
+			if err := row.Sockets.Decode(&previous); err == nil && len(previous) > 0 {
+				previous = append(previous, sockets...)
+				slices.Sort(previous)
+				changes["sockets"] = store.MustJSON(slices.Compact(previous))
+			}
+		}
+	}
 	if reopen != "" {
 		changes["state"], changes["acked_by"], changes["acked_at"] = "open", nil, nil
 		changes["snooze_until"], changes["snooze_reason"], changes["resolved_at"] = nil, "", nil
@@ -138,20 +161,25 @@ func (s *Service) openIncident(ctx context.Context, accountID, serverID int64, k
 
 // resolveIncident marks a notice resolved because a fresh check no longer
 // saw its condition. Callers must not call it when the data is missing.
-func (s *Service) resolveIncident(ctx context.Context, accountID, serverID int64, kind, subject string) {
+func (s *Service) resolveIncident(ctx context.Context, accountID, serverID int64, kind, subject string) bool {
 	now := s.now()
 	var row store.SecurityIncident
 	err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND subject = ? AND state <> ?", accountID, serverID, kind, subject, "resolved").Take(&row).Error
 	if err != nil {
-		return
+		return false
 	}
-	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{
+	result := s.db.WithContext(ctx).Model(&row).Where("state <> ?", "resolved").Updates(map[string]any{
 		"state": "resolved", "resolved_at": now, "snooze_until": nil, "snooze_reason": "",
-	}).Error; err != nil {
-		s.log.Error("resolve incident", "err", err)
-		return
+	})
+	if result.Error != nil {
+		s.log.Error("resolve incident", "err", result.Error)
+		return false
+	}
+	if result.RowsAffected != 1 {
+		return false
 	}
 	s.incidentEvent(ctx, row.ID, eventResolved, nil, "a fresh check no longer saw it")
+	return true
 }
 
 // returnExpired puts snoozed notices and accepted risks whose time is up

@@ -115,6 +115,9 @@ type SecurityIncident struct {
 	Recurrences int `gorm:"not null;default:0"`
 	// Note is the reviewer's latest note.
 	Note string `gorm:"not null;default:''"`
+	// Sockets keeps every socket named by a new-port notice, including those
+	// omitted from the shortened message. Nil means the list is unknown.
+	Sockets JSON
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`

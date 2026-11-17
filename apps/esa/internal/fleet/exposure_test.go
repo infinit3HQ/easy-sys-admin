@@ -1,10 +1,14 @@
 package fleet
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
 func TestSummarizeExposure(t *testing.T) {
@@ -83,6 +87,110 @@ func TestSummarizeExposure(t *testing.T) {
 	conds := exposureConditions(ex)
 	if len(conds) != 4 {
 		t.Fatalf("conditions: %+v", conds)
+	}
+}
+
+func TestGoneSocketResolvesOnlyOnACompleteRead(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "ports")
+	srv := addTestServer(t, s, a, nil, "web")
+	s.openIncident(ctx, a.AccountID, srv.ID, string(AlertNewPort), "22/tcp", "web: 22/tcp", true)
+	s.openIncident(ctx, a.AccountID, srv.ID, string(AlertNewPort), "this check", "web: several sockets", true)
+	s.openIncident(ctx, a.AccountID, srv.ID, string(AlertNewPort), "203.0.113.5 5432/tcp", "web: database socket", true)
+	other := lifecycleServer(t, s, a, "other")
+	s.openIncident(ctx, a.AccountID, other.ID, string(AlertNewPort), "22/tcp", "other: 22/tcp", true)
+	s.openIncident(ctx, a.AccountID, srv.ID, string(AlertNewKey), "key", "web: key", true)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, false)
+	var open int64
+	q := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, string(AlertNewPort), "resolved")
+	if err := q.Count(&open).Error; err != nil || open != 3 {
+		t.Fatalf("partial read resolved sockets: %d %v", open, err)
+	}
+	ports := []string{"203.0.113.5 5432/tcp"}
+	s.noteAdditions(ctx, srv, ports, ports, nil, nil, true)
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND subject = ? AND state <> ?", srv.ID, string(AlertNewPort), "22/tcp", "resolved").Count(&open).Error; err != nil || open != 0 {
+		t.Fatalf("22/tcp stayed open: %d %v", open, err)
+	}
+	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND subject = ? AND state <> ?", srv.ID, "this check", "resolved").Count(&open).Error; err != nil || open != 1 {
+		t.Fatalf("grouped notice was resolved: %d %v", open, err)
+	}
+	if err := q.Count(&open).Error; err != nil || open != 2 {
+		t.Fatalf("a socket still present was resolved: %d %v", open, err)
+	}
+	s.noteAdditions(ctx, srv, ports, nil, nil, nil, true)
+	if err := q.Count(&open).Error; err != nil || open != 1 {
+		t.Fatalf("specific bind did not resolve: %d %v", open, err)
+	}
+	var untouched int64
+	if err := s.db.Model(&store.SecurityIncident{}).Where("state <> ? AND (server_id = ? OR kind = ?)", "resolved", other.ID, AlertNewKey).Count(&untouched).Error; err != nil || untouched != 2 {
+		t.Fatalf("another server or kind changed: %d %v", untouched, err)
+	}
+}
+
+func TestGroupedSocketNoticeResolvesOnlyAfterEverySocketIsGone(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "grouped-sockets")
+	srv := lifecycleServer(t, s, a, "web")
+	if _, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/sockets"}); err != nil {
+		t.Fatal(err)
+	}
+	s.notifier = quietNotifier{}
+	rules, err := s.rules(ctx, a.AccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ports []string
+	for port := 8000; port < 8010; port++ {
+		ports = append(ports, fmt.Sprintf("%d/tcp", port))
+	}
+	s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, ports, "new listening socket")
+	var row store.SecurityIncident
+	if err := s.db.Where("server_id = ? AND kind = ?", srv.ID, AlertNewPort).Take(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(row.Message, ports[9]) {
+		t.Fatal("test needs a socket omitted from the shortened message")
+	}
+	s.resolveGonePorts(ctx, srv, ports[9:])
+	if v := incidentState(t, s, a, row.ID); v.State != "open" {
+		t.Fatal("a socket omitted from the message was forgotten")
+	}
+	// A later batch uses the same grouped notice. It must keep the earlier
+	// sockets too, and all of this evidence must survive a database read.
+	more := []string{"9000/tcp", "9001/udp"}
+	s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, more, "new listening socket")
+	s.resolveGonePorts(ctx, srv, ports[9:])
+	if v := incidentState(t, s, a, row.ID); v.State != "open" {
+		t.Fatal("a later batch erased an earlier socket")
+	}
+	s.resolveGonePorts(ctx, srv, more[1:])
+	if v := incidentState(t, s, a, row.ID); v.State != "open" {
+		t.Fatal("a later socket was forgotten")
+	}
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, false)
+	if v := incidentState(t, s, a, row.ID); v.State != "open" {
+		t.Fatal("a partial read resolved the group")
+	}
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, true)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, true)
+	v := incidentState(t, s, a, row.ID)
+	if v.State != "resolved" || v.ResolvedAt == nil || len(v.Events) != 2 || v.Events[1].Kind != eventResolved {
+		t.Fatalf("resolution and history: %+v", v)
+	}
+	var deliveries int64
+	if err := s.db.Model(&store.NotifyDelivery{}).Where("account_id = ?", a.AccountID).Count(&deliveries).Error; err != nil || deliveries != 2 {
+		t.Fatalf("want one opening and one resolution notification: %d %v", deliveries, err)
+	}
+	s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, ports[:2], "new listening socket")
+	if v := incidentState(t, s, a, row.ID); v.State != "open" || v.Recurrences != 1 {
+		t.Fatalf("recurrence: %+v", v)
+	}
+	// The previous occurrence's sockets must not hold the new one open.
+	s.resolveGonePorts(ctx, srv, ports[9:])
+	if v := incidentState(t, s, a, row.ID); v.State != "resolved" {
+		t.Fatal("a recurrence kept sockets from the previous occurrence")
 	}
 }
 
