@@ -90,6 +90,8 @@ Create a separate environment called `nightly`. Permit `nightly` and `main` as d
 | `ESA_AUTH_PASSWORD`  | `true`                                                     |
 | `ESA_ALLOWED_EMAILS` | The owner's email, updated in GitHub environment variables |
 
+Each nightly deployment removes its web container before starting the control plane and bootstrapping, so an existing public route cannot expose an empty database.
+
 Generate independent `ESA_MASTER_KEY` and `POSTGRES_PASSWORD` secrets for nightly. Do not copy production keys or data. The reusable workflow uses the selected environment's existing SMTP/OIDC/Google settings only when configured. Set the repository variable `NIGHTLY_DEPLOY_ENABLED=true` to deploy nightly.
 
 The first nightly account is created through the application's local API before starting the public web container. Its initial password is stored mode 0600 at `$HOME/.local/state/easy-sys-admin/nightly/bootstrap-password` under the runner user on Server One. Retrieve it through your existing SSH administrator access. It never appears in GitHub logs or artifacts. With an allow list configured, general password registration stays closed after bootstrap. Adding verified identity providers is the normal way to admit more users later.
@@ -146,13 +148,13 @@ Run the runner under its own user so a job cannot touch other users' files. The 
    sudo ./svc.sh start
    ```
 
-5. Push to `main`, or use "Run workflow" on the Deploy workflow, and watch the job.
+5. Push to `main`, or run CI manually on `main` with `DEPLOY_ENABLED=true`, and watch the job.
 
 The env file only exists while a job runs. To run compose commands on the host later, either write a temporary env file or use plain `docker` commands with the container names, which are `<ESA_STACK_NAME>-<service>-1`, for example `esa-postgres-1`.
 
 ## Upgrade
 
-- With GitHub Actions, push to `main`. The deploy runs after CI passes. You can also use "Run workflow", or re-run the latest Deploy run.
+- With GitHub Actions, push to `main`. The deploy runs after CI passes. You can also run CI manually on `main` with `DEPLOY_ENABLED=true`, or re-run the relevant CI run.
 - By hand, pull the new commit and run the same `docker compose ... up -d --build` command as for the first deploy.
 
 The control plane migrates the database every time it starts. It takes a PostgreSQL advisory lock first, so two control planes that start at once do not migrate at the same time. Migrations use GORM AutoMigrate on the models in `apps/esa/internal/store/models.go`. AutoMigrate adds tables, columns, indexes, and constraints. It never drops or renames anything. Drops, renames, and data fixes are hand-written steps in `postMigrate` in `apps/esa/internal/store/migrate.go`, and each one must be safe to run on every start.
@@ -256,10 +258,10 @@ The schema only grows, so older code usually runs on a newer database. Before yo
 
 With GitHub Actions you have two ways:
 
-- Re-run an older Deploy run. Open Actions > Deploy, pick the run of the commit you want, and choose "Re-run all jobs". A re-run uses the original event, so it checks out that run's commit. GitHub allows re-runs for 30 days after the original run.
+- Re-run an older CI run. Open Actions > CI, pick the run of the commit you want, and choose "Re-run all jobs". A re-run uses the original event, so it checks out that run's commit. GitHub allows re-runs for 30 days after the original run.
 - Revert the bad commit on `main` with `git revert` and push. CI runs and the revert deploys like any other push.
 
-"Run workflow" always deploys the head of `main`. It has no input for an older commit, so it cannot roll back on its own.
+A manual CI run deploys the selected branch after all checks pass and requires its deployment switch. Use a re-run or a revert to deploy an older revision.
 
 By hand, check out the older commit on the host and run the compose command again:
 

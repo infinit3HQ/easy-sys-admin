@@ -5,7 +5,12 @@ set -euo pipefail
 [ "${DEPLOY_ENVIRONMENT:-}" = production ] || exit 1
 root=$(cd "$(dirname "$0")/.." && pwd)
 compose="$root/deploy/run.sh"
-if [ -z "$("$compose" ps -q postgres)" ]; then exit 0; fi
+containers=$("$compose" ps --all -q postgres)
+if [ -z "$containers" ]; then
+  volumes=$(docker volume ls -q --filter label=com.docker.compose.project=esa --filter label=com.docker.compose.volume=postgres)
+  [ -z "$volumes" ] || { echo 'Existing database storage has no container; deployment stopped.' >&2; exit 1; }
+  exit 0
+fi
 backup_dir=${ESA_DEPLOY_BACKUP_DIR:-$HOME/.local/state/easy-sys-admin/production/backups}
 umask 077
 mkdir -p "$backup_dir"
