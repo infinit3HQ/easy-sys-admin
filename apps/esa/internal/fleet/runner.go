@@ -519,7 +519,12 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 		return false
 	}
 	rs.Detail = store.MustJSON(saved)
-	s.db.WithContext(ctx).Model(rs).Update("detail", rs.Detail)
+	if err := s.db.WithContext(ctx).Model(rs).Update("detail", rs.Detail).Error; err != nil {
+		// Do not send an install when its pre-upgrade evidence could not be
+		// saved. Database loss may also have released our advisory locks.
+		s.log.Error("upgrade not sent: could not save pre-upgrade evidence", "run_id", run.ID, "server_id", rs.ServerID, "err", err)
+		return false
+	}
 
 	cctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
 	err = s.pool.Call(cctx, ep, nil, "upgrade-start", args...)
