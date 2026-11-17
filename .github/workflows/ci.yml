@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+          ref: ${{ github.event_name == 'schedule' && 'nightly' || github.sha }}
           persist-credentials: false
       - id: source
         env:
@@ -88,13 +88,17 @@ jobs:
           go build -o bin/esa ./cmd/esa
           for arch in amd64 arm64; do
             GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-helper-linux-$arch ./cmd/esa-helper
-            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-agent-linux-$arch ./cmd/esa-agent
+            if [ -d cmd/esa-agent ]; then GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -o bin/esa-agent-linux-$arch ./cmd/esa-agent; fi
           done
 
       - name: Rolling control plane matrix
         env:
           ESA_TEST_DATABASE_URL: postgres://esa:esa@localhost:5432/esa_test?sslmode=disable
         run: |
+          if [ ! -f internal/fleet/rolling_binary_test.go ]; then
+            echo 'This source revision predates the rolling binary matrix; the full Go suite still runs above.'
+            exit 0
+          fi
           rolling_dir="$RUNNER_TEMP/esa-rolling-baseline"
           mkdir -p "$rolling_dir"
           git -C ../.. archive b74e5f241820ea437d548922ddba06e5db080b18 apps/esa | tar -x -C "$rolling_dir"

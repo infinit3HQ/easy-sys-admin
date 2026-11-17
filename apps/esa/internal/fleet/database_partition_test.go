@@ -266,7 +266,7 @@ func TestLostMaintenanceSessionCannotBeReplacedByReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
-	worker := &Service{db: st.DB()}
+	worker := &Service{db: st.DB(), store: st}
 	unlock, ok := worker.tryRunLock(ctx, 42)
 	if !ok {
 		t.Fatal("lock")
@@ -274,8 +274,18 @@ func TestLostMaintenanceSessionCannotBeReplacedByReconnect(t *testing.T) {
 	defer unlock()
 	proxy.partition(true)
 	proxy.partition(false)
-	if err := st.Ping(ctx); err != nil {
-		t.Fatal(err)
+	// The query pool can still contain the socket cut by the proxy. Let it
+	// discard that socket and reconnect; ownership must still remain lost.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		err := st.Ping(ctx)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if err := ownershipFrom(ctx).check(ctx); !errors.Is(err, errMaintenanceOwnershipLost) {
 		t.Fatalf("lost session was trusted: %v", err)

@@ -94,6 +94,9 @@ jobs:
             [ "$ESA_STACK_NAME" = esa-nightly ] && [ "$ESA_ROUTER" = esa-nightly ] || { echo '::error::Nightly requires its own esa-nightly project and router'; exit 1; }
             [ "$ESA_HOST" != easysysadmin.app ] && [ -n "$ESA_ALLOWED_EMAILS" ] && [ "$ESA_SEO" = false ] || { echo '::error::Nightly needs its own host, restricted email list, and SEO off'; exit 1; }
           fi
+          if [ "$DEPLOY_ENVIRONMENT" = production ]; then
+            [ "$ESA_STACK_NAME" = esa ] && [ "$ESA_ROUTER" = esa ] && [ "$ESA_HOST" = easysysadmin.app ] || { echo '::error::Production requires the existing esa project, router, and hostname'; exit 1; }
+          fi
           for image in "$ESA_CONTROL_PLANE_IMAGE" "$ESA_WEB_IMAGE"; do
             printf '%s' "$image" | grep -Eq '^ghcr\.io/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$' || { echo '::error::Deployments require exact GHCR image digests'; exit 1; }
           done
@@ -130,6 +133,16 @@ jobs:
           printf 'DOCKER_CONFIG=%s\nESA_TEMP_DOCKER_CONFIG=%s\n' "$DOCKER_CONFIG" "$DOCKER_CONFIG" >> "$GITHUB_ENV"
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           deploy/run.sh pull
+
+      - name: Back up production before restart
+        if: inputs.environment == 'production'
+        env:
+          ESA_DEPLOY_BACKUP_DIR: ${{ vars.ESA_DEPLOY_BACKUP_DIR }}
+        run: deploy/backup-production.sh
+
+      - name: Close nightly public route during bootstrap
+        if: inputs.environment == 'nightly'
+        run: deploy/run.sh rm --stop --force web
 
       - name: Start database and control plane
         run: deploy/run.sh up -d --no-build --pull never --wait --wait-timeout 180 postgres esa

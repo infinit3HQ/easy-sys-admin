@@ -86,3 +86,5 @@ Two-admin plans have a database guard as well as API checks. A proposal written 
 ## Build channels
 
 `main` is production; `nightly` is an isolated preview channel. CI validates the exact commit, publishes amd64/arm64 control-plane and web images to GHCR, then deploys their exact digests through the existing Server One runner. Nightly has independent secrets, restricted sign-in, its own database/networks/project, and bounded resource use. Pull requests never publish or deploy. The self-hosting guide covers source builds and published images. The daily nightly schedule activates when the workflow reaches the default branch. See [deployment.md](deployment.md).
+
+The first hosted nightly CI run exposed two cases that local checks had missed. Approval timestamps now use PostgreSQL microsecond precision so the first and second approval return the same expiry on nanosecond clocks. Maintenance lock sessions use separate run/server pools, preserving query capacity on small hosts. A regression runs more maintenance work than the available two-connection pools and requires every run to finish.

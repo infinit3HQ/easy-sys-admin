@@ -195,7 +195,9 @@ func (s *Service) ApprovePlan(ctx context.Context, a Actor, id int64) (PlanView,
 		if !active {
 			return ErrForbidden
 		}
-		now := s.now()
+		// PostgreSQL stores microseconds. Return exactly the timestamp that
+		// will be read by the second approver, even on nanosecond clocks.
+		now := s.now().UTC().Truncate(time.Microsecond)
 		if row.ApprovedBy == nil {
 			row.ApprovedBy, row.ApprovedAt = &a.UserID, &now
 			expiry := now.Add(planApprovalTTL)

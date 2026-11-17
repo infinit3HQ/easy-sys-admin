@@ -121,7 +121,7 @@ func TestSecondProcessResumesADeadRun(t *testing.T) {
 	if !ok {
 		t.Fatal("lock")
 	}
-	other := &Service{db: s.db, log: s.log, now: s.now, publicURL: s.publicURL}
+	other := &Service{db: s.db, store: s.store, log: s.log, now: s.now, publicURL: s.publicURL}
 	other.ResumeRuns(ctx)
 	var still store.RunServer
 	if err := s.db.First(&still, rs.ID).Error; err != nil {

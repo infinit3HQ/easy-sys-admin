@@ -13,6 +13,8 @@ import (
 func TestPlanNeedsTwoDistinctCurrentAdmins(t *testing.T) {
 	s := newTestService(t)
 	ctx := context.Background()
+	now := s.now().UTC().Truncate(time.Second).Add(123456789 * time.Nanosecond)
+	s.now = func() time.Time { return now }
 	alice, bob := signIn(t, s, "two-alice"), signIn(t, s, "two-bob")
 	org, err := s.CreateOrganization(ctx, alice, "Two approvals")
 	if err != nil {

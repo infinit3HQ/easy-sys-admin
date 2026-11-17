@@ -396,11 +396,7 @@ func (s *Service) tryRunLock(ctx context.Context, runID int64) (func(), bool) {
 }
 
 func (s *Service) tryAdvisoryLock(ctx context.Context, key int64) (func(), bool) {
-	sqlDB, err := s.db.DB()
-	if err != nil {
-		return nil, false
-	}
-	conn, err := sqlDB.Conn(ctx)
+	conn, err := s.store.MaintenanceConn(ctx, key >= runLockNamespace)
 	if err != nil {
 		return nil, false
 	}

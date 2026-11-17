@@ -295,3 +295,7 @@ The published hosted policy is 365 days for audit rows and 90 days for resolved 
 ## Outbound servers
 
 The control-plane image includes esa-agent and esa-helper for amd64 and arm64. Reviewed bootstrap artifacts are served under `/enroll/outbound/`, through the existing web proxy. No incoming agent port or new control-plane environment variable is needed. Allow outgoing HTTPS from the managed host to the public esa origin. See [outbound-agent.md](outbound-agent.md) for installation, rotation, and removal. Agent result bodies have a dedicated 8 MiB limit at both proxies; other API body limits stay unchanged.
+
+Before production restarts, `deploy/backup-production.sh` saves a PostgreSQL dump on Server One. A failed backup or unavailable existing database stops deployment. Set `ESA_DEPLOY_BACKUP_DIR` in the production GitHub environment to change the default `$HOME/.local/state/easy-sys-admin/production/backups`. Backups are private host files and are never uploaded as Actions artifacts.
+
+Each nightly deployment removes its web container before starting the control plane and bootstrapping, so an existing public route cannot expose an empty database.
