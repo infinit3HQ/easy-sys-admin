@@ -99,6 +99,12 @@ The first nightly account is created through the application's local API before 
 
 Nightly adds `deploy/compose.nightly.yaml`, which caps each service at 512 MiB, 0.75 CPU, and 256 processes. It keeps data in `esa-nightly_postgres`; it never names production's database volume. Its health check runs internally before a deployment is reported successful. Temporary Compose secrets and registry login files are removed after each job. Image deployment never runs a prune or deletes volumes.
 
+### Publish a GitHub release
+
+After the target commit on `main` passes CI and both GHCR images are published, create and push an annotated tag in `vMAJOR.MINOR.PATCH` format. Run **Publish GitHub release** from `main` in GitHub Actions and enter that tag. The workflow reuses the published image digests for the exact tagged commit and publishes matching version tags for the control plane and web app. It then creates a GitHub Release with generated notes, source archives, and both image references.
+
+If publishing is interrupted, re-run the workflow with the same tag. It accepts matching image tags and refuses tags with different digests. The release workflow does not rebuild images, change the stable or nightly channels, or deploy anything.
+
 ### DNS and package visibility
 
 On Server One, add **CNAME `nightly` pointing to `easysysadmin.app`**. An equivalent direct A record is `nightly.easysysadmin.app` to `129.146.103.99`. Use one or the other, not both. No API or registry subdomain is needed: the same web hostname handles every application endpoint, and images are served by `ghcr.io`.
