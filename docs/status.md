@@ -90,3 +90,5 @@ Two-admin plans have a database guard as well as API checks. A proposal written 
 The first hosted nightly CI run exposed two cases that local checks had missed. Approval timestamps now use PostgreSQL microsecond precision so the first and second approval return the same expiry on nanosecond clocks. Maintenance lock sessions use separate run/server pools, preserving query capacity on small hosts. A regression runs more maintenance work than the available two-connection pools and requires every run to finish.
 
 Multi-platform web publication builds the portable JavaScript bundle on the builder CPU. This avoids an ARM64 Vite/Rolldown compile that stalled under QEMU; native addons in the server output fail the image build.
+
+Notification retries return an unavailable response when no notification transport is configured. They leave the failed delivery unchanged. The database test fixture cancels its background context before closing the store, preventing notification workers from outliving their test.

@@ -50,6 +50,9 @@ func (s *Service) RetryDelivery(ctx context.Context, a Actor, id int64) error {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return err
 	}
+	if s.notifier == nil {
+		return &UnavailableError{Message: "notifications are not configured"}
+	}
 	res := s.db.WithContext(ctx).Model(&store.NotifyDelivery{}).
 		Where("id = ? AND account_id = ? AND state = ?", id, a.AccountID, "dead").
 		Updates(map[string]any{"state": "queued", "attempts": 0, "claimed_at": nil})

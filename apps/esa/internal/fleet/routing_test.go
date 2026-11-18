@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,7 @@ func TestDailyWarningsWaitAndCriticalDoesNot(t *testing.T) {
 
 func TestRetryOnlyDeadDeliveries(t *testing.T) {
 	s := newTestService(t)
+	s.notifier = quietNotifier{}
 	ctx := context.Background()
 	a := signIn(t, s, "retry")
 	ch, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/retry"})
@@ -104,4 +106,29 @@ func TestRetryOnlyDeadDeliveries(t *testing.T) {
 		t.Fatalf("list: %+v %v", list, err)
 	}
 	s.Wait()
+}
+
+func TestRetryWithoutNotifierLeavesDeliveryDead(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "retry-no-notifier")
+	ch, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/retry"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := store.NotifyDelivery{AccountID: a.AccountID, ChannelID: ch.ID, Title: "x", Body: "x", Severity: "warning", State: "dead", Attempts: 5, CreatedAt: s.now()}
+	if err := s.db.Omit("Account", "Channel").Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	var unavailable *UnavailableError
+	if err := s.RetryDelivery(ctx, a, row.ID); !errors.As(err, &unavailable) {
+		t.Fatalf("retry without transport: %v", err)
+	}
+	var saved store.NotifyDelivery
+	if err := s.db.First(&saved, row.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.State != "dead" || saved.Attempts != 5 {
+		t.Fatalf("delivery changed without a transport: %s, attempts %d", saved.State, saved.Attempts)
+	}
 }
