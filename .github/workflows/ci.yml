@@ -152,6 +152,7 @@ jobs:
 
   publish:
     name: Publish verified multi-platform images
+    timeout-minutes: 30
     needs: [source, go, web, licenses]
     if: github.event_name != 'pull_request' && needs.source.outputs.channel != ''
     runs-on: ubuntu-latest

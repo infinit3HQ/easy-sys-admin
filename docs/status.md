@@ -62,3 +62,5 @@ Concurrency 64 is the default. Going by the 1,000-server result, one control pla
 ## Build channels
 
 `main` is production; `nightly` is an isolated preview channel. CI validates the exact commit, publishes amd64/arm64 control-plane and web images to GHCR, then deploys their exact digests through the existing Server One runner. Nightly has independent secrets, restricted sign-in, its own database/networks/project, and bounded resource use. Pull requests never publish or deploy. The self-hosting guide covers source builds and published images. The daily nightly schedule activates when the workflow reaches the default branch. See [deployment.md](deployment.md).
+
+Multi-platform web publication builds portable JavaScript on the builder CPU and rejects native addons in its server output. This avoids stalled Vite/Rolldown compilation under ARM64 emulation. Publication has a 30-minute timeout.
