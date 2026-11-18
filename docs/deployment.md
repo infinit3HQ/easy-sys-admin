@@ -85,6 +85,7 @@ Create a separate environment called `nightly`. Permit `nightly` and `main` as d
 | `ESA_HOST`           | `nightly.easysysadmin.app`                                 |
 | `ESA_STACK_NAME`     | `esa-nightly`                                              |
 | `ESA_ROUTER`         | `esa-nightly`                                              |
+| `ESA_BETA_LIMITS`    | `true`, matching the hosted Free Beta pricing              |
 | `ESA_SEO`            | `false`                                                    |
 | `ESA_SIGNUP`         | `false`                                                    |
 | `ESA_AUTH_PASSWORD`  | `true`                                                     |
@@ -273,3 +274,5 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 Production deployments save a PostgreSQL dump before restarting containers. A failed or empty dump stops deployment. `ESA_DEPLOY_BACKUP_DIR` selects the private host directory; its default is the runner user's `~/.local/state/easy-sys-admin/production/backups`. Dumps are not Actions artifacts and are not automatically deleted. Keep master-key backups separately and move dumps to your external encrypted backup store.
 
 The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication. Image publication times out after 30 minutes without promotion or deployment.
+
+Hosted deployments default `ESA_BETA_LIMITS` to `true` when the selected GitHub environment leaves it unset. Keep it enabled in both production and nightly: each space holds 10 servers and each person can own one organization besides their personal space. Self-hosted Compose installations keep their separate default of `false`. Lowering the hosted limits never removes existing servers or organizations; it only blocks additions above the cap.
