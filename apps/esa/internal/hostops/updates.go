@@ -16,8 +16,8 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
-// aptEnv makes apt and dpkg never wait for input and keep existing config
-// files, and makes needrestart list services instead of restarting them.
+// aptEnv keeps apt noninteractive and disables the needrestart APT hook.
+// UpgradeExec runs a separate list-only scan after the transaction.
 var aptEnv = []string{
 	"DEBIAN_FRONTEND=noninteractive",
 	"NEEDRESTART_MODE=l",
@@ -397,7 +397,7 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	install, skipped, notApproved := chooseUpgrades(pending, o)
 	res.Skipped, res.NotApproved = skipped, notApproved
 	if len(install) == 0 {
-		return finish(nil, 0, []byte("nothing to upgrade"))
+		return finish(nil, 0, []byte("nothing to upgrade\n"+h.restartReport(ctx)))
 	}
 	if o.Allow != nil {
 		// apt can upgrade a dependency that was not asked for. With an
@@ -421,8 +421,44 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	if err == nil {
 		res.Packages = install
 		res.Versions = h.installedVersions(ctx, pending, install)
+		log = append(log, ("\n" + h.restartReport(ctx))...)
 	}
 	return finish(err, run.Exit, log)
+}
+
+// restartReport checks systemd services for stale libraries without restarting
+// them. Keep this diagnostic separate from the package result.
+func (h *Host) restartReport(ctx context.Context) string {
+	const tool = "/usr/sbin/needrestart"
+	if _, err := os.Stat(h.path(tool)); errors.Is(err, os.ErrNotExist) {
+		return "Service restart check skipped: needrestart is not installed."
+	} else if err != nil {
+		return "Service restart check could not access needrestart."
+	}
+	// Advanced output keeps service records even if the host uses easy mode.
+	result, err := h.Run.Run(ctx, time.Minute, tool, "-b", "-m", "a", "-r", "l", "-l")
+	if err != nil || result.Exit != 0 {
+		return "Service restart check did not complete."
+	}
+	if !strings.HasPrefix(string(result.Stdout), "NEEDRESTART-VER: ") {
+		return "Service restart check returned no batch report."
+	}
+	var units []string
+	for _, line := range strings.Split(string(result.Stdout), "\n") {
+		name, ok := strings.CutPrefix(line, "NEEDRESTART-SVC: ")
+		if ok && unitNameRe.MatchString(name) {
+			units = append(units, name)
+		}
+	}
+	if len(units) == 0 {
+		return "needrestart reported no systemd services using outdated libraries."
+	}
+	sort.Strings(units)
+	report := "Systemd services using outdated libraries:\n" + strings.Join(units[:min(len(units), 15)], "\n")
+	if len(units) > 15 {
+		report += fmt.Sprintf("\n%d more services reported by needrestart.", len(units)-15)
+	}
+	return report
 }
 
 // UpgradeStatus reads the result file. If the job died without writing a
