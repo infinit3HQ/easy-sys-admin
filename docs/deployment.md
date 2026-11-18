@@ -300,4 +300,4 @@ Before production restarts, `deploy/backup-production.sh` saves a PostgreSQL dum
 
 Each nightly deployment removes its web container before starting the control plane and bootstrapping, so an existing public route cannot expose an empty database.
 
-The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. It rejects native Node addons in the server output, so an architecture-specific build dependency cannot silently enter the other runtime. This avoids running the Vite compiler under QEMU during multi-platform publication.
+The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication.
