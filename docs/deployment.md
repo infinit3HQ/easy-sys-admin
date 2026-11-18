@@ -271,3 +271,5 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 ```
 
 Production deployments save a PostgreSQL dump before restarting containers. A failed or empty dump stops deployment. `ESA_DEPLOY_BACKUP_DIR` selects the private host directory; its default is the runner user's `~/.local/state/easy-sys-admin/production/backups`. Dumps are not Actions artifacts and are not automatically deleted. Keep master-key backups separately and move dumps to your external encrypted backup store.
+
+The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. It rejects native Node addons in the server output, so an architecture-specific build dependency cannot silently enter the other runtime. This avoids running the Vite compiler under QEMU during multi-platform publication. Image publication times out after 30 minutes without promotion or deployment.
