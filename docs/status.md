@@ -94,3 +94,5 @@ Multi-platform web publication builds the portable JavaScript bundle on the buil
 Notification retries return an unavailable response when no notification transport is configured. They leave the failed delivery unchanged. The database test fixture cancels its background context before closing the store, preventing notification workers from outliving their test.
 
 Both hosted deployment environments use Free Beta limits: 10 servers per space and one organization besides the personal space. An unset GitHub environment variable now keeps those beta limits enabled instead of falling back to the self-hosted limits.
+
+APT upgrade logs now report systemd services that need a restart when needrestart is installed. The check runs in list-only mode and its result is separate from the package outcome and reboot marker.

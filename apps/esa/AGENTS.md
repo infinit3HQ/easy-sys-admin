@@ -134,3 +134,5 @@ pnpm generate                   # Go and TypeScript code from openapi.yaml
 - Agent credentials identify one server and generation. Claims and result writes lock that credential; rotation cancels pending tasks. Never redeliver claimed tasks. Keep payloads sealed and erase them after consumption. Revocation never falls back to SSH.
 - Outbound upgrades require `upgrade-idempotent`. The agent cannot call internal `upgrade-exec` or uninstall itself. Bootstrap remains an explicit root operation.
 - Rocky Linux 9 DNF transactions must inspect and commit the same resolved transaction. Refuse unapproved dependencies, erasures, kernel removal, missing advisory metadata, versionlocks, unavailable repositories, and untrusted signing keys. Never auto-import a key, prune a kernel, or treat a failed reboot check as no reboot needed.
+
+- APT upgrades suppress the automatic needrestart hook. The separate scan uses fixed batch and list-only arguments and reports systemd service names in the run log. It must never restart services.
