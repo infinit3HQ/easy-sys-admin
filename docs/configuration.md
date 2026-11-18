@@ -88,16 +88,16 @@ Compose passes `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_
 
 These are read by `deploy/compose.yaml` and the deploy workflow, not by the applications.
 
-| Variable                | Default      | Meaning                                                                                                                                                            |
-| ----------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ESA_STACK_NAME`        | `esa`        | Compose project name. Container names, the network names, and the PostgreSQL volume (`<name>_postgres`) start with it.                                             |
-| `ESA_ROUTER`            | `esa`        | Traefik router and service name. Change it if your Traefik already has a router with this name.                                                                    |
-| `TRAEFIK_NETWORK`       | `proxy`      | External Docker network that Traefik watches. It must exist before `docker compose up`.                                                                            |
-| `TRAEFIK_ENTRYPOINT`    | `websecure`  | Traefik entrypoint for the router.                                                                                                                                 |
-| `TRAEFIK_CERT_RESOLVER` | `cloudflare` | Traefik certificate resolver for the router. Set it to the name of a resolver your Traefik defines.                                                                |
-| `ESA_VERSION`           | `dev`        | Image tag of `esa-control-plane` and `esa-web`, and the version compiled into the control plane and helpers. The deploy workflow sets it to the short commit hash. |
-| `ESA_COMMIT`            | `none`       | Commit compiled into the control plane and helpers. The deploy workflow sets it to the full commit hash.                                                           |
-| `DEPLOY_ENABLED`        | unset        | GitHub repository variable, not an env file entry. Pushes to `main` deploy after CI passes only when it is `true`. Manual "Run workflow" deploys work without it.  |
+| Variable                | Default      | Meaning                                                                                                                                                                |
+| ----------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ESA_STACK_NAME`        | `esa`        | Compose project name. Container names, the network names, and the PostgreSQL volume (`<name>_postgres`) start with it.                                                 |
+| `ESA_ROUTER`            | `esa`        | Traefik router and service name. Change it if your Traefik already has a router with this name.                                                                        |
+| `TRAEFIK_NETWORK`       | `proxy`      | External Docker network that Traefik watches. It must exist before `docker compose up`.                                                                                |
+| `TRAEFIK_ENTRYPOINT`    | `websecure`  | Traefik entrypoint for the router.                                                                                                                                     |
+| `TRAEFIK_CERT_RESOLVER` | `cloudflare` | Traefik certificate resolver for the router. Set it to the name of a resolver your Traefik defines.                                                                    |
+| `ESA_VERSION`           | `dev`        | Image tag of `esa-control-plane` and `esa-web`, and the version compiled into the control plane and helpers. The deploy workflow sets it to the short commit hash.     |
+| `ESA_COMMIT`            | `none`       | Commit compiled into the control plane and helpers. The deploy workflow sets it to the full commit hash.                                                               |
+| `DEPLOY_ENABLED`        | unset        | GitHub repository variable, not an env file entry. Pushes to `main` deploy after CI passes only when it is `true`. Manual CI runs also require this switch to be true. |
 
 The deploy workflow also reads `ESA_SIGNUP`, `ESA_AUTH_PASSWORD`, `ESA_ALLOW_PRIVATE_NETWORKS`, `ESA_ALLOWED_EMAILS`, `ESA_OIDC_ISSUER`, `ESA_OIDC_PROVIDER_NAME`, `ESA_OIDC_CLIENT_ID`, `ESA_GOOGLE_CLIENT_ID`, `ESA_SMTP_HOST`, `ESA_SMTP_PORT`, `ESA_SMTP_USERNAME`, `ESA_SMTP_FROM`, `ESA_POLL_CONCURRENCY`, `ESA_MAX_SERVERS_PER_ACCOUNT`, `ESA_BETA_LIMITS`, `ESA_SEO`, `ESA_METRICS_RAW_RETENTION`, `ESA_METRICS_HOURLY_RETENTION`, `ESA_SOURCE_URL`, and the Traefik settings above from repository variables. `ESA_SMTP_PASSWORD` is a production secret. It reads the secrets from the `production` environment. It always writes `ESA_PUBLIC_URL` as `https://$ESA_HOST`, so you cannot override that through a variable. Values cannot contain a single quote or a line break. See [deployment.md](deployment.md).
 
