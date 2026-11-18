@@ -21,10 +21,10 @@ func TestAPTUpgradeReportsPendingServiceRestarts(t *testing.T) {
 		t.Fatal(err)
 	}
 	runner := &recordingRunner{out: map[string]string{
-		"apt-get -s":                       "Inst tmux [1.0] (1.1 Ubuntu:24.04/noble-updates [arm64])",
-		"apt-get install":                  "Setting up tmux (1.1) ...\npackages have been installed but needrestart is suspended\n",
-		"dpkg-query":                       "tmux\t1.1",
-		"/usr/sbin/needrestart -b -r l -l": "NEEDRESTART-VER: 3.6\nNEEDRESTART-SVC: ssh.service\nNEEDRESTART-SESS: private @ session #1\n",
+		"apt-get -s":                            "Inst tmux [1.0] (1.1 Ubuntu:24.04/noble-updates [arm64])",
+		"apt-get install":                       "Setting up tmux (1.1) ...\npackages have been installed but needrestart is suspended\n",
+		"dpkg-query":                            "tmux\t1.1",
+		"/usr/sbin/needrestart -b -m a -r l -l": "NEEDRESTART-VER: 3.6\nNEEDRESTART-SVC: ssh.service\nNEEDRESTART-SESS: private @ session #1\n",
 	}}
 	h := &Host{Root: root, Run: runner}
 	ctx := context.Background()
@@ -42,7 +42,7 @@ func TestAPTUpgradeReportsPendingServiceRestarts(t *testing.T) {
 		t.Fatalf("unexpected package or restart report: %+v", got)
 	}
 	last := runner.cmds[len(runner.cmds)-1]
-	if last != "/usr/sbin/needrestart -b -r l -l" {
+	if last != "/usr/sbin/needrestart -b -m a -r l -l" {
 		t.Fatalf("expected a list-only scan after the package transaction, got %q", last)
 	}
 }

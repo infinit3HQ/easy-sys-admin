@@ -435,7 +435,8 @@ func (h *Host) restartReport(ctx context.Context) string {
 	} else if err != nil {
 		return "Service restart check could not access needrestart."
 	}
-	result, err := h.Run.Run(ctx, time.Minute, tool, "-b", "-r", "l", "-l")
+	// Advanced output keeps service records even if the host uses easy mode.
+	result, err := h.Run.Run(ctx, time.Minute, tool, "-b", "-m", "a", "-r", "l", "-l")
 	if err != nil || result.Exit != 0 {
 		return "Service restart check did not complete."
 	}
