@@ -91,6 +91,8 @@ Create a separate environment called `nightly`. Permit `nightly` and `main` as d
 | `ESA_AUTH_PASSWORD`  | `true`                                                     |
 | `ESA_ALLOWED_EMAILS` | The owner's email, updated in GitHub environment variables |
 
+Each nightly deployment removes its web container before starting the control plane and bootstrapping, so an existing public route cannot expose an empty database.
+
 Generate independent `ESA_MASTER_KEY` and `POSTGRES_PASSWORD` secrets for nightly. Do not copy production keys or data. The reusable workflow uses the selected environment's existing SMTP/OIDC/Google settings only when configured. Set the repository variable `NIGHTLY_DEPLOY_ENABLED=true` to deploy nightly.
 
 The first nightly account is created through the application's local API before starting the public web container. Its initial password is stored mode 0600 at `$HOME/.local/state/easy-sys-admin/nightly/bootstrap-password` under the runner user on Server One. Retrieve it through your existing SSH administrator access. It never appears in GitHub logs or artifacts. With an allow list configured, general password registration stays closed after bootstrap. Adding verified identity providers is the normal way to admit more users later.
@@ -297,10 +299,8 @@ The published hosted policy is 365 days for audit rows and 90 days for resolved 
 
 The control-plane image includes esa-agent and esa-helper for amd64 and arm64. Reviewed bootstrap artifacts are served under `/enroll/outbound/`, through the existing web proxy. No incoming agent port or new control-plane environment variable is needed. Allow outgoing HTTPS from the managed host to the public esa origin. See [outbound-agent.md](outbound-agent.md) for installation, rotation, and removal. Agent result bodies have a dedicated 8 MiB limit at both proxies; other API body limits stay unchanged.
 
-Before production restarts, `deploy/backup-production.sh` saves a PostgreSQL dump on Server One. A failed backup or unavailable existing database stops deployment. Set `ESA_DEPLOY_BACKUP_DIR` in the production GitHub environment to change the default `$HOME/.local/state/easy-sys-admin/production/backups`. Backups are private host files and are never uploaded as Actions artifacts.
+Before production restarts, `deploy/backup-production.sh` saves a PostgreSQL dump on Server One. A failed or empty backup, or an unavailable existing database, stops deployment. Set `ESA_DEPLOY_BACKUP_DIR` in the production GitHub environment to change the default `$HOME/.local/state/easy-sys-admin/production/backups`. Backups are private host files and are never uploaded as Actions artifacts. The workflow does not delete old dumps. Store copies in encrypted backup storage and keep the master keys separately.
 
-Each nightly deployment removes its web container before starting the control plane and bootstrapping, so an existing public route cannot expose an empty database.
-
-The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication.
+The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication. Image publication has a 30-minute timeout.
 
 Hosted deployments default `ESA_BETA_LIMITS` to `true` when the selected GitHub environment leaves it unset. Keep it enabled in both production and nightly: each space holds 10 servers and each person can own one organization besides their personal space. Self-hosted Compose installations keep their separate default of `false`. Lowering the hosted limits never removes existing servers or organizations; it only blocks additions above the cap.

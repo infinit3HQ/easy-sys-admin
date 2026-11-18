@@ -3,7 +3,7 @@ title: Self-hosting
 description: Install public container images or build from source, with PostgreSQL, TLS, authentication, upgrades, and backups.
 ---
 
-You can self-host from source or use the public container images in GitHub Container Registry. Both use the same AGPL-3.0-only source and have the same features. Docker images support Linux amd64 and arm64.
+You can self-host from source or use the public container images in GitHub Container Registry. Both use the AGPL-3.0-only source. Features follow the source revision you choose. Docker images support Linux amd64 and arm64.
 
 ## Choose a build
 
@@ -15,7 +15,7 @@ You can self-host from source or use the public container images in GitHub Conta
 
 `latest` follows `stable`. Channel tags move. For a reproducible installation or rollback, copy the exact image digests from the successful GitHub Actions run and keep both image references together. The workflow publishes channel aliases only after both images build. Stable tags appear after the first successful `main` publication; nightly tags appear after the first successful nightly publication.
 
-Public images need no registry login. Source, revision, and licence labels are attached to both images. Builds include provenance and SBOM attestations. The control-plane image contains the helper and outbound agent for both supported server architectures.
+Public images need no registry login. Source, revision, and licence labels are attached to both images. Builds include provenance and SBOM attestations. The control-plane image includes the helper for both server architectures. Releases that support outbound transport also include the agent.
 
 Self-hosting has no licence fee or usage cap. Leave `ESA_BETA_LIMITS` unset. The default operational cap is 500 servers per account and 20 organizations per person. `ESA_MAX_SERVERS_PER_ACCOUNT` changes the server cap.
 
@@ -97,7 +97,7 @@ Google redirects to `$ESA_PUBLIC_URL/auth/callback/google`. A generic OIDC provi
 
 ## Upgrades and rollbacks
 
-Back up the database and master key before upgrading. For image installs, update both image references to one tested revision, pull, then run the same `up -d --no-build --wait` command. For source installs, check out the tested commit and rebuild. The control plane applies additive migrations on startup.
+Back up the database and master key before upgrading. Check schema compatibility before rolling back to an older image. Restore a matching backup when required. For image installs, update both image references to one tested revision, pull, then run the same `up -d --no-build --wait` command. For source installs, check out the tested commit and rebuild. The control plane applies additive migrations on startup.
 
 An older image is not automatically a safe database rollback. Retain a pre-upgrade database dump and the keys used to encrypt its data. Restore a matching snapshot when schema compatibility has not been established. Do not restore or reuse a production database in nightly.
 
