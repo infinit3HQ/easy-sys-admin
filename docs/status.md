@@ -92,3 +92,5 @@ The first hosted nightly CI run exposed two cases that local checks had missed. 
 Multi-platform web publication builds the portable JavaScript bundle on the builder CPU. This avoids an ARM64 Vite/Rolldown compile that stalled under QEMU; native addons in the server output fail the image build.
 
 Notification retries return an unavailable response when no notification transport is configured. They leave the failed delivery unchanged. The database test fixture cancels its background context before closing the store, preventing notification workers from outliving their test.
+
+Both hosted deployment environments use Free Beta limits: 10 servers per space and one organization besides the personal space. An unset GitHub environment variable now keeps those beta limits enabled instead of falling back to the self-hosted limits.

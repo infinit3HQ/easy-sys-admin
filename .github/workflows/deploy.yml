@@ -67,7 +67,7 @@ jobs:
           # Empty leaves the control plane defaults.
           ESA_POLL_CONCURRENCY: ${{ vars.ESA_POLL_CONCURRENCY }}
           ESA_MAX_SERVERS_PER_ACCOUNT: ${{ vars.ESA_MAX_SERVERS_PER_ACCOUNT }}
-          ESA_BETA_LIMITS: ${{ vars.ESA_BETA_LIMITS }}
+          ESA_BETA_LIMITS: ${{ vars.ESA_BETA_LIMITS || 'true' }}
           ESA_SEO: ${{ vars.ESA_SEO || 'false' }}
           ESA_SOURCE_URL: ${{ vars.ESA_SOURCE_URL }}
           ESA_AUDIT_RETENTION: ${{ vars.ESA_AUDIT_RETENTION }}
