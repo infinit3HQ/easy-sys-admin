@@ -658,7 +658,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Register an outbound server. Requires a recently signed-in space admin. The credential is shown once. */
+        /**
+         * Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+         * @description Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+         */
         post: operations["createAgentServer"];
         delete?: never;
         options?: never;
@@ -677,9 +680,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin. */
+        /**
+         * Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+         * @description Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+         */
         post: operations["rotateAgentCredential"];
-        /** Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server. */
+        /**
+         * Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+         * @description Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+         */
         delete: operations["revokeAgentCredential"];
         options?: never;
         head?: never;

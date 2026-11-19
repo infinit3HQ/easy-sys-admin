@@ -2,11 +2,14 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"gorm.io/gorm"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -192,20 +195,21 @@ const offboardingStatement = "Where this owner's known keys were last seen in th
 
 // Offboarding builds the report for one owner name.
 func (s *Service) Offboarding(ctx context.Context, a Actor, name string) (OffboardingReport, error) {
+	if err := a.can(RoleViewer, ScopeRead); err != nil {
+		return OffboardingReport{}, err
+	}
 	name = strings.Join(strings.Fields(name), " ")
 	if name == "" {
 		return OffboardingReport{}, invalid("label", "is required")
 	}
-	ids, err := s.ListIdentities(ctx, a)
-	if err != nil {
-		return OffboardingReport{}, err
-	}
 	rep := OffboardingReport{Identity: IdentityView{Name: name, Kind: "person", Status: "active"}, GeneratedAt: s.now(), Statement: offboardingStatement,
 		Grants: []OffboardingGrant{}, Unchecked: []OffboardingGap{}, SharedKeys: []string{}, Keys: []KeyView{}}
-	for _, v := range ids {
-		if v.Name == name {
-			rep.Identity = v
-		}
+	var identity store.AccessIdentity
+	err := s.db.WithContext(ctx).Where("account_id = ? AND name = ?", a.AccountID, name).Take(&identity).Error
+	if err == nil {
+		rep.Identity.Kind, rep.Identity.Status, rep.Identity.Note = identity.Kind, identity.Status, identity.Note
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return OffboardingReport{}, err
 	}
 	views, err := s.serverViews(ctx, a, nil)
 	if err != nil {
@@ -225,25 +229,25 @@ func (s *Service) Offboarding(ctx context.Context, a Actor, name string) (Offboa
 			rep.Unchecked = append(rep.Unchecked, OffboardingGap{ServerID: v.ID, Server: v.Name, Reason: why})
 		}
 	}
-	keys, err := s.ListKeys(ctx, a)
+	keys, err := s.listKeys(ctx, a, views, &name)
 	if err != nil {
 		return OffboardingReport{}, err
 	}
+	serversWithGrants := map[int64]bool{}
 	for _, k := range keys {
-		if k.Label != name {
-			continue
-		}
 		rep.Keys = append(rep.Keys, k)
 		if len(k.Uses) > 1 {
 			rep.SharedKeys = append(rep.SharedKeys, k.Fingerprint)
 		}
 		for _, u := range k.Uses {
+			serversWithGrants[u.ServerID] = true
 			rep.Grants = append(rep.Grants, OffboardingGrant{
 				ServerID: u.ServerID, Server: u.ServerName, User: u.User, Fingerprint: k.Fingerprint, KeyType: k.KeyType,
 				From: u.From, HasCommand: u.HasCommand, ObservedAt: u.ObservedAt, Unchecked: coverage[u.ServerID],
 			})
 		}
 	}
+	rep.Identity.Keys, rep.Identity.Grants, rep.Identity.Servers = len(rep.Keys), len(rep.Grants), len(serversWithGrants)
 	rep.Complete = len(rep.Unchecked) == 0 && !rep.Partial
 	return rep, nil
 }

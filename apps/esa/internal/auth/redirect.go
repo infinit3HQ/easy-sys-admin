@@ -24,5 +24,9 @@ func safeReturnTo(raw string) string {
 // loginError sends the browser back to the sign-in page with an error code
 // the web app knows how to explain.
 func loginError(w http.ResponseWriter, r *http.Request, code string) {
-	http.Redirect(w, r, "/login?error="+url.QueryEscape(code), http.StatusSeeOther)
+	query := url.Values{"error": {code}}
+	if target := r.FormValue("return_to"); target != "" {
+		query.Set("return_to", safeReturnTo(target))
+	}
+	http.Redirect(w, r, "/login?"+query.Encode(), http.StatusSeeOther)
 }

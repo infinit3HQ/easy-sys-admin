@@ -109,8 +109,11 @@ func (s *Service) evaluateAlerts(ctx context.Context, srv store.Server, state *s
 		}
 	}
 	blind := blindKinds(state)
-	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool {
-		return k != AlertCertExpiry && k != AlertRunFailed && !blind[k]
+	var exposure Exposure
+	_ = state.Exposure.Decode(&exposure)
+	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind, subject string) bool {
+		return k != AlertCertExpiry && k != AlertRunFailed && !blind[k] &&
+			(k != AlertExposure || exposureObserved(exposure, subject))
 	})
 }
 
@@ -222,7 +225,7 @@ func severityFor(p, critical float64) string {
 
 // reconcile opens, fires, and resolves alerts for one server (or the
 // account when serverID is nil). owns says which kinds this caller manages.
-func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int64, rules map[AlertKind]store.AlertRule, conds []condition, owns func(AlertKind) bool) {
+func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int64, rules map[AlertKind]store.AlertRule, conds []condition, owns func(AlertKind, string) bool) {
 	now := s.now()
 	q := s.db.WithContext(ctx).Where("account_id = ? AND resolved_at IS NULL", accountID)
 	if serverID != nil {
@@ -244,7 +247,7 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 	for i := range open {
 		al := &open[i]
 		k := key(AlertKind(al.Kind), al.Subject)
-		if !owns(AlertKind(al.Kind)) {
+		if !owns(AlertKind(al.Kind), al.Subject) {
 			continue
 		}
 		c, still := current[k]
@@ -269,7 +272,7 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 		s.db.WithContext(ctx).Model(al).Updates(updates)
 	}
 	for k, c := range current {
-		if seen[k] || !owns(c.kind) {
+		if seen[k] || !owns(c.kind, c.subject) {
 			continue
 		}
 		al := store.Alert{

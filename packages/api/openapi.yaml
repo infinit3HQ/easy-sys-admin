@@ -755,6 +755,7 @@ paths:
     post:
       operationId: createAgentServer
       summary: Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
       tags: [servers]
       requestBody:
         required: true
@@ -780,6 +781,7 @@ paths:
     post:
       operationId: rotateAgentCredential
       summary: Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
       tags: [servers]
       responses:
         '200':
@@ -791,6 +793,7 @@ paths:
     delete:
       operationId: revokeAgentCredential
       summary: Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
       tags: [servers]
       responses:
         '204': { description: Revoked. }

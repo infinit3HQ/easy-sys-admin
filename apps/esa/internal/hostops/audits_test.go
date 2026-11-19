@@ -422,3 +422,25 @@ func TestAccessKeyCommandAndCertificatesAreGaps(t *testing.T) {
 		t.Fatalf("logins outside authorized_keys must be gaps: %v", rep.Gaps)
 	}
 }
+
+func TestDockerPublicationsKeepDistinctBindAddresses(t *testing.T) {
+	listeners := []proto.Listener{
+		{Proto: "tcp", Address: "127.0.0.1", Port: 8080},
+		{Proto: "tcp", Address: "[0:0:0:0:0:0:0:0]", Port: 8080},
+	}
+	publications := []publication{
+		{Proto: "tcp", Address: "::", Port: 8080},
+		{Proto: "tcp", Address: "0.0.0.0", Port: 8080},
+		{Proto: "tcp", Address: "192.0.2.5", Port: 8080},
+		{Proto: "tcp", Address: "192.0.2.6", Port: 8080},
+	}
+	got := addMissingPublications(listeners, publications, true)
+	if len(got) != 5 {
+		t.Fatalf("expected two sockets and three distinct publishes: %+v", got)
+	}
+	for i, addr := range []string{"0.0.0.0", "192.0.2.5", "192.0.2.6"} {
+		if got[i+2].Address != addr || got[i+2].UFW != "unknown" {
+			t.Fatalf("missing Docker publication for %s: %+v", addr, got)
+		}
+	}
+}

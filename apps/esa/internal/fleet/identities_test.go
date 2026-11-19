@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +136,27 @@ func TestOffboardingKeepsRestrictionPerLogin(t *testing.T) {
 	}
 	if got["root"] || !got["opc"] {
 		t.Fatalf("restrictions per login: %v", got)
+	}
+}
+
+func TestOffboardingFindsGrantsBeyondCatalogLimit(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "offboarding-limit")
+	fp := "SHA256:zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+	srv := keyServer(t, s, a, "app", time.Minute, nil, map[string]string{"root": fp})
+	rows := make([]store.KeyOccurrence, keyListLimit)
+	for i := range rows {
+		rows[i] = store.KeyOccurrence{AccountID: a.AccountID, ServerID: srv.ID, User: "user", Fingerprint: fmt.Sprintf("SHA256:%043d", i), ObservedAt: s.now()}
+	}
+	if err := s.db.Omit("Account", "Server").CreateInBatches(rows, 250).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LabelKey(ctx, a, fp, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := s.Offboarding(ctx, a, "Owner")
+	if err != nil || !rep.Complete || rep.Identity.Grants != 1 || len(rep.Grants) != 1 || rep.Grants[0].Fingerprint != fp {
+		t.Fatalf("offboarding lost the owner's grant: %+v %v", rep, err)
 	}
 }
