@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
@@ -65,11 +66,13 @@ func toMe(me fleet.Me, a fleet.Actor) Me {
 
 func toServer(v fleet.ServerView) Server {
 	s := Server{
-		Id: v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
+		Connection: optional(ServerConnection(v.Connection)),
+		Id:         v.ID, Name: v.Name, Host: v.Host, Port: v.Port, Username: v.Username,
 		GroupId: v.GroupID, GroupName: optional(v.GroupName), Enrollment: ServerEnrollment(v.Enrollment),
 		HostKeyFingerprint: v.HostKeyFingerprint, HelperVersion: v.HelperVersion, Arch: v.Arch,
+		HelperMissing: ptrTo(nonNil(v.HelperMissing)), HelperCheckedAt: v.HelperCheckedAt,
 		HostsControlPlane: v.HostsControlPlane, ProtectedContainers: nonNil(v.ProtectedContainers),
-		HasStoredLogin: v.HasStoredLogin, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
+		HasStoredLogin: v.HasStoredLogin, Note: v.Note, CreatedAt: v.CreatedAt, Status: ServerStatus(v.Status),
 		Reasons: nonNil(v.Reasons), LastSeenAt: v.LastSeenAt, LastError: v.LastError,
 		HostKeyMismatch: v.HostKeyMismatch, PresentedFingerprint: v.PresentedFingerprint,
 		Access: groupAccess(v.Access), OwnerTeam: optional(v.OwnerTeam), YourRole: EffectiveRole(v.YourRole),
@@ -96,7 +99,18 @@ func toServer(v fleet.ServerView) Server {
 		s.Metrics = &m
 	}
 	if v.Updates != nil {
-		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt}
+		s.Updates = &UpdateCounts{Security: v.Updates.Security, Other: v.Updates.Other, CheckedAt: v.UpdatesAt, Stale: fleet.UpdatesAreStale(v.UpdatesAt, time.Now())}
+	}
+	if ex := v.Exposure; ex != nil {
+		s.Exposure = &Exposure{
+			CheckedAt: ex.CheckedAt, AttemptedAt: ex.AttemptedAt, Ready: ex.Ready, Stale: ex.Stale(time.Now()),
+			PublicPorts: nonNil(ex.PublicPorts), ListeningOnAllInterfaces: nonNil(ex.ListeningOnAllInterfaces),
+			SpecificBinds: nonNil(ex.SpecificBinds),
+			PasswordAuth:  ex.PasswordAuth, PermitRootLogin: ex.PermitRootLogin,
+			PermitEmptyPasswords: ex.PermitEmptyPasswords, PubkeyAuth: ex.PubkeyAuth,
+			SshRead: ex.SSHRead, Firewall: ex.Firewall, ExtraRoot: ex.ExtraRoot, NoPasswordAll: ex.NoPasswordAll,
+			Uncovered: ex.Uncovered, Gaps: nonNil(ex.Gaps),
+		}
 	}
 	return s
 }
@@ -142,13 +156,47 @@ func toGroup(g fleet.GroupView) Group {
 		Updates: UpdatePolicy{
 			Enabled: g.Updates.Enabled, Mode: UpdatePolicyMode(g.Updates.Mode), Days: toDays(g.Updates.Days),
 			Time: g.Updates.Time, Hold: nonNil(g.Updates.Hold), RebootIfRequired: g.Updates.RebootIfRequired,
-			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures,
+			BatchSize: g.Updates.BatchSize, MaxFailures: g.Updates.MaxFailures, PlanRequired: g.Updates.PlanRequired, TwoApprovers: g.Updates.TwoApprovers,
 		},
+		Checks: toAPIChecks(g.Checks),
 	}
 }
 
+func toAPIChecks(in []fleet.HealthCheck) []HealthCheck {
+	out := make([]HealthCheck, 0, len(in))
+	for _, c := range in {
+		item := HealthCheck{Name: c.Name, Kind: HealthCheckKind(c.Kind), Blocking: c.Blocking}
+		if c.Port != 0 {
+			p := c.Port
+			item.Port = &p
+		}
+		if c.TLS {
+			v := true
+			item.Tls = &v
+		}
+		if c.Method != "" {
+			m := HealthCheckMethod(c.Method)
+			item.Method = &m
+		}
+		if c.Path != "" {
+			p := c.Path
+			item.Path = &p
+		}
+		if c.Unit != "" {
+			u := c.Unit
+			item.Unit = &u
+		}
+		if c.Container != "" {
+			n := c.Container
+			item.Container = &n
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
 func toRun(r fleet.RunView) Run {
-	return Run{
+	out := Run{
 		Id: r.ID, Kind: RunKind(r.Kind), Trigger: RunTrigger(r.Trigger), Status: RunStatus(r.Status),
 		GroupId: r.GroupID, GroupName: optional(r.GroupName), Options: r.Options, StartedAt: r.StartedAt,
 		FinishedAt: r.FinishedAt, Summary: r.Summary, BytesFreed: r.BytesFreed,
@@ -159,6 +207,10 @@ func toRun(r fleet.RunView) Run {
 			}
 		}),
 	}
+	if r.Gate != nil {
+		out.Gate = &RunGate{State: RunGateState(r.Gate.State), At: r.Gate.At, By: r.Gate.By, Note: r.Gate.Note}
+	}
+	return out
 }
 
 func jsonObject(j store.JSON) map[string]any {
@@ -174,6 +226,22 @@ func toAlert(a fleet.AlertView) Alert {
 		Id: a.ID, Kind: a.Kind, ServerId: a.ServerID, ServerName: optional(a.ServerName), Subject: a.Subject,
 		Severity: AlertSeverity(a.Severity), Message: a.Message, PendingSince: a.PendingSince, FiredAt: a.FiredAt, ResolvedAt: a.ResolvedAt,
 	}
+}
+
+func toIncident(v fleet.IncidentView) Incident {
+	out := Incident{
+		Id: v.ID, ServerId: v.ServerID, ServerName: v.ServerName, Kind: v.Kind, Subject: v.Subject, AssigneeId: v.AssigneeID, AssigneeName: optional(v.AssigneeName),
+		State: IncidentState(v.State), Message: v.Message, NextStep: v.NextStep, FirstSeen: v.FirstSeen, LastSeen: v.LastSeen, AckedAt: v.AckedAt, CanReview: v.CanReview, CanHold: v.CanHold,
+		ResolvedAt: v.ResolvedAt, Recurrences: ptrTo(v.Recurrences), Note: ptrTo(v.Note), SnoozeUntil: v.Until, SnoozeReason: ptrTo(v.Reason),
+	}
+	if v.Events != nil {
+		events := make([]IncidentEvent, 0, len(v.Events))
+		for _, e := range v.Events {
+			events = append(events, IncidentEvent{Kind: IncidentEventKind(e.Kind), Actor: e.Actor, Detail: e.Detail, At: e.At})
+		}
+		out.Events = &events
+	}
+	return out
 }
 
 func toAlertRule(r fleet.AlertRuleView) AlertRule {
@@ -211,3 +279,5 @@ func toActivity(e fleet.ActivityEntry) ActivityEntry {
 		UserName: e.UserName, Detail: jsonObject(e.Detail), CreatedAt: e.CreatedAt,
 	}
 }
+
+func ptrTo[T any](v T) *T { return &v }

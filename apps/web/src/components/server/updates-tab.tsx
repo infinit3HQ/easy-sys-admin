@@ -1,5 +1,6 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  useQuery,
   useMutation,
   useQueryClient,
   useSuspenseQuery,
@@ -39,6 +40,20 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
   const [mode, setMode] = useState<'security' | 'all'>('security')
   const [reboot, setReboot] = useState(false)
   const [confirm, setConfirm] = useState<'update' | 'reboot' | null>(null)
+  const [picked, setPicked] = useState<string[] | null>(null)
+  const navigate = useNavigate()
+  const recovery = useQuery({
+    ...q.recovery(serverId),
+    enabled: confirm === 'update',
+  })
+  const own = data.server.access === 'own'
+  const eligible = (upd?.packages ?? []).filter(
+    (p) =>
+      (mode === 'all' || p.security) && !(upd?.held.includes(p.name) ?? false),
+  )
+  const selected = (picked ?? eligible.map((p) => p.name)).filter((name) =>
+    eligible.some((p) => p.name === name),
+  )
 
   const check = useMutation({
     mutationFn: () =>
@@ -72,6 +87,22 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       await qc.invalidateQueries({ queryKey: ['runs'] })
     },
   })
+  const propose = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/plans', {
+          body: {
+            kind: 'update',
+            serverIds: [serverId],
+            updateMode: mode,
+            rebootIfRequired: reboot,
+            packages:
+              selected.length === eligible.length ? undefined : selected,
+          },
+        }),
+      ),
+    onSuccess: () => navigate({ to: '/app/plans' }),
+  })
 
   return (
     <div className="space-y-6">
@@ -79,6 +110,7 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
         <p className="font-mono text-xs text-muted-foreground">
           Package lists from <Ago iso={upd?.listsUpdatedAt} /> · checked{' '}
           <Ago iso={data.server.updates?.checkedAt} />
+          {data.server.updates?.stale ? ' · stale, older than 12 hours' : ''}
         </p>
         {canAct && (
           <Button
@@ -90,7 +122,7 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
           </Button>
         )}
       </div>
-      <ErrorBanner error={check.error} />
+      <ErrorBanner error={check.error ?? propose.error} />
 
       {canAct && (
         <Panel title="Install">
@@ -98,7 +130,10 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             <Segmented
               aria-label="Which updates"
               value={mode}
-              onChange={setMode}
+              onChange={(next) => {
+                setMode(next)
+                setPicked(null)
+              }}
               options={[
                 {
                   value: 'security',
@@ -128,11 +163,21 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
             <Button variant="outline" onClick={() => setConfirm('reboot')}>
               <PowerIcon /> Reboot now
             </Button>
+            {own && (
+              <Button
+                variant="outline"
+                disabled={selected.length === 0}
+                busy={propose.isPending}
+                onClick={() => propose.mutate()}
+              >
+                Propose plan
+              </Button>
+            )}
           </div>
           <p className="mt-3 text-xs text-muted-foreground">
-            The upgrade runs as its own systemd job on the server, so it
-            finishes even if the connection drops. Config files you changed are
-            kept.
+            Install updates installs every package in this mode. Propose plan
+            sends only the checked packages, for a person to approve. A held
+            package is not included.
           </p>
         </Panel>
       )}
@@ -165,7 +210,8 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
           <Table className="min-w-[560px] font-mono text-xs">
             <TableHeader>
               <TableRow>
-                <TableHead className="pl-4">Package</TableHead>
+                {own && <TableHead className="w-8 pl-4" />}
+                <TableHead className={own ? '' : 'pl-4'}>Package</TableHead>
                 <TableHead>Installed</TableHead>
                 <TableHead>Candidate</TableHead>
                 <TableHead className="pr-4">From</TableHead>
@@ -180,7 +226,28 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
                 )
                 .map((p) => (
                   <TableRow key={p.name}>
-                    <TableCell className="py-2 pl-4 text-ink">
+                    {own && (
+                      <TableCell className="py-2 pl-4">
+                        {eligible.some((e) => e.name === p.name) ? (
+                          <input
+                            type="checkbox"
+                            checked={selected.includes(p.name)}
+                            aria-label={`Include ${p.name}`}
+                            onChange={(e) => {
+                              const on = e.target.checked
+                              setPicked(
+                                on
+                                  ? [...selected, p.name]
+                                  : selected.filter((n) => n !== p.name),
+                              )
+                            }}
+                          />
+                        ) : null}
+                      </TableCell>
+                    )}
+                    <TableCell
+                      className={own ? 'py-2 text-ink' : 'py-2 pl-4 text-ink'}
+                    >
                       <span className="inline-flex flex-wrap items-center gap-2">
                         {p.security && <Badge variant="warn">sec</Badge>}
                         {p.name}
@@ -204,7 +271,19 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       <ConfirmDialog
         open={confirm === 'update'}
         title="Install updates"
-        body={`Installs ${mode === 'security' ? 'security updates' : 'all pending updates'} on ${data.server.name}${reboot ? ', then reboots if required' : ''}.`}
+        body={
+          <div className="space-y-3">
+            <p>
+              Installs{' '}
+              {mode === 'security' ? 'security updates' : 'all pending updates'}{' '}
+              on {data.server.name}
+              {reboot ? ', then reboots if required' : ''}.
+            </p>
+            <p>
+              {backupNote(recovery.data, recovery.isPending, recovery.isError)}
+            </p>
+          </div>
+        }
         actionLabel="Start"
         busy={run.isPending}
         error={run.error}
@@ -229,4 +308,35 @@ export function UpdatesTab({ serverId }: { serverId: number }) {
       />
     </div>
   )
+}
+
+function backupNote(
+  report:
+    | {
+        sources?: {
+          backupState?: string
+          freshness?: string
+          policy?: string
+        }[]
+      }
+    | undefined,
+  pending: boolean,
+  failed: boolean,
+) {
+  if (pending)
+    return 'Reading the backup result files. The update can still start.'
+  if (failed || !report) {
+    return 'The backup result files could not be read. The update can still start. That is not proof a backup exists.'
+  }
+  const older = report.sources?.some((s) => s.policy === 'older')
+  if (older) {
+    return 'A dataset is older than its policy, or the backup did not succeed. The update can still start. A file is not proof the data can be restored.'
+  }
+  const current = report.sources?.some(
+    (s) => s.backupState === 'success' && s.freshness === 'current',
+  )
+  if (current) {
+    return 'A backup result file says success in the last 7 days. That file is not proof the data can be restored.'
+  }
+  return 'No backup result file shows a success from the last 7 days. The update can still start. A file is not proof the data can be restored.'
 }

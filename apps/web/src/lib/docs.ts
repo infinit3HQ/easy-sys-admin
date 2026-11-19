@@ -25,6 +25,7 @@ export const docSections: readonly {
     label: 'Run it',
     items: [
       { slug: 'self-hosting', label: 'Self-hosting' },
+      { slug: 'outbound-agent', label: 'Outbound agent' },
       { slug: 'remove-a-server', label: 'Remove a server' },
     ],
   },

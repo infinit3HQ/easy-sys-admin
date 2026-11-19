@@ -318,3 +318,16 @@ func TestGroupBatchSettings(t *testing.T) {
 	}
 	s.Wait()
 }
+
+func TestHealthWorseIgnoresWhatWasAlreadyBroken(t *testing.T) {
+	before := serviceHealth{FailedUnits: []string{"old.service"}, BadContainers: 1}
+	if got := healthWorse(before, before); got != "" {
+		t.Fatalf("same picture: %q", got)
+	}
+	if got := healthWorse(before, serviceHealth{FailedUnits: []string{"old.service", "new.service"}, BadContainers: 1}); got != "new failed units: new.service" {
+		t.Fatalf("new unit: %q", got)
+	}
+	if got := healthWorse(before, serviceHealth{FailedUnits: []string{"old.service"}, BadContainers: 2}); got == "" {
+		t.Fatal("more unhealthy containers must stop the batch")
+	}
+}

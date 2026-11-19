@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,179 @@ func TestPollBackoffCombines(t *testing.T) {
 	// A server that answers again is not deferred.
 	if s.pollDeferred(3, start) {
 		t.Fatal("a server with no failures is deferred")
+	}
+}
+
+func TestPollBackoffSurvivesRestart(t *testing.T) {
+	s := newTestService(t)
+	a := signIn(t, s, "backoff-restart")
+	srv := addTestServer(t, s, a, nil, "b1")
+	setSnapshot(t, s, srv, 10)
+	for range 3 {
+		s.recordAuthFailure(srv.ID)
+	}
+	s.rt().backoffMu.Lock()
+	s.rt().backoff = map[int64]*pollBackoff{}
+	s.rt().backoffMu.Unlock()
+	if !s.pollDeferred(srv.ID, time.Now()) {
+		t.Fatal("a restart would try a login that just failed")
+	}
+	s.clearBackoff(srv.ID)
+	s.rt().backoffMu.Lock()
+	s.rt().backoff = map[int64]*pollBackoff{}
+	s.rt().backoffMu.Unlock()
+	if s.pollDeferred(srv.ID, time.Now()) {
+		t.Fatal("clearing the back-off did not stick")
+	}
+}
+
+func TestUpdatesAreStale(t *testing.T) {
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	if !UpdatesAreStale(nil, now) {
+		t.Fatal("a server that has never been checked is current")
+	}
+	recent := now.Add(-6 * time.Hour)
+	if UpdatesAreStale(&recent, now) {
+		t.Fatal("one 6 hour interval is stale")
+	}
+	old := now.Add(-13 * time.Hour)
+	if !UpdatesAreStale(&old, now) {
+		t.Fatal("two missed checks are still current")
+	}
+}
+
+func TestOnlyOneProcessPolls(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	if !s.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("the first process did not take the poll")
+	}
+	other := &Service{db: s.db, log: s.log, now: s.now}
+	if other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("a second process polled while the first still holds it")
+	}
+	if err := s.db.Model(&store.JobLease{}).Where("name = ?", "poll").Update("until", s.now().Add(-time.Second)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("an expired poll lease was not taken over")
+	}
+	if !other.claimJob(ctx, "poll", time.Minute) {
+		t.Fatal("the holder could not renew")
+	}
+}
+
+func TestSecondProcessResumesADeadRun(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "resume-dead")
+	srv := addTestServer(t, s, a, nil, "r1")
+	run := store.Run{AccountID: a.AccountID, Kind: "clean", Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs := store.RunServer{RunID: run.ID, ServerID: srv.ID, Status: "running", Detail: store.JSON("{}")}
+	if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+		t.Fatal(err)
+	}
+	unlock, ok := s.tryRunLock(ctx, run.ID)
+	if !ok {
+		t.Fatal("lock")
+	}
+	other := &Service{db: s.db, store: s.store, log: s.log, now: s.now, publicURL: s.publicURL}
+	other.ResumeRuns(ctx)
+	var still store.RunServer
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "running" {
+		t.Fatalf("a live holder was interrupted: %s %s", still.Status, still.Error)
+	}
+	unlock()
+	other.ResumeRuns(ctx)
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "failed" || !strings.Contains(still.Error, "interrupted") {
+		t.Fatalf("after the holder died: %s %s", still.Status, still.Error)
+	}
+}
+
+// The worker died after upgrade-start. The upgrade kept running on the
+// server. The next process follows upgrade-status and records the result.
+// It does not start a second upgrade.
+func TestDeadWorkerFollowsAnUpgradeAlreadyRunning(t *testing.T) {
+	s := newTestService(t)
+	s.allowPrivate = true
+	ctx := context.Background()
+	a := signIn(t, s, "resume-upgrade")
+	f := newFakeFleet(t, 0)
+	acceptAccountKey(t, s, f, a.AccountID)
+	t.Cleanup(s.pool.Close)
+	live := f.healthy()
+	ids := insertFakeServers(t, s, a.AccountID, []fakeHost{live}, func(int) int { return 0 }, func(int) time.Time { return time.Now() })
+	run := store.Run{AccountID: a.AccountID, Kind: string(RunUpdate), Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs := store.RunServer{RunID: run.ID, ServerID: ids[0], Status: "running", Detail: store.JSON("{}")}
+	if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.ResumeRuns(ctx)
+	s.Wait()
+	var still store.RunServer
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "succeeded" {
+		t.Fatalf("the upgrade already running was not followed: %s %s", still.Status, still.Error)
+	}
+	var finished store.Run
+	if err := s.db.First(&finished, run.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if finished.Status != "succeeded" {
+		t.Fatalf("run: %s %s", finished.Status, finished.Summary)
+	}
+	if f.upgradeStarts.Load() != 0 {
+		t.Fatal("following an upgrade started a second one")
+	}
+}
+
+// The worker died after marking the server running and before upgrade-start.
+// The server has no upgrade, so the next process starts one. It does not
+// wait out the follow timeout.
+func TestDeadWorkerStartsAnUpgradeThatWasNeverSent(t *testing.T) {
+	s := newTestService(t)
+	s.allowPrivate = true
+	ctx := context.Background()
+	a := signIn(t, s, "resume-before")
+	f := newFakeFleet(t, 0)
+	f.noUpgradeUntilStart = true
+	acceptAccountKey(t, s, f, a.AccountID)
+	t.Cleanup(s.pool.Close)
+	live := f.healthy()
+	ids := insertFakeServers(t, s, a.AccountID, []fakeHost{live}, func(int) int { return 0 }, func(int) time.Time { return time.Now() })
+	run := store.Run{AccountID: a.AccountID, Kind: string(RunUpdate), Trigger: "manual", Status: "running", Options: store.JSON("{}"), StartedAt: time.Now()}
+	if err := s.db.Omit("Account", "Group").Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	rs := store.RunServer{RunID: run.ID, ServerID: ids[0], Status: "running", Detail: store.JSON("{}")}
+	if err := s.db.Omit("Run", "Server").Create(&rs).Error; err != nil {
+		t.Fatal(err)
+	}
+	s.ResumeRuns(ctx)
+	s.Wait()
+	var still store.RunServer
+	if err := s.db.First(&still, rs.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if still.Status != "succeeded" {
+		t.Fatalf("the upgrade was not started: %s %s", still.Status, still.Error)
+	}
+	if f.upgradeStarts.Load() != 1 {
+		t.Fatalf("upgrade-start calls: %d", f.upgradeStarts.Load())
 	}
 }
 
@@ -143,5 +317,23 @@ func TestUnreachableBackoffAndAlert(t *testing.T) {
 	}
 	if al = alert(); al == nil || al.ResolvedAt == nil {
 		t.Fatalf("the alert must resolve: %+v", al)
+	}
+}
+
+func TestSecondProcessDoesNotScan(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	if !s.claimJob(ctx, "scan", time.Minute) {
+		t.Fatal("claim")
+	}
+	dir := t.TempDir()
+	script := dir + "/scan"
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+dir+"/ran\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	other := &Service{db: s.db, log: s.log, now: s.now, scanner: script}
+	other.AutoScan(ctx)
+	if _, err := os.Stat(dir + "/ran"); err == nil {
+		t.Fatal("the second process ran the scanner")
 	}
 }

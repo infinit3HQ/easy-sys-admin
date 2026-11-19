@@ -110,6 +110,16 @@ esa servers list --json
 
 With `--json` it prints the array of servers from the fleet overview.
 
+### esa servers sbom <name|id> and esa servers scan-import <name|id> <file>
+
+`esa servers sbom` writes the server's installed packages as a CycloneDX SBOM to stdout. Run any scanner on it, wherever you like, then import a Grype JSON report with `esa servers scan-import`. esa sends the SBOM nowhere. `scan-import` keeps only the fields esa reads before it uploads, so a large report fits the 10 MiB limit (a real 69 MB report became 5 MB).
+
+```sh
+esa servers sbom web-01 > web-01.cdx.json
+grype sbom:web-01.cdx.json -o json > web-01.grype.json
+esa servers scan-import web-01 web-01.grype.json
+```
+
 ### esa servers show <name|id>
 
 Shows one server's latest snapshot: status reasons, OS, kernel, uptime, CPU, load, memory, a table of mounts, and the pending update count.
@@ -188,6 +198,26 @@ Without `--wait`, the command prints the run id and exits. With `--json`, it pri
 
 With the default batch size of 1 and failure limit of 1, a run works on one server at a time and stops at the first failure. For a group of 200 servers at about 3 minutes each, that takes about 10 hours; `--batch 10` takes about 1 hour. A larger batch spreads a bad update to more servers before the run stops, because the servers already running in a batch always finish.
 
+### esa plans
+
+A group can require an approved plan. Then `esa runs start clean` and `esa runs start update` are refused on it. Propose a plan, have a person approve it on the Plans page of the web app, then run it. There is no approve command: a token cannot approve.
+
+| Command                                                | What it does                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `esa plans list`                                       | The 100 most recent plans with kind, target, status, and run.                                                                                                                                                                                                                                                   |
+| `esa plans show <id>`                                  | One plan: its servers, update mode, held packages, reboot setting, cleanups, and the pending packages it covers.                                                                                                                                                                                                |
+| `esa plans propose <measure\|clean\|update> --group G` | Stores a plan with the group's settings. `--server` (repeatable) instead of `--group` targets servers. `--mode security\|all` changes the update mode. `--package P` (repeatable) approves only those pending packages; the helper leaves the rest alone. Needs `actions` and not `logs:read`. Changes nothing. |
+| `esa plans cancel <id> [--reason R]`                   | Withdraws a plan that has not started. It never touches a server.                                                                                                                                                                                                                                               |
+| `esa plans execute <id>`                               | Starts an approved plan within its 30 minutes. A repeat prints the same run.                                                                                                                                                                                                                                    |
+
+A plan covers the servers in the group when it was proposed. A server added to or removed from the group, or a change in the pending packages, cancels the approval.
+
+```sh
+esa plans propose update --group production
+esa plans show 12
+esa plans execute 12
+```
+
 ### esa alerts
 
 Lists open alerts with severity, kind, message, and when each one fired (or started pending). Prints `No open alerts.` when there are none.
@@ -256,6 +286,17 @@ esa serve
 
 For local development, `pnpm --filter @esa/esa dev` builds the helpers and runs `go run ./cmd/esa serve` with the repo's `.env`.
 
+## esa reseal
+
+Re-seals stored secrets with the first key in `ESA_MASTER_KEY`. It reads the database directly. It is not an API call and it does not print key material.
+
+```sh
+esa reseal --dry-run
+esa reseal
+```
+
+Stop `esa serve` first so it is not writing secrets at the same time. The command covers account SSH keys, saved server logins, and notification channel settings. `--dry-run` writes nothing. See [security.md](security.md#rotating-the-master-key).
+
 ### esa healthcheck
 
 A hidden command for the container's `HEALTHCHECK`, since the image has no shell or curl. It calls `/healthz` on `ESA_LISTEN` (using `127.0.0.1` when the host is empty, `0.0.0.0`, or `::`) with a 3 second timeout and exits `0` on HTTP 200, `1` otherwise.
@@ -269,3 +310,9 @@ Read actions: `version`, `status`, `updates [--refresh]`, `upgrade-precheck`, `u
 Write actions: `clean --apply [--only buildcache,vscode,journal] [--journal-size 200M]`, `upgrade-start --run-id N --mode security|all [--hold pkg,pkg]`, `service --unit U --action start|stop|restart`, `container --name C --action start|stop|restart [--confirm NAME] [--protect a,b]`, `container-update --name C [--confirm NAME] [--protect a,b]`, `reboot`, `uninstall`.
 
 Every action except `version` must run as root. `ssh-dispatch` is the forced command on the esa SSH key. It runs as the esa user, accepts only `sudo -n /usr/local/lib/esa/esa-helper <action> ...` from `SSH_ORIGINAL_COMMAND`, and hands that to sudo.
+
+## Reachability from another machine
+
+Run `esa servers probe web-01 --source office --port 443` from a machine on the network you want to test. The CLI tries a TCP connection to the server's enrolled host for at most 5 seconds and records the result. Use a stable source label with at most 40 letters, digits, dots, underscores, or hyphens. `--json` writes a JSON result. The saved login or `ESA_URL` and `ESA_TOKEN` select the control plane. The token needs read and actions scopes, and its user must be an admin of the server's group in the owning space. A shared group's operator cannot submit evidence for its owner.
+
+Repeat the command every 5 minutes with a scheduler you control. Observations become stale after 15 minutes. A refused or timed-out TCP connection is recorded as not reached from that probe. DNS and local network errors are unknown. A result applies only to this probe's network. Esa does not start a probe service or change any firewall.

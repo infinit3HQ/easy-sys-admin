@@ -21,12 +21,16 @@ const (
 
 // Endpoint identifies a server and how to log in to it as the esa user.
 type Endpoint struct {
-	ServerID int64
-	Host     string
-	Port     int
-	User     string
-	HostKey  ssh.PublicKey
-	Signer   ssh.Signer
+	Transport func(context.Context, string, ...string) (ExecResult, error)
+	ServerID  int64
+	Host      string
+	Port      int
+	User      string
+	HostKey   ssh.PublicKey
+	Signer    ssh.Signer
+	// Capabilities are the helper's actions, as it last reported them.
+	// nil means it reported none: proto.LegacyActions apply.
+	Capabilities []string
 }
 
 func (e Endpoint) key() string {
@@ -161,7 +165,21 @@ func IsRefused(err error) bool {
 
 // Call runs `sudo -n esa-helper <action> <args...>` on the server and
 // decodes the response data into out (which may be nil).
+//
+// An action the installed helper did not list is refused here, before any
+// connection, with code proto.CodeIncompatible. Every front door and
+// background job reaches a server through Call, so the check is in one place.
 func (p *Pool) Call(ctx context.Context, e Endpoint, out any, action string, args ...string) error {
+	if !proto.Supports(e.Capabilities, action) {
+		return &HelperError{Code: proto.CodeIncompatible, Message: "the helper on this server does not have the " + action + " action; reinstall the helper"}
+	}
+	if e.Transport != nil {
+		res, err := e.Transport(ctx, action, args...)
+		if err != nil {
+			return err
+		}
+		return decodeEnvelope(res, out)
+	}
 	client, err := p.get(ctx, e)
 	if err != nil {
 		return err
@@ -204,6 +222,9 @@ func decodeEnvelope(res ExecResult, out any) error {
 	}
 	if !env.OK {
 		return &HelperError{Code: env.Code, Message: env.Error}
+	}
+	if env.Protocol != 0 && env.Protocol != proto.Version {
+		return &HelperError{Code: proto.CodeFailed, Message: fmt.Sprintf("helper protocol %d is not %d; reinstall the helper", env.Protocol, proto.Version)}
 	}
 	if out == nil || len(env.Data) == 0 {
 		return nil

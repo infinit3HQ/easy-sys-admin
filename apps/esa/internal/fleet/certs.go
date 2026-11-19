@@ -100,6 +100,9 @@ func (s *Service) DeleteCert(ctx context.Context, a Actor, id int64) error {
 
 // CheckCerts checks every certificate target and updates expiry alerts.
 func (s *Service) CheckCerts(ctx context.Context) {
+	if !s.claimJob(ctx, "certs", time.Hour) {
+		return
+	}
 	var rows []store.CertTarget
 	if err := s.db.WithContext(ctx).Order("account_id").Find(&rows).Error; err != nil {
 		s.log.Error("load cert targets", "err", err)
@@ -132,7 +135,7 @@ func (s *Service) CheckCerts(ctx context.Context) {
 				}
 			}
 		}
-		s.reconcile(ctx, accountID, nil, rules, conds, func(k AlertKind) bool { return k == AlertCertExpiry })
+		s.reconcile(ctx, accountID, nil, rules, conds, func(k AlertKind, _ string, _ bool) bool { return k == AlertCertExpiry })
 	}
 }
 

@@ -99,6 +99,12 @@ The first nightly account is created through the application's local API before 
 
 Nightly adds `deploy/compose.nightly.yaml`, which caps each service at 512 MiB, 0.75 CPU, and 256 processes. It keeps data in `esa-nightly_postgres`; it never names production's database volume. Its health check runs internally before a deployment is reported successful. Temporary Compose secrets and registry login files are removed after each job. Image deployment never runs a prune or deletes volumes.
 
+### Publish a GitHub release
+
+After the target commit on `main` passes CI and both GHCR images are published, create and push an annotated tag in `vMAJOR.MINOR.PATCH` format. Run **Publish GitHub release** from `main` in GitHub Actions and enter that tag. The workflow reuses the published image digests for the exact tagged commit and publishes matching version tags for the control plane and web app. It then creates a GitHub Release with generated notes, source archives, and both image references.
+
+If publishing is interrupted, re-run the workflow with the same tag. It accepts matching image tags and refuses tags with different digests. The release workflow does not rebuild images, change the stable or nightly channels, or deploy anything.
+
 ### DNS and package visibility
 
 On Server One, add **CNAME `nightly` pointing to `easysysadmin.app`**. An equivalent direct A record is `nightly.easysysadmin.app` to `129.146.103.99`. Use one or the other, not both. No API or registry subdomain is needed: the same web hostname handles every application endpoint, and images are served by `ghcr.io`.
@@ -191,7 +197,19 @@ docker compose -f deploy/compose.yaml --env-file deploy/.env exec -T postgres \
 docker compose -f deploy/compose.yaml --env-file deploy/.env start esa web
 ```
 
-The restored data needs the `ESA_MASTER_KEY` that was in use when the dump was taken.
+The restored data needs the `ESA_MASTER_KEY` that was in use when the dump was taken. A dump taken before `esa reseal` still needs the old key.
+
+## Rotate the master key
+
+Change the key in Compose, not in the app. On the deploy host:
+
+1. Generate a new key with `openssl rand -base64 32`.
+2. Set `ESA_MASTER_KEY` in `deploy/.env` to `<new>,<old>`. On a GitHub Actions host, update the `production` secret of the same name and redeploy so the container receives it.
+3. Stop the `esa` service: `docker compose -f deploy/compose.yaml --env-file deploy/.env stop esa`.
+4. Run `docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm esa reseal`. Add `--dry-run` first if you want the counts only.
+5. When it says live rows are sealed with the current key, set `ESA_MASTER_KEY` to `<new>` only and start `esa` again.
+
+One re-seal covers every account on this install. A person signed in to the board cannot do this.
 
 ## Health check
 
@@ -271,8 +289,24 @@ git checkout <commit>
 docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
 ```
 
-Production deployments save a PostgreSQL dump before restarting containers. A failed or empty dump stops deployment. `ESA_DEPLOY_BACKUP_DIR` selects the private host directory; its default is the runner user's `~/.local/state/easy-sys-admin/production/backups`. Dumps are not Actions artifacts and are not automatically deleted. Keep master-key backups separately and move dumps to your external encrypted backup store.
+## Control plane compatibility during upgrades
 
-The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication. Image publication times out after 30 minutes without promotion or deployment.
+New columns are additive. Two-admin approval requirements are also enforced by a PostgreSQL trigger so an older control plane cannot approve or execute a protected plan with one approval. A group constraint prevents older code from turning off required plans while the two-admin policy remains on. An older application can report a database error for those refused writes; use the current web and control plane versions for the full approval flow.
+
+Each current maintenance worker checks the original connections that hold its advisory locks, before helper calls and every 5 seconds while waiting. A lost connection cancels the worker even if the database becomes reachable again. The next worker resumes unfinished upgrades. An install already sent to a host remains detached and is followed rather than sent again. Older executables without these connection checks do not gain them from a schema migration. Drain their maintenance runs before replacing those executables.
+
+## Hosted retention settings
+
+The published hosted policy is 365 days for audit rows and 90 days for resolved notice history and superseded vulnerability scan reports. Configure `ESA_AUDIT_RETENTION=8760h` and `ESA_REPORT_RETENTION=2160h` to enable that pruning. Compose and the deploy workflow pass these variables through; an unset variable keeps all history. Deployment does not enable deletion implicitly.
+
+`ESA_AUDIT_HOLD_UNTIL` pauses both kinds of pruning. Unresolved notices and the latest scanner snapshot stay even when old. Keeping a stale latest snapshot prevents an expired scan from turning into a clean-looking empty list. Run reports, backup evidence receipts, and their idempotency keys remain until account deletion. Report pruning deletes at most 1000 resolved notices and 1000 superseded scans per hour, records a retention ledger row, and writes an audit entry. A second control plane cannot claim the same prune interval.
+
+## Outbound servers
+
+The control-plane image includes esa-agent and esa-helper for amd64 and arm64. Reviewed bootstrap artifacts are served under `/enroll/outbound/`, through the existing web proxy. No incoming agent port or new control-plane environment variable is needed. Allow outgoing HTTPS from the managed host to the public esa origin. See [outbound-agent.md](outbound-agent.md) for installation, rotation, and removal. Agent result bodies have a dedicated 8 MiB limit at both proxies; other API body limits stay unchanged.
+
+Before production restarts, `deploy/backup-production.sh` saves a PostgreSQL dump on Server One. A failed or empty backup, or an unavailable existing database, stops deployment. Set `ESA_DEPLOY_BACKUP_DIR` in the production GitHub environment to change the default `$HOME/.local/state/easy-sys-admin/production/backups`. Backups are private host files and are never uploaded as Actions artifacts. The workflow does not delete old dumps. Store copies in encrypted backup storage and keep the master keys separately.
+
+The web Dockerfile compiles its JavaScript bundle on the builder CPU and uses the selected platform only for the final Node runtime. The build checks the server output for regular `.node` and `.so` files and fails if it finds one. Review runtime dependencies before adding a native module. This avoids running the Vite compiler under QEMU during multi-platform publication. Image publication has a 30-minute timeout.
 
 Hosted deployments default `ESA_BETA_LIMITS` to `true` when the selected GitHub environment leaves it unset. Keep it enabled in both production and nightly: each space holds 10 servers and each person can own one organization besides their personal space. Self-hosted Compose installations keep their separate default of `false`. Lowering the hosted limits never removes existing servers or organizations; it only blocks additions above the cap.

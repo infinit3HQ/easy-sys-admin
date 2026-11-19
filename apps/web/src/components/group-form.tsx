@@ -41,7 +41,10 @@ export const defaultGroup: GroupInput = {
     rebootIfRequired: false,
     batchSize: 1,
     maxFailures: 1,
+    planRequired: false,
+    twoApprovers: false,
   },
+  checks: [],
 }
 
 function DayPicker({
@@ -298,8 +301,33 @@ export function GroupForm({
               label="Reboot after updates when a server asks for it"
               hint="Each server reboots after its own update, and its batch waits for it to come back. The server hosting esa is skipped."
             />
+            <Toggle
+              checked={g.updates.planRequired}
+              onChange={(planRequired) =>
+                setUpd({
+                  planRequired,
+                  twoApprovers: planRequired && g.updates.twoApprovers,
+                })
+              }
+              disabled={disabled}
+              label="Require an approved plan"
+              hint="Every update or cleanup must be an approved plan, so the cleanup and update schedules must be off. Only a person signed in here can turn this off again."
+            />
+            <Toggle
+              checked={g.updates.twoApprovers}
+              onChange={(twoApprovers) => setUpd({ twoApprovers })}
+              disabled={disabled || !g.updates.planRequired}
+              label="Require two different admins to approve"
+              hint="Both admins must sign in recently. The first approval expires after 30 minutes. Tokens cannot bypass this rule."
+            />
           </div>
         </Panel>
+
+        <ChecksEditor
+          checks={g.checks ?? []}
+          disabled={disabled}
+          onChange={(checks) => setG({ ...g, checks })}
+        />
 
         <ErrorBanner error={error} />
         {!disabled && (
@@ -309,5 +337,180 @@ export function GroupForm({
         )}
       </fieldset>
     </form>
+  )
+}
+
+type Check = NonNullable<GroupInput['checks']>[number]
+
+function ChecksEditor({
+  checks,
+  disabled,
+  onChange,
+}: {
+  checks: Check[]
+  disabled?: boolean
+  onChange: (checks: Check[]) => void
+}) {
+  const set = (i: number, next: Partial<Check>) =>
+    onChange(checks.map((c, n) => (n === i ? { ...c, ...next } : c)))
+  return (
+    <Panel title="Checks">
+      <p className="mb-3 text-xs text-muted-foreground">
+        An update runs these before and after apt, on each server's own address.
+        A blocking failure stops that server. One failed canary skips the rest
+        of the group. Eight checks at most.
+      </p>
+      <ul className="space-y-3">
+        {checks.map((c, i) => (
+          <li
+            key={i}
+            className="grid gap-2 sm:grid-cols-[8rem_7rem_minmax(0,1fr)_auto] sm:items-end"
+          >
+            <Field label="Name">
+              <Input
+                value={c.name}
+                maxLength={40}
+                disabled={disabled}
+                onChange={(e) => set(i, { name: e.target.value })}
+              />
+            </Field>
+            <Field label="Kind">
+              <NativeSelect
+                value={c.kind}
+                disabled={disabled}
+                onChange={(e) => {
+                  const kind = e.target.value as Check['kind']
+                  set(i, {
+                    kind,
+                    path: kind === 'http' ? (c.path ?? '/') : c.path,
+                    method: kind === 'http' ? (c.method ?? 'GET') : c.method,
+                  })
+                }}
+              >
+                <NativeSelectOption value="tcp">TCP</NativeSelectOption>
+                <NativeSelectOption value="http">HTTP</NativeSelectOption>
+                <NativeSelectOption value="unit">Service</NativeSelectOption>
+                <NativeSelectOption value="container">
+                  Container
+                </NativeSelectOption>
+              </NativeSelect>
+            </Field>
+            <CheckTarget
+              c={c}
+              disabled={disabled}
+              onChange={(next) => set(i, next)}
+            />
+            <div className="flex gap-2">
+              <Toggle
+                checked={c.blocking}
+                disabled={disabled}
+                onChange={(blocking) => set(i, { blocking })}
+                label="Blocking"
+              />
+              {!disabled && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onChange(checks.filter((_, n) => n !== i))}
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {!disabled && checks.length < 8 && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="mt-3"
+          onClick={() =>
+            onChange([
+              ...checks,
+              {
+                name: `check ${checks.length + 1}`,
+                kind: 'tcp',
+                blocking: true,
+                port: 443,
+              },
+            ])
+          }
+        >
+          Add a check
+        </Button>
+      )}
+    </Panel>
+  )
+}
+
+function CheckTarget({
+  c,
+  disabled,
+  onChange,
+}: {
+  c: Check
+  disabled?: boolean
+  onChange: (next: Partial<Check>) => void
+}) {
+  if (c.kind === 'unit') {
+    return (
+      <Field label="Service">
+        <Input
+          className="font-mono"
+          value={c.unit ?? ''}
+          disabled={disabled}
+          placeholder="nginx"
+          onChange={(e) => onChange({ unit: e.target.value })}
+        />
+      </Field>
+    )
+  }
+  if (c.kind === 'container') {
+    return (
+      <Field label="Container">
+        <Input
+          className="font-mono"
+          value={c.container ?? ''}
+          disabled={disabled}
+          placeholder="web"
+          onChange={(e) => onChange({ container: e.target.value })}
+        />
+      </Field>
+    )
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Field label="Port">
+        <NumberInput
+          className="w-24"
+          min={1}
+          max={65535}
+          value={c.port ?? 80}
+          disabled={disabled}
+          onChange={(port) => onChange({ port })}
+        />
+      </Field>
+      {c.kind === 'http' && (
+        <>
+          <Field label="Path">
+            <Input
+              className="w-36 font-mono"
+              value={c.path ?? '/'}
+              disabled={disabled}
+              onChange={(e) => onChange({ path: e.target.value })}
+            />
+          </Field>
+          <Toggle
+            checked={!!c.tls}
+            disabled={disabled}
+            onChange={(tls) => onChange({ tls, method: c.method ?? 'GET' })}
+            label="HTTPS"
+          />
+        </>
+      )}
+    </div>
   )
 }

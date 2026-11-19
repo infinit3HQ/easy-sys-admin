@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,8 +33,17 @@ func (s *Service) serverLock(id int64) *sync.Mutex {
 	return m.(*sync.Mutex)
 }
 
-// execute runs a stored run to completion.
+// execute runs a stored run to completion. The run lock is held until it
+// returns, so a second control plane does not resume the same run.
 func (s *Service) execute(ctx context.Context, runID int64) {
+	ctx, stopOwnership := maintenanceContext(ctx)
+	defer stopOwnership()
+	unlock, ok := s.tryRunLock(ctx, runID)
+	if !ok {
+		s.log.Info("run left with the process that already holds it", "run_id", runID)
+		return
+	}
+	defer unlock()
 	var run store.Run
 	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("id = ?", runID).Take(&run).Error; err != nil {
 		s.log.Error("load run", "run_id", runID, "err", err)
@@ -57,6 +67,12 @@ func (s *Service) execute(ctx context.Context, runID int64) {
 		s.batched(ctx, run.Servers, opts, nil, func(ctx context.Context, rs *store.RunServer) bool {
 			return s.runReboot(ctx, run, rs)
 		})
+	}
+	if ctx.Err() != nil {
+		// The process is stopping. Leave the run "running" so the next
+		// start resumes it, instead of finishing it with work outstanding.
+		log.Info("run left for the next start", "reason", ctx.Err())
+		return
 	}
 	s.finishRun(ctx, run.ID)
 }
@@ -93,19 +109,119 @@ func (s *Service) batched(ctx context.Context, items []store.RunServer, o RunOpt
 			queued = append(queued, i)
 		}
 	}
-	batches := planBatches(items, queued, size)
-	failed, started := runBatches(ctx, batches, maxFailures, failed, func(ctx context.Context, i int) bool {
-		return fn(ctx, &items[i])
-	})
+	work := func(ctx context.Context, i int) bool { return fn(ctx, &items[i]) }
+	canary, rest := partitionCanaries(items, queued, o.CanaryServerIDs)
+	// After a restart the canaries may already be done while the rest still
+	// wait. The canary rules and the watch still apply then.
+	allCanary := canaryIndexes(items, o.CanaryServerIDs)
+	if len(allCanary) > 0 && !restStarted(items, allCanary) {
+		batches := planBatches(items, canary, len(canary))
+		var started int
+		failed, started = runBatches(ctx, batches, maxFailures, failed, work)
+		reason := ""
+		if !canaryFailed(items, allCanary, failed) && canaryDidNotFinish(items, allCanary) {
+			reason = "stopped after a canary did not finish"
+		}
+		if reason != "" || canaryFailed(items, allCanary, failed) || stopRun(len(failed), maxFailures) {
+			s.skipRest(ctx, items, append(unstarted(batches, started), rest...), failed, allCanary, reason)
+			return
+		}
+		if reason := s.watchCanaries(ctx, items, allCanary, o); reason != "" {
+			s.skipRest(ctx, items, rest, failed, allCanary, "stopped after the watch: "+reason)
+			return
+		}
+		if o.WaitAfterCanaries && len(rest) > 0 {
+			ok, why := s.awaitGate(ctx, items[0].RunID)
+			if !ok {
+				if why != "" {
+					s.skipRest(ctx, items, rest, failed, allCanary, why)
+				}
+				return
+			}
+		}
+	}
+	batches := planBatches(items, rest, size)
+	var started int
+	failed, started = runBatches(ctx, batches, maxFailures, failed, work)
 	if !stopRun(len(failed), maxFailures) {
 		return
 	}
-	msg := stopMessage(items, failed)
+	s.skipRest(ctx, items, unstarted(batches, started), failed, nil, "")
+}
+
+func unstarted(batches [][]int, started int) []int {
+	var out []int
 	for _, batch := range batches[started:] {
-		for _, i := range batch {
-			if items[i].Status == "queued" {
-				s.setRunServer(ctx, &items[i], "skipped", msg, nil, 0)
+		out = append(out, batch...)
+	}
+	return out
+}
+
+// canaryIndexes returns the indexes of every canary in the run, whatever
+// its status.
+func canaryIndexes(items []store.RunServer, canaryIDs []int64) []int {
+	var out []int
+	for i := range items {
+		if slices.Contains(canaryIDs, items[i].ServerID) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// restStarted is true once a server that is not a canary left the queue,
+// so the canary phase is over.
+func restStarted(items []store.RunServer, canary []int) bool {
+	for i := range items {
+		if !slices.Contains(canary, i) && items[i].Status != "queued" {
+			return true
+		}
+	}
+	return false
+}
+
+// canaryDidNotFinish is true when a canary was skipped or never reached
+// succeeded. A skip is not a pass, and the other servers must not start.
+func canaryDidNotFinish(items []store.RunServer, canary []int) bool {
+	for _, i := range canary {
+		if items[i].Status != "succeeded" {
+			return true
+		}
+	}
+	return false
+}
+
+func canaryFailed(items []store.RunServer, canary, failed []int) bool {
+	isCanary := map[int]bool{}
+	for _, i := range canary {
+		isCanary[i] = true
+	}
+	for _, i := range failed {
+		if isCanary[i] && items[i].Status == "failed" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) skipRest(ctx context.Context, items []store.RunServer, idx, failed, canary []int, reason string) {
+	msg := reason
+	if msg == "" {
+		msg = stopMessage(items, failed)
+		isCanary := map[int]bool{}
+		for _, i := range canary {
+			isCanary[i] = true
+		}
+		for _, i := range failed {
+			if isCanary[i] && items[i].Status == "failed" {
+				msg = "stopped after canary " + items[i].Server.Name + " failed"
+				break
 			}
+		}
+	}
+	for _, i := range idx {
+		if items[i].Status == "queued" {
+			s.setRunServer(ctx, &items[i], "skipped", msg, nil, 0)
 		}
 	}
 }
@@ -181,7 +297,10 @@ func stopMessage(items []store.RunServer, failed []int) string {
 	return fmt.Sprintf("stopped after %d failed servers", len(failed))
 }
 
-func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status, errMsg string, detail any, freed int64) {
+func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status, errMsg string, detail any, freed int64) bool {
+	if errors.Is(context.Cause(ctx), errMaintenanceOwnershipLost) {
+		return false
+	}
 	now := s.now()
 	changes := map[string]any{"status": status, "error": errMsg, "bytes_freed": freed}
 	if detail != nil {
@@ -202,36 +321,108 @@ func (s *Service) setRunServer(ctx context.Context, rs *store.RunServer, status,
 	rs.Status = status
 	if err := s.db.WithContext(context.WithoutCancel(ctx)).Model(&store.RunServer{}).Where("id = ?", rs.ID).Updates(changes).Error; err != nil {
 		s.log.Error("update run server", "id", rs.ID, "err", err)
+		return false
 	}
+	return true
 }
 
 // begin locks the server and resolves its endpoint. It returns false (and
-// records why) when the server cannot be worked on now.
+// records why) when the server cannot be worked on now. The database lock
+// is held on one connection so a second control plane process skips the
+// same server instead of starting a second run.
 func (s *Service) begin(ctx context.Context, rs *store.RunServer) (remote.Endpoint, func(), bool) {
-	lock := s.serverLock(rs.ServerID)
-	if !lock.TryLock() {
-		s.setRunServer(ctx, rs, "skipped", "another run is working on this server", nil, 0)
+	unlock, busy := s.lockServer(ctx, rs.ServerID)
+	if unlock == nil {
+		s.setRunServer(ctx, rs, "skipped", busy, nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", rs.ServerID).Take(&srv).Error; err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", "server no longer exists", nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	if err := s.blockedByHostKey(ctx, srv); err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
 	ep, err := s.endpoint(ctx, srv)
 	if err != nil {
-		lock.Unlock()
+		unlock()
 		s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 		return remote.Endpoint{}, nil, false
 	}
-	s.setRunServer(ctx, rs, "running", "", nil, 0)
-	return ep, lock.Unlock, true
+	if !s.setRunServer(ctx, rs, "running", "", nil, 0) {
+		unlock()
+		return remote.Endpoint{}, nil, false
+	}
+	return ep, unlock, true
+}
+
+// lockServer takes the in-process and the database lock for one server.
+// It returns nil and the reason when another run holds either.
+func (s *Service) lockServer(ctx context.Context, id int64) (func(), string) {
+	lock := s.serverLock(id)
+	if !lock.TryLock() {
+		return nil, "another run is working on this server"
+	}
+	unlockDB, ok := s.tryServerLock(ctx, id)
+	if !ok {
+		lock.Unlock()
+		return nil, "another control plane is working on this server"
+	}
+	return func() {
+		unlockDB()
+		lock.Unlock()
+	}, ""
+}
+
+// runLockNamespace keeps a run lock from colliding with a server lock.
+// Server locks use the server id. Run locks use this bit plus the run id.
+const runLockNamespace int64 = 1 << 62
+
+// tryServerLock takes a PostgreSQL advisory lock for this server and holds
+// the connection until unlock. The in-process mutex does not cover a second
+// process.
+func (s *Service) tryServerLock(ctx context.Context, id int64) (func(), bool) {
+	return s.tryAdvisoryLock(ctx, id)
+}
+
+// tryRunLock is held for the whole run. A second process leaves the run
+// alone instead of marking its servers failed.
+func (s *Service) tryRunLock(ctx context.Context, runID int64) (func(), bool) {
+	return s.tryAdvisoryLock(ctx, runLockNamespace+runID)
+}
+
+func (s *Service) tryAdvisoryLock(ctx context.Context, key int64) (func(), bool) {
+	conn, err := s.store.MaintenanceConn(ctx, key >= runLockNamespace)
+	if err != nil {
+		return nil, false
+	}
+	var got bool
+	err = conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&got)
+	if err != nil || !got {
+		_ = conn.Close()
+		return nil, false
+	}
+	owner := ownershipFrom(ctx)
+	if owner != nil {
+		owner.mu.Lock()
+		owner.conns[conn] = true
+		owner.mu.Unlock()
+	}
+	return func() {
+		if owner != nil {
+			owner.mu.Lock()
+			delete(owner.conns, conn)
+			owner.mu.Unlock()
+		}
+		unlockCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1)", key)
+		_ = conn.Close()
+	}, true
 }
 
 func (s *Service) failHost(ctx context.Context, rs *store.RunServer, err error) {
@@ -267,7 +458,7 @@ func (s *Service) runClean(ctx context.Context, rs *store.RunServer, apply bool,
 	}
 	var rep proto.CleanReport
 	cctx, cancel := context.WithTimeout(ctx, cleanTimeout)
-	err := s.pool.Call(cctx, ep, &rep, "clean", args...)
+	err := s.maintenanceCall(cctx, ep, &rep, "clean", args...)
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -309,7 +500,7 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 
 	var pc proto.Precheck
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
-	err := s.pool.Call(cctx, ep, &pc, "upgrade-precheck")
+	err := s.maintenanceCall(cctx, ep, &pc, "upgrade-precheck")
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -324,8 +515,38 @@ func (s *Service) runUpdate(ctx context.Context, run store.Run, rs *store.RunSer
 	if len(o.Hold) > 0 {
 		args = append(args, "--hold", strings.Join(o.Hold, ","))
 	}
+	if o.Approved != nil {
+		allow := proto.AllowNone
+		if len(*o.Approved) > 0 {
+			allow = strings.Join(*o.Approved, ",")
+		}
+		args = append(args, "--allow", allow)
+	}
+	before, err := s.readHealth(ctx, ep)
+	if err != nil {
+		s.setRunServer(ctx, rs, "failed", "could not read status before the upgrade: "+err.Error(), nil, 0)
+		return false
+	}
+	pre, block := s.runHealthChecks(ctx, rs.Server, ep, beforeChecks(o.Checks, o.Override), "before")
+	markOverridden(pre, o.Override)
+	saved := map[string]any{"healthBefore": before}
+	if len(pre) > 0 {
+		saved["checks"] = pre
+	}
+	if block != "" {
+		s.setRunServer(ctx, rs, "failed", "check before upgrade: "+block, saved, 0)
+		return false
+	}
+	rs.Detail = store.MustJSON(saved)
+	if err := s.db.WithContext(ctx).Model(rs).Update("detail", rs.Detail).Error; err != nil {
+		// Do not send an install when its pre-upgrade evidence could not be
+		// saved. Database loss may also have released our advisory locks.
+		s.log.Error("upgrade not sent: could not save pre-upgrade evidence", "run_id", run.ID, "server_id", rs.ServerID, "err", err)
+		return false
+	}
+
 	cctx, cancel = context.WithTimeout(ctx, 2*time.Minute)
-	err = s.pool.Call(cctx, ep, nil, "upgrade-start", args...)
+	err = s.maintenanceCall(cctx, ep, nil, "upgrade-start", args...)
 	cancel()
 	if err != nil {
 		s.failHost(ctx, rs, err)
@@ -347,7 +568,7 @@ func (s *Service) followUpgrade(ctx context.Context, run store.Run, rs *store.Ru
 		case <-time.After(upgradePollEvery):
 		}
 		cctx, cancel := context.WithTimeout(ctx, time.Minute)
-		lastErr = s.pool.Call(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(run.ID, 10))
+		lastErr = s.maintenanceCall(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(run.ID, 10))
 		cancel()
 		if lastErr != nil {
 			var mismatch *remote.HostKeyMismatchError
@@ -388,10 +609,95 @@ func (s *Service) followUpgrade(ctx context.Context, run store.Run, rs *store.Ru
 			detail["reboot"] = "rebooted"
 		}
 	}
+	if msg := s.healthRegressed(ctx, ep, healthBefore(rs)); msg != "" {
+		detail["health"] = msg
+		detail["checks"] = savedChecks(rs)
+		s.setRunServer(ctx, rs, "failed", "upgrade finished, "+msg, detail, 0)
+		_ = s.RefreshUpdates(ctx, rs.ServerID, false)
+		s.PollServer(ctx, rs.ServerID)
+		return false
+	}
+	post, block := s.runHealthChecks(ctx, rs.Server, ep, o.Checks, "after")
+	if all := append(savedChecks(rs), post...); len(all) > 0 {
+		detail["checks"] = all
+	}
+	if block != "" {
+		s.setRunServer(ctx, rs, "failed", "check after upgrade: "+block, detail, 0)
+		_ = s.RefreshUpdates(ctx, rs.ServerID, false)
+		s.PollServer(ctx, rs.ServerID)
+		return false
+	}
 	s.setRunServer(ctx, rs, "succeeded", "", detail, 0)
 	_ = s.RefreshUpdates(ctx, rs.ServerID, false)
 	s.PollServer(ctx, rs.ServerID)
 	return true
+}
+
+// serviceHealth is the failed units and bad containers seen at one moment.
+type serviceHealth struct {
+	FailedUnits   []string `json:"failedUnits"`
+	BadContainers int      `json:"badContainers"`
+}
+
+func (s *Service) readHealth(ctx context.Context, ep remote.Endpoint) (serviceHealth, error) {
+	var snap proto.Status
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	if err := s.maintenanceCall(cctx, ep, &snap, "status"); err != nil {
+		return serviceHealth{}, err
+	}
+	h := serviceHealth{FailedUnits: append([]string(nil), snap.FailedUnits...)}
+	slices.Sort(h.FailedUnits)
+	if snap.Docker != nil {
+		h.BadContainers = snap.Docker.Unhealthy + snap.Docker.Restarting
+	}
+	return h, nil
+}
+
+func savedChecks(rs *store.RunServer) []CheckResult {
+	var saved struct {
+		Checks []CheckResult `json:"checks"`
+	}
+	_ = rs.Detail.Decode(&saved)
+	return saved.Checks
+}
+
+func healthBefore(rs *store.RunServer) serviceHealth {
+	var saved struct {
+		HealthBefore serviceHealth `json:"healthBefore"`
+	}
+	_ = rs.Detail.Decode(&saved)
+	return saved.HealthBefore
+}
+
+// healthRegressed reports a failed unit or a rise in unhealthy containers
+// that was not already there. A status read that fails is itself a stop.
+func (s *Service) healthRegressed(ctx context.Context, ep remote.Endpoint, before serviceHealth) string {
+	after, err := s.readHealth(ctx, ep)
+	if err != nil {
+		return "status could not be read after the upgrade: " + err.Error()
+	}
+	return healthWorse(before, after)
+}
+
+func healthWorse(before, after serviceHealth) string {
+	had := map[string]bool{}
+	for _, u := range before.FailedUnits {
+		had[u] = true
+	}
+	var fresh []string
+	for _, u := range after.FailedUnits {
+		if !had[u] {
+			fresh = append(fresh, u)
+		}
+	}
+	if len(fresh) > 0 {
+		return "new failed units: " + strings.Join(fresh, ", ")
+	}
+	if after.BadContainers > before.BadContainers {
+		return fmt.Sprintf("unhealthy or restarting containers went from %d to %d", before.BadContainers, after.BadContainers)
+	}
+	return ""
 }
 
 // ---- Reboots ---------------------------------------------------------------------
@@ -420,18 +726,18 @@ func (s *Service) runReboot(ctx context.Context, run store.Run, rs *store.RunSer
 func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverID int64) error {
 	var before proto.Status
 	cctx, cancel := context.WithTimeout(ctx, pollTimeout)
-	err := s.pool.Call(cctx, ep, &before, "status")
+	err := s.maintenanceCall(cctx, ep, &before, "status")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("read status before reboot: %w", err)
 	}
 	var running []proto.Container
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	_ = s.pool.Call(cctx, ep, &running, "containers")
+	_ = s.maintenanceCall(cctx, ep, &running, "containers")
 	cancel()
 
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	err = s.pool.Call(cctx, ep, nil, "reboot")
+	err = s.maintenanceCall(cctx, ep, nil, "reboot")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("schedule reboot: %w", err)
@@ -450,7 +756,7 @@ func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverI
 		case <-time.After(15 * time.Second):
 		}
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := s.pool.Call(cctx, ep, &after, "status")
+		err := s.maintenanceCall(cctx, ep, &after, "status")
 		cancel()
 		if err != nil {
 			s.pool.Forget(serverID)
@@ -470,7 +776,7 @@ func (s *Service) rebootAndWait(ctx context.Context, ep remote.Endpoint, serverI
 	time.Sleep(20 * time.Second)
 	var now []proto.Container
 	cctx, cancel = context.WithTimeout(ctx, time.Minute)
-	err = s.pool.Call(cctx, ep, &now, "containers")
+	err = s.maintenanceCall(cctx, ep, &now, "containers")
 	cancel()
 	if err != nil {
 		return fmt.Errorf("list containers after reboot: %w", err)
@@ -521,28 +827,52 @@ func (s *Service) finishRun(ctx context.Context, runID int64) {
 	if err := s.db.WithContext(ctx).Preload("Servers").Preload("Servers.Server").Preload("Group").Where("id = ?", runID).Take(&run).Error; err != nil {
 		return
 	}
-	ok, failed, skipped, summary := runTally(RunKind(run.Kind), run.Servers)
-	status := "succeeded"
-	switch {
-	case failed > 0 && ok == 0:
-		status = "failed"
-	case failed > 0:
-		status = "partial"
-	case ok == 0 && skipped > 0:
-		status = "skipped"
-	}
+	ok, failed, _, summary := runTally(RunKind(run.Kind), run.Servers)
+	aborted := runAborted(run.Servers)
+	status := runOutcome(ok, failed, aborted)
 	now := s.now()
 	s.db.WithContext(ctx).Model(&store.Run{}).Where("id = ?", run.ID).Updates(map[string]any{"status": status, "summary": summary, "finished_at": now})
+	// A plan that started this run ends with the run's status.
+	s.db.WithContext(ctx).Model(&store.FixPlan{}).Where("run_id = ? AND status = ?", run.ID, "executing").
+		Updates(map[string]any{"status": status, "updated_at": now})
 	s.log.Info("run finished", "run_id", run.ID, "status", status, "summary", summary)
-	if failed > 0 {
+	if failed > 0 || aborted {
 		run.Status, run.Summary = status, summary
 		s.alertRunFailed(ctx, run)
 	}
 }
 
-// ResumeRuns handles runs left "running" by a previous process. Upgrades
-// keep running on the servers, so those are followed again and the run goes
-// on with its next batches; other runs are marked failed.
+// runAborted reports whether the rest of a run was stopped by a canary or a
+// watch. Those servers are skipped, which is not a successful run.
+func runAborted(servers []store.RunServer) bool {
+	for _, rs := range servers {
+		if rs.Status == "skipped" && strings.HasPrefix(rs.Error, "stopped") {
+			return true
+		}
+	}
+	return false
+}
+
+// runOutcome is the run status. A stop after a canary or a watch is failed
+// when nothing succeeded, and partial when a canary did.
+func runOutcome(ok, failed int, aborted bool) string {
+	switch {
+	case (failed > 0 || aborted) && ok == 0:
+		return "failed"
+	case failed > 0 || aborted:
+		return "partial"
+	case ok == 0:
+		return "skipped"
+	default:
+		return "succeeded"
+	}
+}
+
+// ResumeRuns handles runs left "running" when their worker is gone. It runs
+// at startup and every minute. Upgrades keep running on the servers, so
+// those are followed again and the run goes on with its next batches; other
+// runs are marked failed. A run whose worker still holds the lock is left
+// alone.
 func (s *Service) ResumeRuns(ctx context.Context) {
 	var runs []store.Run
 	if err := s.db.WithContext(ctx).Preload("Servers", byID).Preload("Servers.Server").Where("status = 'running'").Find(&runs).Error; err != nil {
@@ -550,35 +880,69 @@ func (s *Service) ResumeRuns(ctx context.Context) {
 		return
 	}
 	for _, run := range runs {
+		parent := s.baseCtx
+		if parent == nil {
+			parent = context.Background()
+		}
+		runCtx, stopOwnership := maintenanceContext(s.netCtx(parent))
+		lockCtx := context.WithValue(ctx, maintenanceOwnershipKey{}, ownershipFrom(runCtx))
+		unlock, ok := s.tryRunLock(lockCtx, run.ID)
+		if !ok {
+			stopOwnership()
+			s.log.Info("unfinished run is still held", "run_id", run.ID)
+			continue
+		}
 		if RunKind(run.Kind) != RunUpdate {
 			for i := range run.Servers {
 				if rs := &run.Servers[i]; rs.Status == "queued" || rs.Status == "running" {
-					s.setRunServer(ctx, rs, "failed", "interrupted: the control plane restarted", nil, 0)
+					s.setRunServer(ctx, rs, "failed", "interrupted: the worker that started this run is gone", nil, 0)
 				}
 			}
 			s.finishRun(ctx, run.ID)
+			unlock()
+			stopOwnership()
 			continue
 		}
 		run := run
-		s.background(func(ctx context.Context) {
+		s.background(func(_ context.Context) {
+			ctx := runCtx
+			defer stopOwnership()
+			defer unlock()
 			var opts RunOptions
 			_ = run.Options.Decode(&opts)
 			failed, running := resumeState(run.Servers)
-			// Every server still "running" belongs to the batch that was in
-			// flight. Their upgrades went on without us, so follow all of them
-			// before the next batch starts.
+			// A server still marked running may have been claimed before the
+			// upgrade was sent. If this server has no upgrade, queue it again
+			// and start it below. If it does, follow that upgrade. A connection
+			// error is not "no upgrade": followUpgrade retries it.
 			failed = append(failed, runBatch(ctx, running, func(ctx context.Context, i int) bool {
 				rs := &run.Servers[i]
+				unlockServer, busy := s.lockServer(ctx, rs.ServerID)
+				if unlockServer == nil {
+					s.setRunServer(ctx, rs, "failed", busy+"; the upgrade may still be running there", nil, 0)
+					return false
+				}
 				ep, err := s.endpoint(ctx, rs.Server)
 				if err != nil {
+					unlockServer()
 					s.setRunServer(ctx, rs, "failed", err.Error(), nil, 0)
 					return false
 				}
+				if s.upgradeNotStarted(ctx, ep, run.ID) {
+					unlockServer()
+					rs.Status = "queued"
+					s.db.WithContext(ctx).Model(&store.RunServer{}).Where("id = ?", rs.ID).Updates(map[string]any{"status": "queued", "error": ""})
+					return true
+				}
+				defer unlockServer()
 				return s.followUpgrade(ctx, run, rs, ep, opts)
 			})...)
 			s.batched(ctx, run.Servers, opts, failed, func(ctx context.Context, rs *store.RunServer) bool {
 				return s.runUpdate(ctx, run, rs, opts)
 			})
+			if ctx.Err() != nil {
+				return
+			}
 			s.finishRun(ctx, run.ID)
 		})
 	}
@@ -596,6 +960,17 @@ func resumeState(servers []store.RunServer) (failed, running []int) {
 		}
 	}
 	return failed, running
+}
+
+// upgradeNotStarted reports that this server has no upgrade for the run.
+// A connection error is not that: the upgrade may already be running.
+func (s *Service) upgradeNotStarted(ctx context.Context, ep remote.Endpoint, runID int64) bool {
+	var res proto.UpgradeResult
+	cctx, cancel := context.WithTimeout(ctx, time.Minute)
+	err := s.maintenanceCall(cctx, ep, &res, "upgrade-status", "--run-id", strconv.FormatInt(runID, 10))
+	cancel()
+	var he *remote.HelperError
+	return errors.As(err, &he) && he.Code == proto.CodeBadRequest && strings.Contains(he.Message, "no upgrade with run id")
 }
 
 func humanBytes(n int64) string {

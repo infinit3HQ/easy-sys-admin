@@ -43,6 +43,25 @@ func TestLimitRate(t *testing.T) {
 	}
 }
 
+func TestLimitRateIsSharedByTwoProcesses(t *testing.T) {
+	s := newTestService(t)
+	other := &Service{db: s.db, log: s.log}
+	a := Actor{AccountID: 1, Source: SourceWeb}
+	for i := range rateLimit {
+		caller := s
+		if i%2 == 1 {
+			caller = other
+		}
+		if err := caller.limitRate(a, "server.add"); err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	var conflict *ConflictError
+	if err := other.limitRate(a, "server.add"); !errors.As(err, &conflict) {
+		t.Fatalf("the second process was given its own quota: %v", err)
+	}
+}
+
 func TestNetErrorText(t *testing.T) {
 	blocked := netguard.Check(netip.MustParseAddr("169.254.169.254"), true)
 	cases := map[error]string{

@@ -96,6 +96,36 @@ export const q = {
           }),
         ),
     }),
+  recovery: (id: number) =>
+    queryOptions({
+      queryKey: ['recovery', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/recovery', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
+  scan: (id: number) =>
+    queryOptions({
+      queryKey: ['scan', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/scan', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
+  advisories: (id: number) =>
+    queryOptions({
+      queryKey: ['advisories', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/advisories', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
   jobs: (id: number) =>
     queryOptions({
       queryKey: ['jobs', id],
@@ -135,6 +165,85 @@ export const q = {
         call(api().GET('/runs/{runId}', { params: { path: { runId: id } } })),
       refetchInterval: (query) =>
         query.state.data?.status === 'running' ? 3000 : false,
+    }),
+  plans: () =>
+    queryOptions({
+      queryKey: ['plans'],
+      queryFn: () => call(api().GET('/plans')),
+      refetchInterval: LIVE,
+    }),
+  datasets: () =>
+    queryOptions({
+      queryKey: ['datasets'],
+      queryFn: () => call(api().GET('/datasets')),
+    }),
+  evidence: () =>
+    queryOptions({
+      queryKey: ['evidence'],
+      queryFn: () => call(api().GET('/evidence')),
+    }),
+  keyExceptions: (id: number) =>
+    queryOptions({
+      queryKey: ['key-exceptions', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/key-exceptions', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+    }),
+  keys: () =>
+    queryOptions({
+      queryKey: ['keys'],
+      queryFn: () => call(api().GET('/keys')),
+    }),
+  identities: () =>
+    queryOptions({
+      queryKey: ['keys', 'identities'],
+      queryFn: () => call(api().GET('/identities')),
+    }),
+  offboarding: (label: string) =>
+    queryOptions({
+      queryKey: ['keys', 'offboarding', label],
+      queryFn: () =>
+        call(api().GET('/offboarding', { params: { query: { label } } })),
+    }),
+  maintenance: () =>
+    queryOptions({
+      queryKey: ['maintenance'],
+      queryFn: () => call(api().GET('/maintenance')),
+    }),
+  routing: () =>
+    queryOptions({
+      queryKey: ['routing'],
+      queryFn: () => call(api().GET('/alerts/routing')),
+    }),
+  deliveries: (failed = false) =>
+    queryOptions({
+      queryKey: ['deliveries', failed],
+      queryFn: () =>
+        call(api().GET('/deliveries', { params: { query: { failed } } })),
+      refetchInterval: LIVE,
+    }),
+  incident: (id: number) =>
+    queryOptions({
+      queryKey: ['incidents', 'one', id],
+      queryFn: () =>
+        call(
+          api().GET('/incidents/{incidentId}', {
+            params: { path: { incidentId: id } },
+          }),
+        ),
+    }),
+  incidents: (includeAcknowledged = false) =>
+    queryOptions({
+      queryKey: ['incidents', includeAcknowledged],
+      queryFn: () =>
+        call(
+          api().GET('/incidents', {
+            params: { query: { includeAcknowledged } },
+          }),
+        ),
     }),
   alerts: (all = false) =>
     queryOptions({
@@ -178,6 +287,17 @@ export const q = {
     queryOptions({
       queryKey: ['org'],
       queryFn: () => call(api().GET('/org')),
+    }),
+  reachability: (id: number) =>
+    queryOptions({
+      queryKey: ['reachability', id],
+      queryFn: () =>
+        call(
+          api().GET('/servers/{serverId}/reachability', {
+            params: { path: { serverId: id } },
+          }),
+        ),
+      refetchInterval: 15000,
     }),
   members: () =>
     queryOptions({

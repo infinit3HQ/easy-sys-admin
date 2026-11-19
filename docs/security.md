@@ -23,9 +23,11 @@ A sealed value looks like `v1:<key id>:<base64 of nonce and ciphertext>`. The ke
 `ESA_MASTER_KEY` takes a comma-separated list. The first key seals new secrets. Every key in the list can open existing ones.
 
 1. Generate a new key.
-2. Set `ESA_MASTER_KEY=<new>,<old>` and restart the control plane.
+2. Set `ESA_MASTER_KEY=<new>,<old>` and stop the control plane.
+3. Run `esa reseal`. `--dry-run` counts rows and writes nothing.
+4. When the command says live rows are sealed with the current key, remove `<old>` from `ESA_MASTER_KEY` and start the control plane again.
 
-There is no command that re-seals existing secrets with the new key. A secret stays sealed with the key it was written with until the row is written again, and account SSH keys are never rewritten. Keep the old key in the list. If you remove a key that still seals a secret, opening that secret fails with "key <id> is not configured", and esa can no longer reach the servers of that account.
+A row that cannot be opened is left unchanged, and the command exits with an error so the old key stays until you fix that row. Running it again is safe. A database backup taken before the re-seal still needs the old key. This does not rotate the SSH key on a server, and it does not prove an old copy of the key was destroyed. It is not tied to one user, one organization, or a maintenance plan. There is no API or MCP call for it, because one re-seal rewrites sealed secrets for every account on this control plane.
 
 ### Hashed tokens
 
@@ -43,12 +45,12 @@ These are stored only as a SHA-256 hash, so a copy of the database does not reve
 
 Sign-in methods are set with environment variables (`apps/esa/internal/config/config.go`). Any combination can be on, and at least one must be.
 
-| Method             | Settings                                                                                    | Notes                                                                                                                                                               |
-| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Method             | Settings                                                                                    | Notes                                                                                                                                                                                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Email and password | `ESA_AUTH_PASSWORD` (default `true`), `ESA_SIGNUP` (default `false`), optional `ESA_SMTP_*` | Passwords are 10 to 200 characters, hashed with argon2id (19 MiB, 2 iterations, 1 lane, 16-byte salt). With SMTP configured, a password account cannot sign in until it opens the confirmation link. Google sign-in does not send or require that link. |
-| OpenID Connect     | `ESA_OIDC_ISSUER`, `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`, `ESA_OIDC_PROVIDER_NAME` | Authorization code flow with PKCE (S256), with state and nonce checked. An email is stored only when the provider says `email_verified` is true.                    |
-| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`. The user is stored with the email marked confirmed.                                                       |
-| Dev mode           | `ESA_AUTH_MODE=dev`                                                                         | Signs everyone in as one local user. Refused unless `ESA_LISTEN` and `ESA_PUBLIC_URL` are loopback addresses, and `/auth/dev-login` only answers loopback requests. |
+| OpenID Connect     | `ESA_OIDC_ISSUER`, `ESA_OIDC_CLIENT_ID`, `ESA_OIDC_CLIENT_SECRET`, `ESA_OIDC_PROVIDER_NAME` | Authorization code flow with PKCE (S256), with state and nonce checked. An email is stored only when the provider says `email_verified` is true.                                                                                                        |
+| Google             | `ESA_GOOGLE_CLIENT_ID`, `ESA_GOOGLE_CLIENT_SECRET`                                          | The same OIDC flow against `https://accounts.google.com`. The user is stored with the email marked confirmed.                                                                                                                                           |
+| Dev mode           | `ESA_AUTH_MODE=dev`                                                                         | Signs everyone in as one local user. Refused unless `ESA_LISTEN` and `ESA_PUBLIC_URL` are loopback addresses, and `/auth/dev-login` only answers loopback requests.                                                                                     |
 
 More rules:
 
@@ -93,6 +95,12 @@ API tokens are for the CLI and MCP clients (`apps/esa/internal/fleet/tokens.go`)
 
 The MCP server at `/mcp` runs in the web app (`apps/web/src/server/mcp.ts`). It has no access of its own. Every tool calls the control plane API with the caller's API token, so an agent can do what that token and its user's role allow and nothing more. Calls are recorded in the audit log with source `mcp`.
 
+### Plans
+
+A group can require an approved plan (`apps/esa/internal/fleet/plans.go`). Then every clean and update on it must come from a plan, including scheduled runs, so the group's cleanup and update schedules must be off. A token with `actions` and without `logs:read` can propose and execute a plan. Only a person signed in to the web app, with the admin role, can approve or reject one. An approval lasts 30 minutes and covers the servers and pending packages recorded when the plan was proposed; a change to either cancels it. A plan run keeps the group's held packages, and the helper installs only the approved packages: if apt would also upgrade anything else, it installs nothing and the server fails. A plan update is refused on a helper too old to do that.
+
+A token, even with the `admin` scope, cannot weaken the rule. Turning off "Require an approved plan", deleting such a group, and moving a server out of it (to no group or to a group without the rule) need a person in the web app. The `group.update` audit entry records the rule before and after, the held packages, and the check names.
+
 Before handling a request, `/mcp`:
 
 1. Refuses with 403 any request whose `Origin` header is set and differs from the origin of `ESA_PUBLIC_URL` (or the request's own origin when that is unset). Browsers send `Origin`, so a page on another site cannot drive the endpoint with a token the browser holds.
@@ -130,14 +138,15 @@ The tools a client sees depend on the token's scopes:
 
 ## Request limits
 
-| Limit                                                                                                      | Where                                                     |
-| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Bodies over 1 MiB get 413, judged by `Content-Length`                                                      | Web proxy, `apps/web/src/server/proxy.ts`                 |
-| Bodies for `/api/`, `/auth/`, and `/enroll/` are read up to 1 MiB, chunked or not, and get 413 beyond that | `limitBodies` in `apps/esa/internal/server/middleware.go` |
-| The enroll host key report is read up to 16 KiB                                                            | `apps/esa/internal/api/enroll.go`                         |
-| Header read 10 s, body read 60 s, response write 10 min, idle 120 s                                        | Control plane HTTP server                                 |
-| 60 s per proxied call, 11 min for server, certificate, and enroll calls                                    | Web proxy                                                 |
-| API tokens over 200 characters and enroll tokens over 100 are rejected without a lookup                    | `fleet`                                                   |
+| Limit                                                                                                                | Where                                                            |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Bodies over 1 MiB get 413, judged by `Content-Length`                                                                | Web proxy, `apps/web/src/server/proxy.ts`                        |
+| Bodies for `/api/`, `/auth/`, and `/enroll/` are read up to 1 MiB, chunked or not, and get 413 beyond that           | `limitBodies` in `apps/esa/internal/server/middleware.go`        |
+| A scan report imported at `POST /api/v1/servers/{id}/scan` may be up to 10 MiB; every other body keeps the 1 MiB cap | `bodyLimit` in `middleware.go`, `SCAN_IMPORT_PATH` in `proxy.ts` |
+| The enroll host key report is read up to 16 KiB                                                                      | `apps/esa/internal/api/enroll.go`                                |
+| Header read 10 s, body read 60 s, response write 10 min, idle 120 s                                                  | Control plane HTTP server                                        |
+| 60 s per proxied call, 11 min for server, certificate, and enroll calls                                              | Web proxy                                                        |
+| API tokens over 200 characters and enroll tokens over 100 are rejected without a lookup                              | `fleet`                                                          |
 
 The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `x-esa-client`, `x-forwarded-host`, `x-forwarded-proto`). Sign-in rate limits use the rightmost `X-Forwarded-For` entry, which Traefik appends. If the control plane is ever reachable without Traefik in front, clients can choose that value, and only the per-email and global limits still hold.
 
@@ -145,13 +154,16 @@ The proxy also strips headers a client must not set (`x-real-ip`, `forwarded`, `
 
 ### Rate limits
 
-| What                                                                                                                                             | Limit                                      | Source                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | -------------------------------------------------------- |
-| Password sign-in, per email and client address                                                                                                   | 5 failures per 15 minutes                  | `apps/esa/internal/auth/limiter.go`                      |
-| Password sign-in, per email                                                                                                                      | 100 failures per 15 minutes                | same                                                     |
-| Password sign-in, per client address                                                                                                             | 30 failures per 15 minutes                 | same                                                     |
-| Password sign-in, whole install                                                                                                                  | 1000 failures per 15 minutes               | same                                                     |
-| Password sign-up, per client address                                                                                                             | 10 attempts per hour, successful or not    | `apps/esa/internal/auth/handlers.go`                     |
+| What                                                                                                                                                                              | Limit                                      | Source                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------- |
+| Password sign-in, per email and client address                                                                                                                                    | 5 failures per 15 minutes                  | shared rows in PostgreSQL (`sign_in_hits`)               |
+| Password sign-in, per email                                                                                                                                                       | 100 failures per 15 minutes                | same                                                     |
+| Password sign-in, per client address                                                                                                                                              | 30 failures per 15 minutes                 | same                                                     |
+| Password sign-in, whole install                                                                                                                                                   | 1000 failures per 15 minutes               | same                                                     |
+| Password sign-up, per client address                                                                                                                                              | 10 attempts per hour, successful or not    | shared rows in PostgreSQL (`sign_in_hits`)               |
+| Confirmation or reset mail, per address                                                                                                                                           | 3 an hour, including sends that fail       | same                                                     |
+| Confirmation or reset mail, per client address                                                                                                                                    | 10 an hour                                 | same                                                     |
+| Confirmation or reset link submission, per client address                                                                                                                         | 20 an hour                                 | same                                                     |
 | Probing a host key, adding a server, reinstalling a helper, adding a certificate, testing a channel, creating an organization, creating an extra team, an invite, or a share link | 20 per minute per account, for each action | `limitRate` in `apps/esa/internal/fleet/limits_state.go` |
 
 A successful sign-in clears the per-pair and per-email counters only. The per-client and global budgets stay, so signing in to your own account does not buy more guesses at others. Scheduled work done by the system is not rate limited.
@@ -163,18 +175,18 @@ Two more limits protect the servers and the control plane:
 
 ### Caps
 
-| Item                              | Cap                                                  | Source                  |
-| --------------------------------- | ---------------------------------------------------- | ----------------------- |
+| Item                              | Cap                                                                                   | Source                  |
+| --------------------------------- | ------------------------------------------------------------------------------------- | ----------------------- |
 | Servers per account               | 500 by default, set by `ESA_MAX_SERVERS_PER_ACCOUNT`. 10 when `ESA_BETA_LIMITS` is on | `fleet/limits_state.go` |
-| Certificates per account          | 200                                                  | same                    |
-| Notification channels per account | 25                                                   | same                    |
-| Organizations a user may own      | 20, or 1 when `ESA_BETA_LIMITS` is on. The personal space is not counted | `fleet/teams.go`        |
-| Members per organization          | 100                                                  | same                    |
-| Pending invites per organization  | 50                                                   | same                    |
-| Extra teams per organization      | 100                                                  | `fleet/orgteams.go`     |
-| Groups per extra team             | 200                                                  | same                    |
-| Shares per group                  | 50                                                   | `fleet/sharing.go`      |
-| Pending share links per group     | 50                                                   | same                    |
+| Certificates per account          | 200                                                                                   | same                    |
+| Notification channels per account | 25                                                                                    | same                    |
+| Organizations a user may own      | 20, or 1 when `ESA_BETA_LIMITS` is on. The personal space is not counted              | `fleet/teams.go`        |
+| Members per organization          | 100                                                                                   | same                    |
+| Pending invites per organization  | 50                                                                                    | same                    |
+| Extra teams per organization      | 100                                                                                   | `fleet/orgteams.go`     |
+| Groups per extra team             | 200                                                                                   | same                    |
+| Shares per group                  | 50                                                                                    | `fleet/sharing.go`      |
+| Pending share links per group     | 50                                                                                    | same                    |
 
 ## Security headers
 
@@ -227,13 +239,13 @@ The `audit_log` table records who did what. Each entry has the account, the user
 
 Recorded actions include:
 
-| Area                 | Actions                                                                                                                                                                                                                                     |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`, `org.create`, `org.rename`, `org.rename_team`, `org.delete`                                                                                                      |
-| Servers              | `server.probe`, `server.add`, `server.enroll_start`, `server.enroll_token`, `server.enroll_complete`, `server.update`, `server.delete`, `server.reinstall_helper`, `server.accept_host_key`, `server.host_key_mismatch`, `server.read_logs` |
-| Operations           | `run.start`, `service.<action>`, `container.<action>`, `container.update`                                                                                                                                                                   |
-| Settings             | `group.*`, `alert_rule.update`, `channel.*`, `cert.add`, `cert.delete`, `token.create`, `token.revoke`                                                                                                                                      |
-| Teams and sharing    | `team.create`, `team.update`, `team.delete`, `team.add_member`, `team.remove_member`, `member.role`, `member.remove`, `member.leave`, `invite.create`, `invite.revoke`, `invite.accept`, `share.link_create`, `share.link_revoke`, `share.accept`, `share.update`, `share.remove` |
+| Area                 | Actions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-in and accounts | `auth.sign_in`, `auth.sign_up`, `account.create`, `session.switch_account`, `org.create`, `org.rename`, `org.rename_team`, `org.delete`                                                                                                                                                                                                                                                                                                                                                     |
+| Servers              | `server.probe`, `server.add`, `server.enroll_start`, `server.enroll_token`, `server.enroll_complete`, `server.update`, `server.delete`, `server.reinstall_helper`, `server.accept_host_key`, `server.host_key_mismatch`, `server.read_logs`, `server.exposure`                                                                                                                                                                                                                              |
+| Operations           | `run.start`, `service.<action>`, `container.<action>`, `container.update`, `plan.propose`, `plan.approve`, `plan.reject`, `plan.execute`, `plan.invalidate`, `plan.cancel`                                                                                                                                                                                                                                                                                                                  |
+| Settings             | `group.*`, `alert_rule.update`, `channel.*`, `cert.add`, `cert.delete`, `token.create`, `token.revoke`, `digest.sent`, `incident.acknowledge`, `incident.snooze`, `incident.accept`, `routing.update`, `delivery.retry`, `identity.save`, `run.gate`, `key.label`, `key.baseline`, `access.baseline`, `key.exception`, `key.exception.delete`, `maintenance.create`, `maintenance.delete`, `dataset.create`, `dataset.delete`, `recovery.submit`, `vuln.exception`, `vuln.exception.delete` |
+| Teams and sharing    | `team.create`, `team.update`, `team.delete`, `team.add_member`, `team.remove_member`, `member.role`, `member.remove`, `member.leave`, `invite.create`, `invite.revoke`, `invite.accept`, `share.link_create`, `share.link_revoke`, `share.accept`, `share.update`, `share.remove`                                                                                                                                                                                                           |
 
 When someone acts on a server through a share, the entry goes to the owning account with `via_account_id`, and a copy goes to the caller's account with `owner_account_id`. Reading logs is recorded too, because logs can hold secrets.
 
@@ -242,3 +254,17 @@ Owners and admins read the log on the Activity page or through `GET /api/v1/acti
 ## Reporting a vulnerability
 
 Please do not open a public issue for a security problem. Open a private security advisory on the GitHub repository instead (the Security tab, then "Report a vulnerability"). Include what you found, how to reproduce it, and which version or commit you tested.
+
+## Notice assignment and plan approvals
+
+An admin can assign a notice to one current member of its owning space or leave it unassigned. Assignment grants no access and does not resolve the notice. Removing the member clears their assignments and records the change in notice history. A viewer of a shared server does not see the owner's assignee names. Assignment needs the admin token scope as well as the owning-space admin role.
+
+A group can require two distinct current admins to approve its maintenance plans. Add the second admin before enabling this setting. Both approvals need a recent browser sign-in. The first approval expires after 30 minutes; the second does not extend it. Removing or demoting an approver prevents execution. A token cannot approve a plan or lower this requirement. There is no emergency bypass.
+
+Critical exposure, changed host keys, new SSH keys, known-exploited advisories, and changes from an approved access baseline cannot be snoozed or accepted as a risk. They can still be reviewed with a note.
+
+## Outbound credentials
+
+An outbound credential grants only one server's command polling and result delivery. User tokens cannot create it; a current space admin needs a browser sign-in within 15 minutes. Tokens expire after 365 days. Rotation and revocation invalidate the previous generation and cancel queued work atomically. A command already dispatched can finish. Credentials never appear in URLs or audit details. The agent never runs arbitrary programs, follows redirects, or opens an inbound listener. Its helper has the same safety limits as SSH. See [outbound-agent.md](outbound-agent.md) for delivery and failure rules.
+
+A token cannot move a server to a group with fewer required approvals. Database guards also refuse that move or a protected-group deletion by an older control plane. Current browser writes mark their transaction only after the permission checks. A person can still move the server or delete its group. Token group updates also check the current database policy when saving, so a concurrent policy increase cannot be overwritten by an older read.

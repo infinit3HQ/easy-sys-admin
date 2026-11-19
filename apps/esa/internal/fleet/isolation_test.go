@@ -26,7 +26,8 @@ func newTestService(t *testing.T) *Service {
 	if dsn == "" {
 		t.Skip("set ESA_TEST_DATABASE_URL to a disposable PostgreSQL database to run this test")
 	}
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	st, err := store.Open(ctx, dsn, log)
 	if err != nil {
@@ -41,8 +42,10 @@ func newTestService(t *testing.T) *Service {
 	}
 	box, _ := crypto.NewBox(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
 	u, _ := url.Parse("http://localhost:3000")
-	return New(ctx, Deps{Store: st, Box: box, Pool: remote.NewPool(), PublicURL: u, Logger: log,
+	s := New(ctx, Deps{Store: st, Box: box, Pool: remote.NewPool(), PublicURL: u, Logger: log,
 		Helpers: func(string) ([]byte, error) { return nil, errors.New("no helpers in tests") }})
+	t.Cleanup(func() { cancel(); s.Wait(); s.pool.Close() })
+	return s
 }
 
 func signIn(t *testing.T, s *Service, subject string) Actor {

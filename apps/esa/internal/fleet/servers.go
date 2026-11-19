@@ -11,20 +11,25 @@ import (
 // ServerView is a server with its latest state, as the front doors show it.
 // It never contains credentials.
 type ServerView struct {
-	ID                  int64
-	Name                string
-	Host                string
-	Port                int
-	Username            string
-	GroupID             *int64
-	GroupName           string
-	Enrollment          string
-	HostKeyFingerprint  string
-	HelperVersion       string
+	Connection         string
+	ID                 int64
+	Name               string
+	Host               string
+	Port               int
+	Username           string
+	GroupID            *int64
+	GroupName          string
+	Enrollment         string
+	HostKeyFingerprint string
+	HelperVersion      string
+	// HelperMissing are the actions a reinstall would add.
+	HelperMissing       []string
+	HelperCheckedAt     *time.Time
 	Arch                string
 	HostsControlPlane   bool
 	ProtectedContainers []string
 	HasStoredLogin      bool
+	Note                string
 	CreatedAt           time.Time
 	// Access is own for the actor's servers, or the share's access.
 	Access Access
@@ -43,6 +48,7 @@ type ServerView struct {
 	Snapshot             *proto.Status
 	Updates              *proto.PendingUpdates
 	UpdatesAt            *time.Time
+	Exposure             *Exposure
 }
 
 // Totals are the counts shown above the overview table.
@@ -198,11 +204,12 @@ func deref[T any](p *T) T {
 
 func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 	v := ServerView{
-		ID: srv.ID, Name: srv.Name, Host: srv.Host, Port: srv.Port, Username: srv.Username,
+		Connection: srv.Connection, ID: srv.ID, Name: srv.Name, Host: srv.Host, Port: srv.Port, Username: srv.Username,
 		GroupID: srv.GroupID, Enrollment: srv.Enrollment, HostKeyFingerprint: srv.HostKeyFingerprint,
 		HelperVersion: srv.HelperVersion, Arch: srv.Arch, HostsControlPlane: srv.HostsControlPlane,
-		HasStoredLogin: hasLogin, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},
+		HasStoredLogin: hasLogin, Note: srv.Note, CreatedAt: srv.CreatedAt, ProtectedContainers: []string{},
 		Status: StatusPending, Reasons: []string{},
+		HelperMissing: proto.Missing(storedCapabilities(srv)), HelperCheckedAt: srv.HelperCheckedAt,
 	}
 	_ = srv.ProtectedContainers.Decode(&v.ProtectedContainers)
 	if srv.Group != nil {
@@ -224,6 +231,20 @@ func toView(srv store.Server, st store.ServerState, hasLogin bool) ServerView {
 		var snap proto.Status
 		if st.Snapshot.Decode(&snap) == nil {
 			v.Snapshot = &snap
+		}
+	}
+	if len(st.Exposure) > 0 {
+		var ex Exposure
+		if st.Exposure.Decode(&ex) == nil && !ex.CheckedAt.IsZero() {
+			if len(ex.ListeningOnAllInterfaces) == 0 {
+				ex.ListeningOnAllInterfaces = ex.PublicPorts
+			}
+			if st.ExposureAt != nil {
+				ex.AttemptedAt = *st.ExposureAt
+			} else {
+				ex.AttemptedAt = ex.CheckedAt
+			}
+			v.Exposure = &ex
 		}
 	}
 	if len(st.Updates) > 0 {

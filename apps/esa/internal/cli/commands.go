@@ -21,7 +21,7 @@ var jsonOut bool
 
 func addClientCommands(root *cobra.Command) {
 	root.PersistentFlags().BoolVar(&jsonOut, "json", false, "print JSON instead of tables")
-	root.AddCommand(loginCmd(), logoutCmd(), statusCmd(), serversCmd(), groupsCmd(), runsCmd(), alertsCmd())
+	root.AddCommand(loginCmd(), logoutCmd(), statusCmd(), serversCmd(), groupsCmd(), runsCmd(), plansCmd(), alertsCmd())
 }
 
 func printJSON(v any) error {
@@ -169,6 +169,8 @@ func findServer(ctx context.Context, ref string) (apiclient.Server, error) {
 
 func serversCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "servers", Short: "List and inspect servers"}
+	cmd.AddCommand(scanCommands()...)
+	cmd.AddCommand(probeCommand())
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List servers",
@@ -188,7 +190,11 @@ func serversCmd() *cobra.Command {
 				if s.LastSeenAt != nil {
 					seen = time.Since(*s.LastSeenAt).Round(time.Second).String() + " ago"
 				}
-				fmt.Fprintf(w, "%d\t%s\t%s:%d\t%s\t%s\t%s\n", s.Id, s.Name, s.Host, s.Port, s.Status, s.HelperVersion, seen)
+				address := fmt.Sprintf("%s:%d", s.Host, s.Port)
+				if s.Connection != nil && string(*s.Connection) == "outbound" {
+					address = "outbound HTTPS"
+				}
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", s.Id, s.Name, address, s.Status, s.HelperVersion, seen)
 			}
 			return w.Flush()
 		},
@@ -216,7 +222,11 @@ func serversCmd() *cobra.Command {
 			if jsonOut {
 				return printJSON(d)
 			}
-			fmt.Printf("%s  %s:%d  %s\n", d.Server.Name, d.Server.Host, d.Server.Port, d.Server.Status)
+			address := fmt.Sprintf("%s:%d", d.Server.Host, d.Server.Port)
+			if d.Server.Connection != nil && string(*d.Server.Connection) == "outbound" {
+				address = "outbound HTTPS"
+			}
+			fmt.Printf("%s  %s  %s\n", d.Server.Name, address, d.Server.Status)
 			for _, why := range d.Server.Reasons {
 				fmt.Println("  -", why)
 			}

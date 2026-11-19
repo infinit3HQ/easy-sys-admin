@@ -43,6 +43,13 @@ type Group struct {
 	// stop the run. Reboot runs use them too.
 	UpdateBatchSize   int `gorm:"not null;default:1"`
 	UpdateMaxFailures int `gorm:"not null;default:1"`
+	// HealthChecks run before and after a package upgrade. A blocking
+	// failure stops that server. The list is frozen onto the run.
+	HealthChecks JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	// PlanRequired makes an interactive update or cleanup wait for an
+	// approved plan. A schedule still runs.
+	PlanRequired bool `gorm:"not null;default:false"`
+	TwoApprovers bool `gorm:"not null;default:false;check:groups_two_approvers_plan_required,NOT two_approvers OR plan_required"`
 
 	// Last schedule slot each job claimed, so a slot runs once.
 	CleanSlotAt  *time.Time
@@ -56,12 +63,13 @@ type Group struct {
 
 // Server is one managed machine.
 type Server struct {
-	ID        int64  `gorm:"primaryKey"`
-	AccountID int64  `gorm:"not null;index;uniqueIndex:servers_account_name_key,priority:1"`
-	GroupID   *int64 `gorm:"index"`
-	Name      string `gorm:"not null;size:100;uniqueIndex:servers_account_name_key,priority:2"`
-	Host      string `gorm:"not null"`
-	Port      int    `gorm:"not null;default:22"`
+	ID         int64  `gorm:"primaryKey"`
+	AccountID  int64  `gorm:"not null;index;uniqueIndex:servers_account_name_key,priority:1"`
+	GroupID    *int64 `gorm:"index"`
+	Name       string `gorm:"not null;size:100;uniqueIndex:servers_account_name_key,priority:2"`
+	Host       string `gorm:"not null"`
+	Connection string `gorm:"not null;default:'ssh';check:servers_connection_check,connection IN ('ssh','outbound')"`
+	Port       int    `gorm:"not null;default:22"`
 	// Username is the SSH user for normal operation, "esa" once installed.
 	Username string `gorm:"not null;default:'esa'"`
 
@@ -74,19 +82,129 @@ type Server struct {
 	HostKeyAcceptedAt  *time.Time
 
 	HelperVersion string `gorm:"not null;default:''"`
-	Arch          string `gorm:"not null;default:''"`
+	// HelperProtocol and HelperCapabilities are what `esa-helper version`
+	// reported at HelperCheckedAt. Null capabilities mean an older helper
+	// that does not list them; nil HelperCheckedAt means never asked.
+	HelperProtocol     int  `gorm:"not null;default:0"`
+	HelperCapabilities JSON `gorm:"type:jsonb"`
+	HelperCheckedAt    *time.Time
+	Arch               string `gorm:"not null;default:''"`
 
 	// HostsControlPlane marks the server esa itself runs on. It is never
 	// rebooted by a schedule.
 	HostsControlPlane bool `gorm:"not null;default:false"`
 	// ProtectedContainers are name prefixes; empty means the defaults.
 	ProtectedContainers JSON `gorm:"type:jsonb;not null;default:'[]'"`
+	// Note is a short reminder kept in the control plane. It is never sent to the server.
+	Note string `gorm:"not null;default:''"`
+
+	// LastScanAttemptAt rotates the automatic scan budget across unreachable servers.
+	LastScanAttemptAt *time.Time
 
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`
 
 	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 	Group   *Group  `gorm:"constraint:OnDelete:SET NULL"`
+}
+
+// KeyOccurrence is one authorized key seen on one login of one server.
+// It is only what the helper read from the standard authorized_keys files.
+type KeyOccurrence struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;index"`
+	ServerID    int64     `gorm:"not null;uniqueIndex:key_occurrences_place,priority:1"`
+	User        string    `gorm:"not null;size:64;uniqueIndex:key_occurrences_place,priority:2"`
+	Fingerprint string    `gorm:"not null;size:100;uniqueIndex:key_occurrences_place,priority:3"`
+	KeyType     string    `gorm:"not null;default:''"`
+	Comment     string    `gorm:"not null;default:''"`
+	From        string    `gorm:"not null;default:''"`
+	HasCommand  bool      `gorm:"not null;default:false"`
+	ObservedAt  time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyLabel is the name an operator gives a fingerprint in one space.
+type KeyLabel struct {
+	AccountID   int64     `gorm:"primaryKey"`
+	Fingerprint string    `gorm:"primaryKey;size:100"`
+	Label       string    `gorm:"not null;size:80"`
+	UpdatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// AccessIdentity is who a key label stands for: a person, a service, or a
+// key several people share. A label with no row is an active person. The
+// name is the label on KeyLabel rows; ownership is an operator's
+// statement, not proof of identity.
+type AccessIdentity struct {
+	ID        int64     `gorm:"primaryKey"`
+	AccountID int64     `gorm:"not null;uniqueIndex:access_identities_name,priority:1"`
+	Name      string    `gorm:"not null;size:80;uniqueIndex:access_identities_name,priority:2"`
+	Kind      string    `gorm:"not null;default:'person';check:access_identities_kind_check,kind IN ('person','service','shared')"`
+	Status    string    `gorm:"not null;default:'active';check:access_identities_status_check,status IN ('active','leaving','left')"`
+	Note      string    `gorm:"not null;default:''"`
+	UpdatedAt time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyBaselineVersion is one approval of a server's keys. KeyBaseline holds
+// the current one; these rows keep every earlier approval and why.
+type KeyBaselineVersion struct {
+	ID         int64     `gorm:"primaryKey"`
+	ServerID   int64     `gorm:"not null;uniqueIndex:key_baseline_versions_server,priority:1"`
+	Version    int       `gorm:"not null;uniqueIndex:key_baseline_versions_server,priority:2"`
+	AccountID  int64     `gorm:"not null;index"`
+	Items      JSON      `gorm:"type:jsonb;not null"`
+	Reason     string    `gorm:"not null;default:''"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyBaseline is the approved set of keys on one server. Later scans do not
+// change it. Drift is reported, not applied.
+type KeyBaseline struct {
+	ServerID   int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	Items      JSON      `gorm:"type:jsonb;not null"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// AccessBaseline is the approved accounts, sudo rules, and SSH settings.
+// It does not remove a login and does not mean access was changed.
+type AccessBaseline struct {
+	ServerID   int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	Facts      JSON      `gorm:"type:jsonb;not null"`
+	Reason     string    `gorm:"not null;size:200"`
+	ApprovedAt time.Time `gorm:"not null"`
+	ApprovedBy int64     `gorm:"not null"`
+
+	Server Server `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// MaintenanceWindow suppresses ordinary notifications. Collection still runs.
+// host_key, new_key, known-exploited, and approved-access changes are not suppressed.
+type MaintenanceWindow struct {
+	ID        int64 `gorm:"primaryKey"`
+	AccountID int64 `gorm:"not null;index"`
+	GroupID   *int64
+	ServerID  *int64
+	Reason    string    `gorm:"not null"`
+	StartsAt  time.Time `gorm:"not null"`
+	EndsAt    time.Time `gorm:"not null"`
+	CreatedBy int64     `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
 }
 
 // ServerCredential is a login kept for a server, only when the user chose
@@ -127,11 +245,31 @@ type ServerState struct {
 	LastAttemptAt *time.Time
 	LastError     string `gorm:"not null;default:''"`
 	MissedPolls   int    `gorm:"not null;default:0"`
+	// AuthFailures counts consecutive SSH authentication failures. It is
+	// stored so a restarted control plane does not try the login again at once.
+	AuthFailures int `gorm:"not null;default:0"`
+	// NextPollAt is the earliest time a scheduled poll may try this server.
+	NextPollAt *time.Time
 	// HostKeyMismatch is set when the server presented a different key.
 	// Every operation stops until a person accepts the new key.
 	HostKeyMismatch  bool   `gorm:"not null;default:false"`
 	PresentedHostKey string `gorm:"not null;default:''"`
-	UpdatedAt        time.Time
+	// Exposure is the board summary: public ports and a few flags.
+	// It is not the user list. ExposureAt is when it was last attempted.
+	Exposure   JSON `gorm:"type:jsonb"`
+	ExposureAt *time.Time
+	// ImagesRead is true when a local Docker image list was stored.
+	// ImageDigests are the registry digests from that list. A tag is not stored
+	// as an identity. An unread list is not an empty one.
+	ImagesRead   bool `gorm:"not null;default:false"`
+	ImageDigests JSON `gorm:"type:jsonb"`
+	// AccessFacts is the last complete-enough access check: SSH settings,
+	// login accounts without their keys, and sudo rules. It is not a baseline
+	// until someone approves it.
+	AccessFacts JSON `gorm:"type:jsonb"`
+	// SecuritySeen maps a pending security package to when it was first seen.
+	SecuritySeen JSON `gorm:"type:jsonb"`
+	UpdatedAt    time.Time
 
 	Server Server `gorm:"constraint:OnDelete:CASCADE"`
 }
@@ -165,3 +303,21 @@ type MetricHourly struct {
 
 // TableName keeps the plural readable.
 func (MetricHourly) TableName() string { return "metric_hourly" }
+
+// ProbeObservation is an operator-run TCP probe's latest attempt and last
+// complete result. Unknown attempts never erase complete evidence.
+type ProbeObservation struct {
+	ID             int64     `gorm:"primaryKey"`
+	AccountID      int64     `gorm:"not null;uniqueIndex:probe_observations_key,priority:1"`
+	ServerID       int64     `gorm:"not null;uniqueIndex:probe_observations_key,priority:2"`
+	Source         string    `gorm:"not null;size:40;uniqueIndex:probe_observations_key,priority:3"`
+	Port           int       `gorm:"not null;uniqueIndex:probe_observations_key,priority:4"`
+	Host           string    `gorm:"not null"`
+	State          string    `gorm:"not null"`
+	Reason         string    `gorm:"not null"`
+	AttemptedAt    time.Time `gorm:"not null"`
+	LastKnownState string
+	LastKnownAt    *time.Time
+	Account        Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server         Server  `gorm:"constraint:OnDelete:CASCADE"`
+}

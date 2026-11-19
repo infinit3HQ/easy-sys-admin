@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
 // DefaultDockerSocket is the Docker Engine API socket.
@@ -151,6 +153,39 @@ func (d *DockerClient) imageInspect(ctx context.Context, ref string) (dockerImag
 	var img dockerImageInspect
 	err := d.do(ctx, http.MethodGet, "/images/"+url.PathEscape(ref)+"/json", nil, &img)
 	return img, err
+}
+
+type dockerImageList struct {
+	ID          string   `json:"Id"`
+	RepoTags    []string `json:"RepoTags"`
+	RepoDigests []string `json:"RepoDigests"`
+}
+
+// localImages lists images already on this machine. It does not contact a registry.
+func (d *DockerClient) localImages(ctx context.Context) ([]proto.LocalImage, error) {
+	var raw []dockerImageList
+	if err := d.do(ctx, http.MethodGet, "/images/json", nil, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]proto.LocalImage, 0, len(raw))
+	for _, img := range raw {
+		if len(out) == 500 {
+			break
+		}
+		item := proto.LocalImage{ID: img.ID}
+		for _, t := range img.RepoTags {
+			if t != "" && t != "<none>:<none>" {
+				item.Tags = append(item.Tags, t)
+			}
+		}
+		for _, rd := range img.RepoDigests {
+			if dgst := digestOf(rd); dgst != "" {
+				item.Digests = append(item.Digests, dgst)
+			}
+		}
+		out = append(out, item)
+	}
+	return out, nil
 }
 
 type dockerDF struct {

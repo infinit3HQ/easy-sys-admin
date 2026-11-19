@@ -27,6 +27,7 @@ import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Separator } from '#/components/ui/separator'
 import { useRole } from '../route'
+import { Deliveries, WarningRouting } from '#/components/alert-delivery'
 
 export const Route = createFileRoute('/app/alerts/settings')({
   loader: ({ context }) =>
@@ -34,12 +35,14 @@ export const Route = createFileRoute('/app/alerts/settings')({
       context.queryClient.ensureQueryData(q.alertRules()),
       context.queryClient.ensureQueryData(q.channels()),
       context.queryClient.ensureQueryData(q.certs()),
+      context.queryClient.ensureQueryData(q.maintenance()),
     ]),
   head: () => ({ meta: [{ title: 'Alert settings · easy-sys-admin' }] }),
   component: AlertSettings,
 })
 
 function AlertSettings() {
+  const { canAct } = useRole()
   return (
     <div className="space-y-6">
       <PageHeader
@@ -52,11 +55,115 @@ function AlertSettings() {
         </Button>
       </PageHeader>
       <Rules />
+      <Maintenance />
       <div className="grid gap-6 xl:grid-cols-2">
         <Channels />
         <Certs />
       </div>
+      <WarningRouting canEdit={canAct} />
+      {canAct && <Deliveries />}
     </div>
+  )
+}
+
+function Maintenance() {
+  const qc = useQueryClient()
+  const { canAct } = useRole()
+  const r = useQuery(q.maintenance())
+  const [reason, setReason] = useState('')
+  const [hours, setHours] = useState(4)
+  const create = useMutation({
+    mutationFn: () => {
+      const span = Math.min(168, Math.max(1, hours || 1))
+      const starts = new Date()
+      const ends = new Date(starts.getTime() + span * 60 * 60 * 1000)
+      return call(
+        api().POST('/maintenance', {
+          body: {
+            reason,
+            startsAt: starts.toISOString(),
+            endsAt: ends.toISOString(),
+          },
+        }),
+      )
+    },
+    onSuccess: () => {
+      setReason('')
+      void qc.invalidateQueries({ queryKey: ['maintenance'] })
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().DELETE('/maintenance/{windowId}', {
+          params: { path: { windowId: id } },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['maintenance'] }),
+  })
+  const items = r.data?.items ?? []
+  return (
+    <Panel title="Maintenance">
+      <p className="mb-3 text-xs text-muted-foreground">
+        Ordinary notices stay quiet for the whole space while a window is open.
+        Collection still runs. A host key change and a new SSH key are still
+        sent. A window lasts at most 7 days.
+      </p>
+      {items.length > 0 && (
+        <ul className="mb-3 divide-y divide-line text-sm">
+          {items.map((w) => (
+            <li
+              key={w.id}
+              className="flex items-center justify-between gap-3 py-2"
+            >
+              <span>
+                {w.reason}
+                <span className="ml-2 font-mono text-[11px] text-faint">
+                  until <When iso={w.endsAt} />
+                  {w.serverId ? ` · server ${w.serverId}` : ''}
+                  {w.groupId ? ` · group ${w.groupId}` : ''}
+                </span>
+              </span>
+              {canAct && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  busy={remove.isPending}
+                  onClick={() => remove.mutate(w.id)}
+                >
+                  End
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {canAct && (
+        <form
+          className="flex flex-col gap-2 sm:flex-row sm:items-end"
+          onSubmit={(e) => {
+            e.preventDefault()
+            create.mutate()
+          }}
+        >
+          <Field label="Reason">
+            <Input
+              value={reason}
+              maxLength={200}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Hours">
+            <NumberInput value={hours} min={1} max={168} onChange={setHours} />
+          </Field>
+          <Button type="submit" variant="outline" busy={create.isPending}>
+            Start
+          </Button>
+        </form>
+      )}
+      {create.error && <ErrorBanner error={create.error} />}
+    </Panel>
   )
 }
 
@@ -71,6 +178,10 @@ const ruleText: Record<AlertRule['kind'], { title: string; unit?: string }> = {
   cert_expiry: { title: 'Certificate expires within', unit: 'days' },
   run_failed: { title: 'A maintenance run failed' },
   host_key: { title: 'Host key changed' },
+  exposure: { title: 'Weak SSH, no firewall, or unrestricted sudo' },
+  new_port: { title: 'A new socket on all interfaces' },
+  new_key: { title: 'A new SSH key' },
+  security_update: { title: 'Security updates waiting', unit: 'days' },
 }
 
 function Rules() {

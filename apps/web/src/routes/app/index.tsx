@@ -1,11 +1,20 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { PlusIcon } from 'lucide-react'
 import type { Server } from '@esa/api'
 import { q } from '#/lib/queries'
 import { duration, pct, plural } from '#/lib/format'
 import { Ago } from '#/components/time'
-import { Empty, Meter, PageHeader, Stat, StatusDot, cn } from '#/components/kit'
+import {
+  Empty,
+  Meter,
+  PageHeader,
+  Stat,
+  StatusDot,
+  Toggle,
+  cn,
+} from '#/components/kit'
 import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
@@ -25,21 +34,40 @@ export const Route = createFileRoute('/app/')({
   component: Board,
 })
 
+function needsReinstall(s: Server) {
+  return (
+    (s.helperMissing?.length ?? 0) > 0 ||
+    (s.exposure != null && !s.exposure.ready)
+  )
+}
+
 function Board() {
   const { data } = useSuspenseQuery(q.overview())
   const { canAct } = useRole()
+  const [onlyReinstall, setOnlyReinstall] = useState(false)
   const t = data.totals
+  const reinstall = data.servers.filter(needsReinstall)
+  const servers = onlyReinstall ? reinstall : data.servers
 
   return (
     <div>
       <PageHeader kicker="Fleet" title="The board">
-        {canAct && (
-          <Button asChild>
-            <Link to="/app/servers/new">
-              <PlusIcon /> Add server
-            </Link>
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {data.servers.length > 0 && (
+            <Toggle
+              checked={onlyReinstall}
+              onChange={setOnlyReinstall}
+              label="Needs reinstall"
+            />
+          )}
+          {canAct && (
+            <Button asChild>
+              <Link to="/app/servers/new">
+                <PlusIcon /> Add server
+              </Link>
+            </Button>
+          )}
+        </div>
       </PageHeader>
 
       <Card
@@ -70,6 +98,18 @@ function Board() {
         <Stat label="Pending" value={t.pending} />
       </Card>
 
+      {reinstall.length > 0 && (
+        <p className="mb-6 text-sm text-warn">
+          {plural(
+            reinstall.length,
+            'server needs a helper reinstall',
+            'servers need a helper reinstall',
+          )}
+          . The helper is missing an action this control plane uses, or it is
+          too old for the exposure summary.
+        </p>
+      )}
+
       {data.servers.length === 0 ? (
         <Empty
           title="No servers yet"
@@ -87,11 +127,15 @@ function Board() {
           it. The control plane installs a small helper and starts watching it
           within a minute.
         </Empty>
+      ) : servers.length === 0 ? (
+        <Empty title="No server needs a reinstall">
+          Every installed helper has the actions this control plane uses.
+        </Empty>
       ) : (
         <div className="animate-rise" style={{ animationDelay: '120ms' }}>
           {/* Phones and tablets: one card per server. */}
           <ul className="grid gap-3 md:grid-cols-2 xl:hidden">
-            {data.servers.map((s) => (
+            {servers.map((s) => (
               <li key={s.id}>
                 <ServerCard s={s} />
               </li>
@@ -113,6 +157,7 @@ function Board() {
                     'Load',
                     'Up',
                     'Updates',
+                    'Exposure',
                     'Why',
                     'Seen',
                   ].map((h) => (
@@ -121,7 +166,7 @@ function Board() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.servers.map((s) => (
+                {servers.map((s) => (
                   <Row key={s.id} s={s} />
                 ))}
               </TableBody>
@@ -155,16 +200,81 @@ function why(s: Server): string {
   return 'all clear'
 }
 
+function ExposureCell({ s, className }: { s: Server; className?: string }) {
+  const e = s.exposure
+  if (!e) return <span className={cn('text-xs text-faint', className)}>—</span>
+  if (!e.ready) {
+    return (
+      <span
+        className={cn('text-xs text-warn', className)}
+        title="This helper is too old to collect the exposure summary. Reinstall it."
+      >
+        reinstall helper
+      </span>
+    )
+  }
+  const bits: string[] = []
+  if (e.stale) bits.push('stale: no check for over 2 hours')
+  const listeners = e.listeningOnAllInterfaces
+  if (listeners.length)
+    bits.push(`${listeners.length} listening on all interfaces`)
+  if (e.specificBinds.length)
+    bits.push(`${e.specificBinds.length} on one address`)
+  if (e.passwordAuth) bits.push('password login')
+  if (e.permitRootLogin === 'yes') bits.push('root login')
+  if (e.permitEmptyPasswords) bits.push('empty passwords')
+  if (e.sshRead && !e.pubkeyAuth) bits.push('pubkey off')
+  if (e.firewall === 'none') bits.push('no firewall')
+  if (e.uncovered > 0) bits.push(`${e.uncovered} not in ufw`)
+  if (e.gaps.length) bits.push(`not collected: ${e.gaps.join(', ')}`)
+  if (e.extraRoot > 0) bits.push('extra uid 0')
+  if (e.noPasswordAll > 0) bits.push('NOPASSWD ALL')
+  const warn = bits.some(
+    (b) =>
+      !b.endsWith('listening on all interfaces') &&
+      !b.endsWith('on one address'),
+  )
+  const heard = e.attemptedAt
+    ? `Last try ${e.attemptedAt}. Last success ${e.checkedAt}. Reachability is not verified.`
+    : `Collected ${e.checkedAt}. Reachability is not verified.`
+  return (
+    <span
+      className={cn(
+        'line-clamp-2 text-xs',
+        warn ? 'text-warn' : 'text-faint',
+        className,
+      )}
+      title={listeners.length ? `${listeners.join(', ')}. ${heard}` : heard}
+    >
+      {bits.length ? bits.join(' · ') : 'no notable local findings'}
+    </span>
+  )
+}
+
 function Updates({ s }: { s: Server }) {
   if (!s.updates) return <span className="text-faint">—</span>
-  const { security, other } = s.updates
-  if (!security && !other) return <span className="text-faint">none</span>
+  const { security, other, stale } = s.updates
+  if (!security && !other && !stale)
+    return <span className="text-faint">none</span>
   return (
-    <span title={`${security} security, ${other} other`}>
-      <span className="text-ink-2">{security + other}</span>
-      {security > 0 && (
-        <span className="text-warn"> · {security} security</span>
+    <span
+      title={
+        stale
+          ? `${security} security, ${other} other. No check for over 12 hours, so these counts are not current.`
+          : `${security} security, ${other} other`
+      }
+    >
+      {!security && !other ? (
+        <span className="text-faint">none</span>
+      ) : (
+        <>
+          <span className="text-ink-2">{security + other}</span>
+          {security > 0 && (
+            <span className="text-warn"> · {security} security</span>
+          )}
+        </>
       )}
+      {stale && <span className="text-warn"> · stale</span>}
     </span>
   )
 }
@@ -195,8 +305,14 @@ function Row({ s }: { s: Server }) {
           </span>
           <span className="mt-0.5 block font-mono text-[10px] tracking-wider text-faint uppercase">
             {s.groupName ?? 'no group'}
-            <OwnerTag s={s} /> · {s.host}
+            <OwnerTag s={s} /> ·{' '}
+            {s.connection === 'outbound' ? 'Outbound HTTPS' : s.host}
           </span>
+          {s.note && (
+            <span className="mt-0.5 block truncate text-xs text-ink-2 normal-case">
+              {s.note}
+            </span>
+          )}
         </Link>
       </TableCell>
       <Gauge value={m?.cpuPercent} warn={85} fail={97} />
@@ -210,6 +326,9 @@ function Row({ s }: { s: Server }) {
       </TableCell>
       <TableCell className="num py-3 text-xs">
         <Updates s={s} />
+      </TableCell>
+      <TableCell className="max-w-[220px] py-3">
+        <ExposureCell s={s} />
       </TableCell>
       <TableCell className="max-w-[260px] py-3">
         <span
@@ -265,8 +384,14 @@ function ServerCard({ s }: { s: Server }) {
           </div>
           <div className="truncate font-mono text-[10px] tracking-wider text-faint uppercase">
             {s.groupName ?? 'no group'}
-            <OwnerTag s={s} /> · {s.host}
+            <OwnerTag s={s} /> ·{' '}
+            {s.connection === 'outbound' ? 'Outbound HTTPS' : s.host}
           </div>
+          {s.note && (
+            <div className="truncate text-xs text-ink-2 normal-case">
+              {s.note}
+            </div>
+          )}
         </div>
         <span className="num shrink-0 text-[10px] text-muted-foreground">
           <Ago iso={s.lastSeenAt} />
@@ -302,6 +427,7 @@ function ServerCard({ s }: { s: Server }) {
           <Updates s={s} />
         </span>
       </div>
+      <ExposureCell s={s} className="mt-2" />
     </Link>
   )
 }

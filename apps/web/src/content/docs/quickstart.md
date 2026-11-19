@@ -5,7 +5,7 @@ description: Sign up on the hosted beta, create a space, and enroll a server.
 
 This page is the hosted public beta at [easysysadmin.app](https://easysysadmin.app). To run the control plane yourself, use the [self-hosting guide](/self-hosting).
 
-You need a Linux server you administer, with SSH and `sudo`. The enroll command also needs `curl` and `sha256sum` (or `shasum`). Supported architectures are amd64 and arm64. Package updates use `apt`, so this is Debian and Ubuntu. RHEL-family servers are not supported yet.
+You need a Linux server you administer, with SSH and `sudo`. The enroll command also needs `curl` and `sha256sum` (or `shasum`). Supported architectures are amd64 and arm64. Package updates use `apt` on Debian and Ubuntu, or DNF on Rocky Linux 9 with `dnf-utils`. Other RHEL-family releases remain unsupported. For servers without incoming SSH, use the [outbound agent](/outbound-agent).
 
 ## 1. Sign in
 

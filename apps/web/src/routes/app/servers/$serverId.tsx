@@ -1,6 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { z } from 'zod'
+import { orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
 import { Crumb, Notice, PageHeader, StatusBadge } from '#/components/kit'
@@ -41,7 +42,7 @@ export const Route = createFileRoute('/app/servers/$serverId')({
     stringify: (p) => ({ serverId: String(p.serverId) }),
   },
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.server(params.serverId)),
+    orNotFound(context.queryClient.ensureQueryData(q.server(params.serverId))),
   head: ({ loaderData }) => ({
     meta: [
       { title: `${loaderData?.server.name ?? 'Server'} · easy-sys-admin` },
@@ -82,11 +83,15 @@ function ServerPage() {
           </>
         }
         title={s.name}
+        description={s.note || undefined}
       >
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 sm:block sm:text-right">
           <StatusBadge status={s.status} />
           <div className="font-mono text-[11px] text-muted-foreground sm:mt-1">
-            {s.host}:{s.port} · seen <Ago iso={s.lastSeenAt} />
+            {s.connection === 'outbound'
+              ? 'Outbound HTTPS'
+              : `${s.host}:${s.port}`}{' '}
+            · seen <Ago iso={s.lastSeenAt} />
           </div>
         </div>
       </PageHeader>

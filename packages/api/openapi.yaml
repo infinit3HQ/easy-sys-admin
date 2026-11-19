@@ -678,7 +678,7 @@ paths:
       - $ref: '#/components/parameters/ServerId'
     get:
       operationId: getServerAccess
-      summary: Users with a login shell, SSH keys, sudo and docker group members, recent logins
+      summary: Login users, password state, sudo rules, SSH settings, recent logins
       tags: [server-live]
       responses:
         '200':
@@ -693,7 +693,7 @@ paths:
       - $ref: '#/components/parameters/ServerId'
     get:
       operationId: getServerSecurity
-      summary: Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades
+      summary: Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades
       tags: [server-live]
       responses:
         '200':
@@ -716,6 +716,260 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/JobsReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/recovery:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerRecovery
+      summary: Backup reports an operator wrote on the server
+      tags: [server-live]
+      responses:
+        '200':
+          description: Recovery evidence. A success is not proof the data can be restored.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RecoveryReport' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: submitServerRecovery
+      summary: Store one backup result. The same Idempotency-Key returns the first result and does not change it.
+      tags: [server-live]
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 80 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '204':
+          description: Stored. A later result does not replace an earlier one. This does not run a backup or a restore.
+        default: { $ref: '#/components/responses/Error' }
+
+  /agent-servers:
+    post:
+      operationId: createAgentServer
+      summary: Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                groupId: { type: integer, format: int64, nullable: true }
+      responses:
+        '201':
+          description: Registered server and one-time credential.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCredential' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/agent-credential:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: rotateAgentCredential
+      summary: Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+      tags: [servers]
+      responses:
+        '200':
+          description: One-time replacement credential. The previous credential stops working immediately.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCredential' }
+        default: { $ref: '#/components/responses/Error' }
+    delete:
+      operationId: revokeAgentCredential
+      summary: Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
+      description: Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+      tags: [servers]
+      responses:
+        '204': { description: Revoked. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agent/poll:
+    post:
+      operationId: pollAgent
+      summary: Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered.
+      tags: [agent]
+      security: [{ agentToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgentToken'
+      responses:
+        '200':
+          description: No command, or one command with a bounded expiry.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  command: { $ref: '#/components/schemas/AgentCommand' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /agent/result:
+    post:
+      operationId: submitAgentResult
+      summary: Return a claimed helper result. The first result wins. Expired and rotated commands are refused.
+      tags: [agent]
+      security: [{ agentToken: [] }]
+      parameters:
+        - $ref: '#/components/parameters/AgentToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, output, exit]
+              properties:
+                id: { type: integer, format: int64 }
+                output: { type: string, maxLength: 4194304 }
+                exit: { type: integer }
+      responses:
+        '204': { description: Result recorded. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/reachability:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getReachability
+      summary: Read connection evidence submitted by probes an operator runs.
+      tags: [servers]
+      responses:
+        '200':
+          description: Observations from each probe. Missing evidence is unknown.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 128
+                    items: { $ref: '#/components/schemas/ProbeObservation' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: submitReachability
+      summary: Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server.
+      tags: [servers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProbeInput' }
+      responses:
+        '204': { description: Observation recorded. An older or repeated observation does not replace newer evidence. }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/sbom:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerSbom
+      summary: The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere.
+      tags: [server-live]
+      responses:
+        '200':
+          description: CycloneDX JSON
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/scan:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerScan
+      summary: The newest vulnerability scan of this server, ranked, with the scanner and database age
+      tags: [server-live]
+      responses:
+        '200':
+          description: The scan. No import is not a clean result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanReport' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: importServerScan
+      summary: Import a Grype JSON report made from this server's SBOM. Up to 10 MiB.
+      tags: [server-live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: The stored scan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/vuln-exceptions:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: createVulnException
+      summary: Set one scan match aside until a date. The match stays in the list. An exception is not a fix.
+      tags: [server-live]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VulnExceptionInput' }
+      responses:
+        '201':
+          description: The exception
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VulnException' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/vuln-exceptions/{exceptionId}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+      - name: exceptionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteVulnException
+      summary: Remove a scan exception. This does not change the server or the scan.
+      tags: [server-live]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/advisories:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: getServerAdvisories
+      summary: Exact affected versions from an imported local feed
+      tags: [server-live]
+      responses:
+        '200':
+          description: Matches and coverage. A package that is absent is not certified safe.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdvisoryReport' }
         default: { $ref: '#/components/responses/Error' }
 
   /groups:
@@ -950,10 +1204,7 @@ paths:
 
   /runs/{runId}:
     parameters:
-      - name: runId
-        in: path
-        required: true
-        schema: { type: integer, format: int64 }
+      - $ref: '#/components/parameters/RunId'
     get:
       operationId: getRun
       summary: One run with each server's result
@@ -964,6 +1215,618 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /keys:
+    get:
+      operationId: listKeys
+      summary: SSH key fingerprints seen in standard authorized_keys files
+      tags: [fleet]
+      responses:
+        '200':
+          description: Keys the actor can see. This is not every key on the server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyList' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: labelKey
+      summary: Name a fingerprint in this space, or clear the name
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeyLabelRequest' }
+      responses:
+        '204':
+          description: Saved
+        default: { $ref: '#/components/responses/Error' }
+
+  /evidence:
+    get:
+      operationId: getEvidence
+      summary: Download of the key, update, and exposure evidence this account can see
+      tags: [fleet]
+      responses:
+        '200':
+          description: No key material, password hashes, or user lists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EvidenceExport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /datasets:
+    get:
+      operationId: listDatasets
+      summary: Named backup datasets and how old a success may be
+      tags: [fleet]
+      responses:
+        '200':
+          description: Policies for this account. A dataset that is not listed is not current.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatasetList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createDataset
+      summary: Add a dataset policy (admin)
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DatasetInput' }
+      responses:
+        '201':
+          description: The policy
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dataset' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /datasets/{datasetId}:
+    parameters:
+      - name: datasetId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteDataset
+      summary: Remove a dataset policy (admin). This does not change a server.
+      tags: [fleet]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans:
+    get:
+      operationId: listPlans
+      summary: Typed maintenance plans waiting for a person
+      tags: [runs]
+      responses:
+        '200':
+          description: Plans in this space
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlanList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: proposePlan
+      summary: Store a typed plan. This does not change a server.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanBody' }
+      responses:
+        '201':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    get:
+      operationId: getPlan
+      summary: One typed plan
+      tags: [runs]
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/approve:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      operationId: approvePlan
+      summary: Approve a plan from a browser session. A token cannot approve.
+      tags: [runs]
+      responses:
+        '200':
+          description: The approved plan. It expires after 30 minutes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/reject:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      operationId: rejectPlan
+      summary: Reject a plan from a browser session. A token cannot reject.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      operationId: cancelPlan
+      summary: Withdraw a plan that has not started. This never touches a server.
+      tags: [runs]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The plan
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FixPlan' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /plans/{planId}/execute:
+    parameters:
+      - $ref: '#/components/parameters/PlanId'
+    post:
+      operationId: executePlan
+      summary: Run an approved plan once. A token that can read logs cannot execute.
+      tags: [runs]
+      responses:
+        '202':
+          description: The run. A repeat returns the same run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /runs/{runId}/gate:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      operationId: decideGate
+      summary: Continue or stop a run waiting after its canaries. Only a person in the web app can decide.
+      tags: [runs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [continue, stop] }
+                note: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: The run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Run' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /runs/{runId}/report:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      operationId: getPatchReport
+      summary: Package result and checks for one update run
+      tags: [runs]
+      responses:
+        '200':
+          description: What each server did. A skipped server stays in the list.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PatchReport' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/key-baseline:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: approveKeyBaseline
+      summary: Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current.
+      tags: [fleet]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '204':
+          description: Saved. Later scans report drift. This does not change the server.
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/access-baseline:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    post:
+      operationId: approveAccessBaseline
+      summary: Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server.
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, maxLength: 200 }
+      responses:
+        '204':
+          description: Saved. A later check reports changes. This does not change the server.
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/key-baseline/versions:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: listBaselineVersions
+      summary: Earlier key approvals of this server, newest first
+      tags: [fleet]
+      responses:
+        '200':
+          description: Versions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BaselineVersionList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/key-exceptions:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+    get:
+      operationId: listKeyExceptions
+      summary: Fingerprints expected on this server until a date. This does not change the server.
+      tags: [fleet]
+      responses:
+        '200':
+          description: Exceptions. One does not mean access was removed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyExceptionList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createKeyException
+      summary: Expect one fingerprint on one login until a date
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/KeyExceptionInput' }
+      responses:
+        '201':
+          description: The exception
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyException' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /servers/{serverId}/key-exceptions/{exceptionId}:
+    parameters:
+      - $ref: '#/components/parameters/ServerId'
+      - name: exceptionId
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      operationId: deleteKeyException
+      summary: Remove a key exception. This does not change the server.
+      tags: [fleet]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /identities:
+    get:
+      operationId: listIdentities
+      summary: Owners of keys in this space, with how many grants carry their keys
+      tags: [fleet]
+      responses:
+        '200':
+          description: Owners
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IdentityList' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: saveIdentity
+      summary: Record what an owner is and their status. The name is the key label. This does not change a server.
+      tags: [fleet]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IdentityInput' }
+      responses:
+        '200':
+          description: The owner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Identity' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /offboarding:
+    get:
+      operationId: offboarding
+      summary: Keys with this name from the files a current helper has read
+      tags: [fleet]
+      parameters:
+        - { name: label, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Matches, plus what this check does not cover
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offboarding' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /maintenance:
+    get:
+      operationId: listMaintenance
+      summary: Windows that quiet ordinary notifications
+      tags: [alerts]
+      responses:
+        '200':
+          description: Windows that have not ended
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceList' }
+        default: { $ref: '#/components/responses/Error' }
+    post:
+      operationId: createMaintenance
+      summary: Quiet ordinary notifications for at most 7 days
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MaintenanceRequest' }
+      responses:
+        '201':
+          description: The window
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceWindow' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /maintenance/{windowId}:
+    parameters:
+      - $ref: '#/components/parameters/WindowId'
+    delete:
+      operationId: deleteMaintenance
+      summary: Remove a maintenance window
+      tags: [alerts]
+      responses:
+        '204':
+          description: Removed
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents:
+    get:
+      operationId: listIncidents
+      summary: Security notices that still need a person to look at them
+      tags: [alerts]
+      parameters:
+        - name: includeAcknowledged
+          in: query
+          description: Also list acknowledged, snoozed, accepted, and resolved notices.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Incidents
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IncidentList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents/{incidentId}:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    get:
+      operationId: getIncident
+      summary: One security notice with its history
+      tags: [alerts]
+      responses:
+        '200':
+          description: The incident, with events
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents/{incidentId}/assignee:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    put:
+      operationId: assignIncident
+      summary: Assign a notice to a member of its owning space, or clear the assignment.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [userId]
+              properties:
+                userId:
+                  { type: integer, format: int64, nullable: true, minimum: 1 }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents/{incidentId}/accept:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    post:
+      operationId: acceptIncident
+      summary: Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentHold' }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents/{incidentId}/snooze:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    post:
+      operationId: snoozeIncident
+      summary: Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentHold' }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /incidents/{incidentId}/acknowledge:
+    parameters:
+      - $ref: '#/components/parameters/IncidentId'
+    post:
+      operationId: acknowledgeIncident
+      summary: Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server.
+      tags: [alerts]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: The incident
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Incident' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /alerts/routing:
+    get:
+      operationId: getRouting
+      summary: How this space's warnings reach its channels
+      tags: [alerts]
+      responses:
+        '200':
+          description: The setting
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Routing' }
+        default: { $ref: '#/components/responses/Error' }
+    put:
+      operationId: setRouting
+      summary: Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once.
+      tags: [alerts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Routing' }
+      responses:
+        '200':
+          description: The setting
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Routing' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /deliveries:
+    get:
+      operationId: listDeliveries
+      summary: The 100 most recent notification sends of this space
+      tags: [alerts]
+      parameters:
+        - name: failed
+          in: query
+          description: Only sends that gave up after their retries.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Deliveries, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeliveryList' }
+        default: { $ref: '#/components/responses/Error' }
+
+  /deliveries/{deliveryId}/retry:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    post:
+      operationId: retryDelivery
+      summary: Queue a send that gave up again. A send that may have arrived is not retried.
+      tags: [alerts]
+      responses:
+        '204':
+          description: Queued
         default: { $ref: '#/components/responses/Error' }
 
   /alerts:
@@ -1181,7 +2044,10 @@ paths:
       summary: Audit log of the account, newest first (admins)
       tags: [settings]
       parameters:
-        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 500 } }
+        - name: limit
+          in: query
+          description: The page asks for 200. A download asks for 5000, the newest rows only.
+          schema: { type: integer, default: 100, minimum: 1, maximum: 5000 }
       responses:
         '200':
           description: Audit entries
@@ -1205,6 +2071,10 @@ paths:
 
 components:
   securitySchemes:
+    agentToken:
+      type: apiKey
+      in: header
+      name: X-Esa-Agent-Token
     sessionCookie:
       type: apiKey
       in: cookie
@@ -1215,6 +2085,36 @@ components:
       description: An API token (esa_...) from Settings > API tokens.
 
   parameters:
+    AgentToken:
+      name: X-Esa-Agent-Token
+      in: header
+      required: true
+      schema: { type: string, maxLength: 200 }
+    PlanId:
+      name: planId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    WindowId:
+      name: windowId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    IncidentId:
+      name: incidentId
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
     ServerId:
       name: serverId
       in: path
@@ -1616,15 +2516,315 @@ components:
 
     UpdateCounts:
       type: object
-      required: [security, other]
+      required: [security, other, stale]
       properties:
         security: { type: integer }
         other: { type: integer }
         checkedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, description: 'True when no package check has succeeded for 12 hours, two missed checks. The counts are then old, or there are none because a check has never run.' }
 
+    Exposure:
+      type: object
+      required: [checkedAt, attemptedAt, stale, ready, publicPorts, listeningOnAllInterfaces, specificBinds, passwordAuth, permitRootLogin, permitEmptyPasswords, pubkeyAuth, sshRead, firewall, extraRoot, noPasswordAll, uncovered, gaps]
+      properties:
+        checkedAt: { type: string, format: date-time, description: When this summary was last collected successfully. }
+        attemptedAt: { type: string, format: date-time, description: When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged. }
+        stale: { type: boolean, description: 'True when no collection has succeeded for two expected intervals (2 hours). The fields below are then old evidence, not the current state.' }
+        ready: { type: boolean, description: False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. }
+        publicPorts:
+          type: array
+          items: { type: string }
+          description: Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect.
+        listeningOnAllInterfaces:
+          type: array
+          items: { type: string }
+          description: 'Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified.'
+        specificBinds:
+          type: array
+          items: { type: string }
+          description: 'Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot.'
+        passwordAuth: { type: boolean }
+        permitRootLogin: { type: string }
+        permitEmptyPasswords: { type: boolean }
+        pubkeyAuth: { type: boolean }
+        sshRead: { type: boolean, description: True when sshd -T was read. pubkeyAuth is meaningful only then. }
+        firewall: { type: string }
+        extraRoot: { type: integer, description: Login accounts other than root with uid 0. }
+        noPasswordAll: { type: integer, description: Sudo rules that grant NOPASSWD and ALL. }
+        uncovered: { type: integer, description: Sockets on every interface that an active ufw does not mention. }
+        gaps:
+          type: array
+          items: { type: string }
+          description: Checks that did not run for this summary. Do not treat a missing list as a clean result.
+
+    KeyOccurrence:
+      type: object
+      required: [serverId, serverName, user, comment, from, hasCommand, observedAt]
+      properties:
+        serverId: { type: integer, format: int64 }
+        serverName: { type: string }
+        user: { type: string }
+        comment: { type: string }
+        from: { type: string }
+        hasCommand: { type: boolean, description: This login's key line has a forced command. The same key can be unrestricted on another login. }
+        observedAt: { type: string, format: date-time }
+
+    Key:
+      type: object
+      required: [fingerprint, keyType, hasCommand, label, uses]
+      properties:
+        fingerprint: { type: string }
+        keyType: { type: string }
+        hasCommand: { type: boolean, description: True when any occurrence forces a command. The command text is not stored. }
+        label: { type: string, description: Name given in this space. Empty until someone sets one. }
+        uses: { type: array, items: { $ref: '#/components/schemas/KeyOccurrence' } }
+
+    KeyList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 2000
+          description: At most 2000 key grants, ordered by fingerprint.
+          items: { $ref: '#/components/schemas/Key' }
+
+    EvidenceExport:
+      type: object
+      required: [exportedAt, servers, keys]
+      description: Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists.
+      properties:
+        exportedAt: { type: string, format: date-time }
+        servers:
+          type: array
+          items:
+            type: object
+            required: [id, name, securityUpdates, otherUpdates, updatesStale, exposureReady, exposureStale]
+            properties:
+              id: { type: integer, format: int64 }
+              name: { type: string }
+              updatesCheckedAt: { type: string, format: date-time, nullable: true }
+              securityUpdates: { type: integer }
+              otherUpdates: { type: integer }
+              updatesStale: { type: boolean }
+              exposureCheckedAt: { type: string, format: date-time, nullable: true }
+              exposureReady: { type: boolean }
+              exposureStale: { type: boolean }
+        keys:
+          type: array
+          items:
+            type: object
+            required: [fingerprint, label, servers]
+            properties:
+              fingerprint: { type: string }
+              label: { type: string }
+              servers: { type: array, items: { type: string } }
+
+    Dataset:
+      type: object
+      required: [id, name, maxAgeHours]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        maxAgeHours: { type: integer, description: 'How old a successful backup of this dataset may be, in hours.' }
+
+    DatasetList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Dataset' } }
+
+    DatasetInput:
+      type: object
+      required: [name, maxAgeHours]
+      properties:
+        name: { type: string, maxLength: 80 }
+        maxAgeHours: { type: integer, minimum: 1, maximum: 2160 }
+
+    Offboarding:
+      type: object
+      required: [statement, items, identity, generatedAt, complete, partial, grants, unchecked, sharedKeys, markdown]
+      properties:
+        statement: { type: string, description: 'What this report does not prove.' }
+        items: { type: array, items: { $ref: '#/components/schemas/Key' }, description: 'The owner''s keys.' }
+        identity: { $ref: '#/components/schemas/Identity' }
+        generatedAt: { type: string, format: date-time }
+        complete: { type: boolean, description: 'True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed.' }
+        partial: { type: boolean, description: 'True when some servers belong to another organization.' }
+        grants:
+          type: array
+          items:
+            type: object
+            required: [serverId, server, user, fingerprint, keyType, from, hasCommand, observedAt, unchecked]
+            properties:
+              serverId: { type: integer, format: int64 }
+              server: { type: string }
+              user: { type: string }
+              fingerprint: { type: string }
+              keyType: { type: string }
+              from: { type: string }
+              hasCommand: { type: boolean }
+              observedAt: { type: string, format: date-time }
+              unchecked: { type: string, description: 'Why this server''s key list is not current. Empty when it is.' }
+        unchecked:
+          type: array
+          items:
+            type: object
+            required: [serverId, server, reason]
+            properties:
+              serverId: { type: integer, format: int64 }
+              server: { type: string }
+              reason: { type: string }
+        sharedKeys: { type: array, items: { type: string }, description: 'The owner''s fingerprints that open more than one login.' }
+        markdown: { type: string, description: 'The report as Markdown, to keep or send.' }
+
+    Identity:
+      type: object
+      required: [name, kind, status, note, keys, grants, servers]
+      properties:
+        name: { type: string, maxLength: 80 }
+        kind: { type: string, enum: [person, service, shared] }
+        status: { type: string, enum: [active, leaving, left] }
+        note: { type: string, maxLength: 500 }
+        keys: { type: integer, description: Keys named for this owner. }
+        grants: { type: integer, description: Logins that carry those keys on servers you can see. }
+        servers: { type: integer }
+
+    IdentityInput:
+      type: object
+      required: [name, kind, status]
+      properties:
+        name: { type: string, maxLength: 80 }
+        kind: { type: string, enum: [person, service, shared] }
+        status: { type: string, enum: [active, leaving, left] }
+        note: { type: string, maxLength: 500 }
+
+    IdentityList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Identity' } }
+
+    BaselineVersion:
+      type: object
+      required: [version, keys, reason, approvedAt, approvedBy]
+      properties:
+        version: { type: integer }
+        keys: { type: integer }
+        reason: { type: string }
+        approvedAt: { type: string, format: date-time }
+        approvedBy: { type: string }
+
+    KeyException:
+      type: object
+      required: [id, serverId, user, fingerprint, until, reason]
+      properties:
+        id: { type: integer, format: int64 }
+        serverId: { type: integer, format: int64 }
+        user: { type: string }
+        fingerprint: { type: string }
+        until: { type: string, format: date-time }
+        reason: { type: string }
+
+    KeyExceptionInput:
+      type: object
+      required: [user, fingerprint, until, reason]
+      properties:
+        user: { type: string, maxLength: 64 }
+        fingerprint: { type: string }
+        until: { type: string, format: date-time }
+        reason: { type: string, maxLength: 200 }
+
+    KeyExceptionList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/KeyException' } }
+
+    VulnException:
+      type: object
+      required: [id, serverId, advisory, package, until, reason]
+      properties:
+        id: { type: integer, format: int64 }
+        serverId: { type: integer, format: int64 }
+        advisory: { type: string }
+        package: { type: string }
+        until: { type: string, format: date-time }
+        reason: { type: string }
+
+    VulnExceptionInput:
+      type: object
+      required: [advisory, package, until, reason]
+      properties:
+        advisory: { type: string, maxLength: 40 }
+        package: { type: string, maxLength: 80 }
+        until: { type: string, format: date-time }
+        reason: { type: string, maxLength: 200 }
+
+    BaselineVersionList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/BaselineVersion' }
+
+    MaintenanceWindow:
+      type: object
+      required: [id, reason, startsAt, endsAt]
+      properties:
+        id: { type: integer, format: int64 }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverId: { type: integer, format: int64, nullable: true }
+        reason: { type: string }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+
+    MaintenanceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          description: Windows that have not ended, earliest first, at most 200.
+          items: { $ref: '#/components/schemas/MaintenanceWindow' }
+
+    MaintenanceRequest:
+      type: object
+      required: [reason, startsAt, endsAt]
+      properties:
+        reason: { type: string, maxLength: 200 }
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverId: { type: integer, format: int64, nullable: true }
+
+    KeyLabelRequest:
+      type: object
+      required: [fingerprint, label]
+      properties:
+        fingerprint: { type: string }
+        label: { type: string, maxLength: 80, description: Empty clears the name. }
+
+    AgentCredential:
+      type: object
+      required: [serverId, token]
+      properties:
+        serverId: { type: integer, format: int64 }
+        token: { type: string, description: "Shown once. Save in a protected file, never in a URL or command argument." }
+    AgentCommand:
+      type: object
+      required: [id, action, args, expiresAt]
+      properties:
+        id: { type: integer, format: int64 }
+        action: { type: string }
+        args: { type: array, maxItems: 256, items: { type: string, maxLength: 65536 } }
+        expiresAt: { type: string, format: date-time }
     Server:
       type: object
-      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole]
+      required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole, note]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -1636,9 +2836,19 @@ components:
         username: { type: string, description: 'SSH user the control plane uses, normally esa.' }
         groupId: { type: integer, format: int64, nullable: true }
         groupName: { type: string, nullable: true }
+        connection: { type: string, enum: [ssh, outbound], description: Outbound servers do not accept incoming SSH connections from esa. }
         enrollment: { type: string, enum: [pending, ready] }
         hostKeyFingerprint: { type: string }
         helperVersion: { type: string }
+        helperMissing:
+          type: array
+          items: { type: string }
+          description: Helper actions this control plane has that the installed helper does not. Reinstall the helper to add them. Empty when it has every action; actions a helper never reported are judged by the actions helpers had before they reported a list.
+        helperCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the helper last said which actions it has. Null when it was never asked.
         arch: { type: string }
         hostsControlPlane: { type: boolean }
         protectedContainers:
@@ -1646,6 +2856,7 @@ components:
           description: Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec).
           items: { type: string }
         hasStoredLogin: { type: boolean }
+        note: { type: string, maxLength: 200, description: A short note kept in the control plane. It is not sent to the server. }
         createdAt: { type: string, format: date-time }
         status: { $ref: '#/components/schemas/ServerStatus' }
         reasons: { type: array, items: { type: string } }
@@ -1660,6 +2871,11 @@ components:
         updates:
           type: object
           allOf: [{ $ref: '#/components/schemas/UpdateCounts' }]
+          nullable: true
+        exposure:
+          description: Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored.
+          type: object
+          allOf: [{ $ref: '#/components/schemas/Exposure' }]
           nullable: true
 
     ServerDetail:
@@ -1762,6 +2978,7 @@ components:
         clearGroup: { type: boolean }
         hostsControlPlane: { type: boolean }
         protectedContainers: { type: array, items: { type: string } }
+        note: { type: string, maxLength: 200, description: Replace the note. Empty clears it. Omit to leave it unchanged. }
 
     AcceptHostKeyRequest:
       type: object
@@ -1792,6 +3009,10 @@ components:
         points:
           type: array
           items: { $ref: '#/components/schemas/MetricPoint' }
+        diskFullInDays:
+          type: integer
+          nullable: true
+          description: About how many days until the fullest disk reaches 100 percent, from up to 14 days of samples. Absent when the trend is flat, falling, or shorter than a day.
 
     ContainerActionRequest:
       type: object
@@ -1988,8 +3209,29 @@ components:
       x-go-type: proto.AccessReport
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [users, groups, logins, failedSsh24h, passwordAuth, permitRootLogin]
+      required:
+        [
+          revision,
+          users,
+          groups,
+          logins,
+          failedSsh24h,
+          passwordAuth,
+          permitRootLogin,
+          permitEmptyPasswords,
+          pubkeyAuth,
+          x11Forwarding,
+          allowTcpForwarding,
+          kbdInteractive,
+          listenPorts,
+          listenAddresses,
+          sshRead,
+          sudoRules,
+          sudoIncomplete,
+          gaps,
+        ]
       properties:
+        revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         users: { type: array, items: { $ref: '#/components/schemas/LocalUser' } }
         groups:
           type: object
@@ -1998,28 +3240,62 @@ components:
         failedSsh24h: { type: integer }
         passwordAuth: { type: boolean }
         permitRootLogin: { type: string }
+        permitEmptyPasswords: { type: boolean }
+        pubkeyAuth: { type: boolean, description: Meaningful when sshRead is true. }
+        x11Forwarding: { type: boolean }
+        allowTcpForwarding: { type: string }
+        kbdInteractive: { type: boolean }
+        listenPorts: { type: array, items: { type: integer } }
+        listenAddresses: { type: array, items: { type: string } }
+        sshRead: { type: boolean, description: True when sshd -T returned a config. }
+        sudoRules: { type: array, items: { $ref: '#/components/schemas/SudoRule' } }
+        sudoIncomplete:
+          type: boolean
+          description: True when a sudoers include outside /etc/sudoers.d was skipped, or a file could not be read.
+        gaps:
+          type: array
+          items: { type: string }
+          description: Checks that did not run. An empty result is not clean when a gap is listed.
+
+    SudoRule:
+      x-go-type: proto.SudoRule
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [source, who, runAs, noPassword, commands, unrestricted]
+      properties:
+        source: { type: string }
+        who: { type: string, description: 'A user, or a group name with a leading percent sign.' }
+        runAs: { type: string }
+        noPassword: { type: boolean }
+        commands: { type: string }
+        unrestricted: { type: boolean, description: True when the command is ALL. }
 
     LocalUser:
       x-go-type: proto.LocalUser
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [name, uid, home, shell, authorizedKeys]
+      required: [name, uid, home, shell, password, authorizedKeys]
       properties:
         name: { type: string }
         uid: { type: integer }
         home: { type: string }
         shell: { type: string }
+        password:
+          type: string
+          description: 'locked, none, set, or unknown. Never a hash. Empty when the helper is older than this field.'
         authorizedKeys: { type: array, items: { $ref: '#/components/schemas/AuthorizedKey' } }
 
     AuthorizedKey:
       x-go-type: proto.AuthorizedKey
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [type, fingerprint, comment]
+      required: [type, fingerprint, comment, from, hasCommand]
       properties:
         type: { type: string }
         fingerprint: { type: string }
         comment: { type: string }
+        from: { type: string, description: The from= restriction. Empty when the key has none. }
+        hasCommand: { type: boolean, description: True when the key forces a command. The command text is not returned. }
 
     LoginRecord:
       x-go-type: proto.Login
@@ -2035,24 +3311,52 @@ components:
       x-go-type: proto.SecurityReport
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [listening, firewall, crowdsec, fail2ban, unattendedUpgrades]
+      required: [revision, listening, firewall, firewallRules, crowdsec, crowdSecBans, fail2ban, fail2banJails, unattendedUpgrades, gaps]
       properties:
+        revision: { type: integer, description: 1 when the helper collected the fields below. 0 means reinstall the helper. }
         listening: { type: array, items: { $ref: '#/components/schemas/Listener' } }
         firewall: { type: string }
+        firewallDefaultIncoming:
+          type: string
+          enum: [deny, reject, allow]
+          description: The ufw default for incoming connections. Absent when ufw is not active, the policy could not be read, or the helper is older.
+        firewallRules:
+          type: array
+          description: Up to 40 lines from an active ufw. Empty for nftables, which is named only.
+          items: { type: string }
         crowdsec: { type: string }
+        crowdSecBans: { type: integer, description: Current CrowdSec decisions. Addresses are not included. }
         fail2ban: { type: string }
+        fail2banJails: { type: array, items: { $ref: '#/components/schemas/BanJail' } }
         unattendedUpgrades: { type: boolean }
+        gaps:
+          type: array
+          items: { type: string }
+          description: Checks that did not run. An empty listener list is not clean when listening sockets is listed.
+
+    BanJail:
+      x-go-type: proto.BanJail
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [name, banned]
+      properties:
+        name: { type: string }
+        banned: { type: integer, description: Addresses currently banned. The addresses are not included. }
 
     Listener:
       x-go-type: proto.Listener
       x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
       type: object
-      required: [proto, address, port, process]
+      required: [proto, address, port, process, user, exposure, ufw]
       properties:
         proto: { type: string }
         address: { type: string }
         port: { type: integer }
         process: { type: string }
+        user: { type: string }
+        exposure: { type: string, enum: [all, local, other], description: all is every interface. local is loopback. }
+        container: { type: string, description: Set when docker-proxy publishes this port for a container. }
+        ufw: { type: string, description: 'allow, deny, or unmentioned when ufw is active. Empty otherwise.' }
 
     JobsReport:
       x-go-type: proto.JobsReport
@@ -2062,6 +3366,59 @@ components:
       properties:
         cron: { type: array, items: { $ref: '#/components/schemas/CronEntry' } }
         timers: { type: array, items: { $ref: '#/components/schemas/Timer' } }
+
+    RecoveryReport:
+      x-go-type: proto.RecoveryReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto }
+      type: object
+      required: [revision, statement, sources, gaps]
+      properties:
+        revision: { type: integer }
+        statement: { type: string }
+        sources:
+          type: array
+          items:
+            type: object
+            required: [tool, toolVersion, dataset, snapshot, backupState, checkKind, checkState, restoreState, smokeState]
+            properties:
+              tool: { type: string }
+              toolVersion: { type: string }
+              dataset: { type: string }
+              snapshot: { type: string }
+              backupState: { type: string }
+              backupAt: { type: string, format: date-time, nullable: true }
+              checkKind: { type: string }
+              checkState: { type: string }
+              checkAt: { type: string, format: date-time, nullable: true }
+              restoreState: { type: string }
+              smokeState: { type: string }
+              freshness: { type: string, description: 'current, stale, unknown, or future. Unknown is not a current success. Stale means the backup time is more than 7 days ago.' }
+              note: { type: string, description: 'What this file does not prove. A sampled check is not a full read, and a backup success is not a restore.' }
+              policy: { type: string, description: 'within, older, or none. none means this account has no policy for the dataset. That is not a current backup.' }
+        gaps: { type: array, items: { type: string } }
+
+    AdvisoryReport:
+      x-go-type: fleet.AdvisoryReport
+      x-go-type-import: { path: github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/fleet }
+      type: object
+      required: [coverage, distro, release, packages, feed, matches]
+      properties:
+        coverage: { type: string }
+        distro: { type: string }
+        release: { type: string }
+        packages: { type: integer }
+        feed: { type: string, enum: [not imported, imported, unreadable] }
+        matches:
+          type: array
+          items:
+            type: object
+            required: [id, package, version, fixed, severity]
+            properties:
+              id: { type: string }
+              package: { type: string }
+              version: { type: string }
+              fixed: { type: string }
+              severity: { type: string }
 
     CronEntry:
       x-go-type: proto.CronEntry
@@ -2107,7 +3464,7 @@ components:
 
     UpdatePolicy:
       type: object
-      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures]
+      required: [enabled, mode, days, time, hold, rebootIfRequired, batchSize, maxFailures, planRequired, twoApprovers]
       properties:
         enabled: { type: boolean }
         mode: { type: string, enum: [security, all] }
@@ -2127,6 +3484,24 @@ components:
           maximum: 1000
           default: 1
           description: Stop the run once this many servers have failed. Checked after each batch, so the servers already running finish. 1 stops at the first failure.
+        twoApprovers: { type: boolean, description: Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule. }
+        planRequired:
+          type: boolean
+          description: An interactive update or cleanup must be an approved plan. A schedule still runs.
+
+    HealthCheck:
+      type: object
+      required: [name, kind, blocking]
+      properties:
+        name: { type: string, maxLength: 40 }
+        kind: { type: string, enum: [tcp, http, unit, container] }
+        blocking: { type: boolean, description: A blocking failure stops that server. An advisory failure is recorded and the upgrade continues. }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        tls: { type: boolean, description: 'For http, use HTTPS and verify the certificate. The name is the server enrolled address.' }
+        method: { type: string, enum: [GET, HEAD] }
+        path: { type: string, description: 'For http, a path on the enrolled server. It must start with a slash.' }
+        unit: { type: string, description: A systemd service name. .service is added when omitted. }
+        container: { type: string, description: A Docker container name. }
 
     GroupInput:
       type: object
@@ -2136,10 +3511,14 @@ components:
         timezone: { type: string, example: Asia/Colombo }
         clean: { $ref: '#/components/schemas/CleanPolicy' }
         updates: { $ref: '#/components/schemas/UpdatePolicy' }
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
+          description: Run before and after a package upgrade. At most 8. Each dials this group's servers, never an address you type.
 
     Group:
       type: object
-      required: [id, name, timezone, clean, updates, serverCount, createdAt, lastRuns, access, yourRole]
+      required: [id, name, timezone, clean, updates, checks, serverCount, createdAt, lastRuns, access, yourRole]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2150,6 +3529,9 @@ components:
         timezone: { type: string }
         clean: { $ref: '#/components/schemas/CleanPolicy' }
         updates: { $ref: '#/components/schemas/UpdatePolicy' }
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
         serverCount: { type: integer }
         nextClean: { type: string, format: date-time, nullable: true }
         nextUpdate: { type: string, format: date-time, nullable: true }
@@ -2188,6 +3570,26 @@ components:
           minimum: 1
           maximum: 1000
           description: For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group).
+        checks:
+          type: array
+          items: { $ref: '#/components/schemas/HealthCheck' }
+          description: Omit to keep the group's checks. An update copies them onto the run.
+        canaryServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: These servers run first. One failure among them skips the rest, even when the failure limit is higher.
+        observeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: How long the canary checks repeat before the other servers start.
+        approved:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request.
+        waitAfterCanaries: { type: boolean, description: The run pauses after its canaries until a person decides. }
+        override: { $ref: '#/components/schemas/CheckOverride' }
 
     StartRunRequest:
       type: object
@@ -2196,6 +3598,19 @@ components:
         kind: { $ref: '#/components/schemas/RunKind' }
         groupId: { type: integer, format: int64, nullable: true }
         serverIds: { type: array, items: { type: integer, format: int64 } }
+        canaryServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          description: On an update, these servers run first. One failure among them skips the rest.
+        observeSeconds:
+          type: integer
+          minimum: 0
+          maximum: 600
+          description: Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once.
+        waitAfterCanaries:
+          type: boolean
+          description: 'Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours.'
+        override: { $ref: '#/components/schemas/CheckOverride' }
         options:
           type: object
           allOf: [{ $ref: '#/components/schemas/RunOptions' }]
@@ -2234,12 +3649,205 @@ components:
         summary: { type: string }
         bytesFreed: { type: integer, format: int64 }
         servers: { type: array, items: { $ref: '#/components/schemas/RunServer' } }
+        gate: { $ref: '#/components/schemas/RunGate' }
+
+    ScanReport:
+      type: object
+      required: [imported, scanner, scannerVersion, stale, coverage, matches]
+      properties:
+        imported: { type: boolean }
+        scanner: { type: string }
+        scannerVersion: { type: string }
+        dbBuilt: { type: string, format: date-time, nullable: true, description: When the scanner's vulnerability database was built. }
+        importedAt: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean, description: 'True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old.' }
+        coverage: { type: string, description: What this result does not prove. }
+        runningKernel: { type: string, description: 'The kernel from the last status check, as uname -r. Empty when that check has not run.' }
+        matches:
+          type: array
+          maxItems: 20000
+          items:
+            type: object
+            required: [id, package, version, severity, fixState, tier, reason]
+            properties:
+              id: { type: string }
+              aliases: { type: array, items: { type: string } }
+              package: { type: string }
+              version: { type: string }
+              severity: { type: string, description: As the scanner reported it. }
+              fixState: { type: string }
+              fixedIn: { type: array, items: { type: string } }
+              knownExploited: { type: boolean }
+              epss: { type: number }
+              tier: { type: integer, description: '1 known exploited, 2 high or critical with a fix, 3 the rest.' }
+              reason: { type: string }
+              notRunningKernel: { type: boolean, description: 'This package is a kernel build that is installed but is not the kernel the server is running. The match is kept.' }
+              imageDigest: { type: string, description: 'The image this match was found in. Empty when the report did not give one.' }
+              imageTag: { type: string, description: 'The image name the report used. A later tag change does not drop the match.' }
+              exceptedUntil: { type: string, format: date-time, nullable: true, description: 'Set when a person has set this match aside until this date. The match stays. An exception is not a fix.' }
+
+    CheckOverride:
+      type: object
+      nullable: true
+      description: 'Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it.'
+      required: [checks, reason]
+      properties:
+        checks: { type: array, items: { type: string } }
+        reason: { type: string, maxLength: 200 }
+        by: { type: integer, format: int64, readOnly: true }
+
+    RunGate:
+      type: object
+      nullable: true
+      description: Set when the run waits for a person after its canaries.
+      required: [state, by, note]
+      properties:
+        state: { type: string, enum: [waiting, continued, stopped, expired] }
+        at: { type: string, format: date-time, nullable: true, description: When the run reached the gate. }
+        by: { type: string, description: Who decided. Empty while waiting. }
+        note: { type: string }
 
     RunList:
       type: object
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Run' } }
+
+    PatchServer:
+      type: object
+      required: [serverId, name, status, error, canary, packages, installed, held, notApproved, versions, health, checks]
+      properties:
+        serverId: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string }
+        error: { type: string }
+        canary: { type: boolean }
+        packages: { type: integer, description: Packages the helper recorded as upgraded. 0 when the detail has no package list. }
+        installed: { type: array, items: { type: string }, description: Packages the helper upgraded. }
+        held: { type: array, items: { type: string }, description: Pending packages left alone because they are held. }
+        notApproved: { type: array, items: { type: string }, description: 'Pending packages left alone because the plan did not list them, often found by apt after the approval.' }
+        versions:
+          type: array
+          description: 'Each upgraded package with its version before and after. after is empty when the helper could not read it: unknown, not guessed.'
+          items:
+            type: object
+            required: [name, before, after]
+            properties:
+              name: { type: string }
+              before: { type: string }
+              after: { type: string }
+        health: { type: string, description: Set when status got worse after the upgrade. }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [name, kind, phase, state, blocking]
+            properties:
+              name: { type: string }
+              kind: { type: string }
+              phase: { type: string }
+              state: { type: string }
+              detail: { type: string }
+              blocking: { type: boolean }
+              overridden: { type: boolean, description: A failed check before the upgrade that a person let pass for this run. }
+
+    PlanBody:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [measure, clean, update] }
+        groupId: { type: integer, format: int64, nullable: true }
+        serverIds: { type: array, items: { type: integer, format: int64 } }
+        updateMode: { type: string, enum: [security, all] }
+        hold: { type: array, items: { type: string } }
+        rebootIfRequired: { type: boolean }
+        observeSeconds: { type: integer, minimum: 0, maximum: 600 }
+        canaryServerIds: { type: array, items: { type: integer, format: int64 } }
+        buildCache: { type: boolean }
+        vscode: { type: boolean }
+        journal: { type: boolean }
+        journalSize: { type: string }
+        packages:
+          type: array
+          items: { type: string }
+          description: 'The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else.'
+        pending:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: 'Every pending package when the plan was proposed. A different list at execution invalidates the plan.'
+        waitAfterCanaries:
+          type: boolean
+          description: Pause the plan's run after its canaries until a person continues it.
+        pinnedServerIds:
+          type: array
+          items: { type: integer, format: int64 }
+          readOnly: true
+          description: The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan.
+
+    ProbeInput:
+      type: object
+      required: [source, host, port, state, reason, observedAt]
+      properties:
+        source: { type: string, maxLength: 40, pattern: '^[A-Za-z0-9._-]+$', description: A stable label for the probe location. }
+        host: { type: string, maxLength: 253, description: Must equal the server's enrolled host. }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        state: { type: string, enum: [reachable, not_reached, unknown] }
+        reason: { type: string, enum: [none, refused, timeout, dns_failed, network_error] }
+        observedAt: { type: string, format: date-time }
+
+    ProbeObservation:
+      type: object
+      required: [source, host, port, state, reason, attemptedAt, stale]
+      properties:
+        source: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        state: { type: string, enum: [reachable, not_reached, unknown], description: Only this probe's latest attempt. Not a result for the whole internet. }
+        reason: { type: string }
+        attemptedAt: { type: string, format: date-time }
+        stale: { type: boolean, description: True after 15 minutes without a current attempt. Stale evidence is unknown. }
+        lastKnownState: { type: string, description: The last reachable or not_reached result. An unknown attempt does not erase it. }
+        lastKnownAt: { type: string, format: date-time, nullable: true }
+
+    FixPlan:
+      type: object
+      required: [id, status, fingerprint, body, reason, createdAt, approvals, approvalsRequired]
+      properties:
+        id: { type: integer, format: int64 }
+        status:
+          type: string
+          enum: [submitted, approved, rejected, cancelled, executing, succeeded, partial, failed, skipped, expired, invalidated]
+          description: executing until the run finishes, then the run's status.
+        approvals: { type: integer, minimum: 0, maximum: 2 }
+        approvalsRequired: { type: integer, minimum: 1, maximum: 2 }
+        fingerprint: { type: string }
+        body: { $ref: '#/components/schemas/PlanBody' }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        runId: { type: integer, format: int64, nullable: true }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    PlanList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          description: The 100 most recent plans, newest first.
+          items: { $ref: '#/components/schemas/FixPlan' }
+
+    PatchReport:
+      type: object
+      required: [runId, status, summary, observeSeconds, canaries, servers]
+      properties:
+        runId: { type: integer, format: int64 }
+        status: { type: string }
+        summary: { type: string }
+        observeSeconds: { type: integer }
+        canaries: { type: array, items: { type: integer, format: int64 } }
+        servers: { type: array, items: { $ref: '#/components/schemas/PatchServer' } }
 
     # ---- Alerts, channels, certificates ---------------------------------------------
 
@@ -2264,12 +3872,104 @@ components:
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/Alert' } }
 
+    Incident:
+      type: object
+      required: [id, serverId, serverName, kind, subject, state, message, nextStep, firstSeen, lastSeen, canReview, canHold]
+      properties:
+        id: { type: integer, format: int64 }
+        serverId: { type: integer, format: int64 }
+        serverName: { type: string }
+        assigneeId: { type: integer, format: int64, nullable: true, description: Assigned member. Hidden from other spaces. }
+        assigneeName: { type: string, description: Assigned member display name. Hidden from other spaces. }
+        canHold: { type: boolean, description: Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot. }
+        canReview:
+          type: boolean
+          description: True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner.
+        kind: { type: string }
+        subject: { type: string }
+        state:
+          type: string
+          enum: [open, acknowledged, snoozed, accepted, resolved]
+          description: resolved means a fresh check no longer saw it. Missing data never resolves a notice.
+        snoozeUntil: { type: string, format: date-time, nullable: true, description: When a snooze or an accepted risk ends. }
+        snoozeReason: { type: string, description: Why it was snoozed or accepted. }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        recurrences: { type: integer, description: How often it came back after being resolved. }
+        note: { type: string, description: The reviewer's latest note. }
+        events:
+          type: array
+          maxItems: 200
+          description: History, oldest first. Only getIncident fills it.
+          items: { $ref: '#/components/schemas/IncidentEvent' }
+        message: { type: string }
+        nextStep: { type: string, description: What a person can do next. It does not change the server. }
+        firstSeen: { type: string, format: date-time }
+        lastSeen: { type: string, format: date-time }
+        ackedAt: { type: string, format: date-time, nullable: true }
+
+    Routing:
+      type: object
+      required: [warnings, hour, timezone]
+      properties:
+        warnings: { type: string, enum: [immediate, daily] }
+        hour: { type: integer, minimum: 0, maximum: 23, description: Hour of the daily summary in timezone. }
+        timezone: { type: string, example: Asia/Colombo }
+
+    Delivery:
+      type: object
+      required: [id, channel, title, severity, state, attempts, lastError, createdAt]
+      properties:
+        id: { type: integer, format: int64 }
+        channel: { type: string }
+        title: { type: string }
+        severity: { type: string }
+        state: { type: string, enum: [queued, sending, sent, dead], description: dead means it gave up after its retries. }
+        attempts: { type: integer }
+        lastError: { type: string }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: string, format: date-time, nullable: true }
+
+    DeliveryList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/Delivery' }
+
+    IncidentEvent:
+      type: object
+      required: [kind, actor, detail, at]
+      properties:
+        kind: { type: string, enum: [opened, reopened, recurred, snooze_broken, resolved, acknowledged, snoozed, accepted, returned, assigned, unassigned] }
+        actor: { type: string, description: esa for the control plane. People of another organization are not named. }
+        detail: { type: string }
+        at: { type: string, format: date-time }
+
+    IncidentHold:
+      type: object
+      required: [until, reason]
+      properties:
+        until: { type: string, format: date-time }
+        reason: { type: string, maxLength: 200 }
+
+    IncidentList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          description: The 100 most recently seen notices.
+          items: { $ref: '#/components/schemas/Incident' }
+
     AlertRule:
       type: object
       required: [id, kind, enabled, threshold, forMinutes]
       properties:
         id: { type: integer, format: int64 }
-        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key] }
+        kind: { type: string, enum: [disk, inode, memory, unreachable, failed_unit, container, reboot_required, cert_expiry, run_failed, host_key, exposure, new_port, new_key, security_update] }
         enabled: { type: boolean }
         threshold: { type: number, format: double, description: 'Percent for disk, inode, and memory; days for cert_expiry; unused otherwise.' }
         forMinutes: { type: integer, description: How long the condition must hold before the alert fires. }
@@ -2417,9 +4117,13 @@ components:
 
     ActivityList:
       type: object
-      required: [items]
+      required: [items, keptUntilDeletion, retentionHours]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/ActivityEntry' } }
+        earliest: { type: string, format: date-time, nullable: true, description: Oldest audit row still kept for this account. Empty when there are none. }
+        keptUntilDeletion: { type: boolean, description: True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted. }
+        retentionHours: { type: integer, description: How old a row must be before a prune can delete it. Zero when rows are kept until deletion. }
+        holdUntil: { type: string, format: date-time, nullable: true, description: 'While this time is in the future, pruning deletes nothing. Only the install can set it.' }
 
     SSHKey:
       type: object

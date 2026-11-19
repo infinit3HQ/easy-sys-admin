@@ -187,3 +187,20 @@ func TestLimitSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestReportRetentionIsExplicitAndAtLeastOneDay(t *testing.T) {
+	m := base()
+	cfg, err := parse(env(m))
+	if err != nil || cfg.ReportRetention != 0 {
+		t.Fatalf("default: %v", err)
+	}
+	m["ESA_REPORT_RETENTION"] = "2160h"
+	cfg, err = parse(env(m))
+	if err != nil || cfg.ReportRetention != 90*24*time.Hour {
+		t.Fatalf("configured: %v", err)
+	}
+	m["ESA_REPORT_RETENTION"] = "1h"
+	if _, err := parse(env(m)); err == nil {
+		t.Fatal("accepted retention shorter than one day")
+	}
+}

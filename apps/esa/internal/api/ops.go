@@ -27,9 +27,25 @@ func toGroupInput(b *GroupInput) fleet.GroupInput {
 		Updates: fleet.UpdatePolicy{
 			Enabled: b.Updates.Enabled, Mode: proto.UpdateMode(b.Updates.Mode), Days: days(b.Updates.Days), Time: b.Updates.Time,
 			Hold: b.Updates.Hold, RebootIfRequired: b.Updates.RebootIfRequired,
-			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures,
+			BatchSize: b.Updates.BatchSize, MaxFailures: b.Updates.MaxFailures, PlanRequired: b.Updates.PlanRequired, TwoApprovers: b.Updates.TwoApprovers,
 		},
+		Checks: toFleetChecks(b.Checks),
 	}
+}
+
+func toFleetChecks(in *[]HealthCheck) []fleet.HealthCheck {
+	if in == nil {
+		return nil
+	}
+	out := make([]fleet.HealthCheck, len(*in))
+	for i, c := range *in {
+		out[i] = fleet.HealthCheck{
+			Name: c.Name, Kind: string(c.Kind), Blocking: c.Blocking, Port: deref(c.Port),
+			TLS: deref(c.Tls), Method: string(deref(c.Method)), Path: deref(c.Path),
+			Unit: deref(c.Unit), Container: deref(c.Container),
+		}
+	}
+	return out
 }
 
 func (h *Handlers) ListGroups(ctx context.Context, _ ListGroupsRequestObject) (ListGroupsResponseObject, error) {
@@ -129,6 +145,16 @@ func (h *Handlers) StartRun(ctx context.Context, req StartRunRequestObject) (Sta
 	if b.ServerIds != nil {
 		r.ServerIDs = *b.ServerIds
 	}
+	if b.CanaryServerIds != nil {
+		r.CanaryServerIDs = *b.CanaryServerIds
+	}
+	if b.ObserveSeconds != nil {
+		r.ObserveSeconds = *b.ObserveSeconds
+	}
+	r.WaitAfterCanaries = deref(b.WaitAfterCanaries)
+	if b.Override != nil {
+		r.Override = &fleet.CheckOverride{Checks: b.Override.Checks, Reason: b.Override.Reason}
+	}
 	run, err := h.fleet.StartRun(ctx, a, r)
 	if err != nil {
 		return nil, err
@@ -148,7 +174,154 @@ func (h *Handlers) GetRun(ctx context.Context, req GetRunRequestObject) (GetRunR
 	return GetRun200JSONResponse(toRun(run)), nil
 }
 
+func (h *Handlers) GetPatchReport(ctx context.Context, req GetPatchReportRequestObject) (GetPatchReportResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rep, err := h.fleet.PatchReport(ctx, a, req.RunId)
+	if err != nil {
+		return nil, err
+	}
+	return GetPatchReport200JSONResponse(toPatchReport(rep)), nil
+}
+
+func toPatchReport(v fleet.PatchReport) PatchReport {
+	out := PatchReport{
+		RunId: v.RunID, Status: v.Status, Summary: v.Summary,
+		ObserveSeconds: v.ObserveSeconds, Canaries: nonNil(v.Canaries),
+		Servers: make([]PatchServer, 0, len(v.Servers)),
+	}
+	for _, s := range v.Servers {
+		item := PatchServer{
+			ServerId: s.ServerID, Name: s.Name, Status: s.Status, Error: s.Error,
+			Canary: s.Canary, Packages: s.Packages, Health: s.Health,
+			Installed: nonNil(s.Installed), Held: nonNil(s.Held), NotApproved: nonNil(s.NotApproved),
+			Versions: patchVersions(s.Versions),
+		}
+		item.Checks = make([]struct {
+			Blocking   bool    `json:"blocking"`
+			Detail     *string `json:"detail,omitempty"`
+			Kind       string  `json:"kind"`
+			Name       string  `json:"name"`
+			Overridden *bool   `json:"overridden,omitempty"`
+			Phase      string  `json:"phase"`
+			State      string  `json:"state"`
+		}, 0, len(s.Checks))
+		for _, c := range s.Checks {
+			var detail *string
+			if c.Detail != "" {
+				d := c.Detail
+				detail = &d
+			}
+			var overridden *bool
+			if c.Overridden {
+				overridden = ptrTo(true)
+			}
+			item.Checks = append(item.Checks, struct {
+				Blocking   bool    `json:"blocking"`
+				Detail     *string `json:"detail,omitempty"`
+				Kind       string  `json:"kind"`
+				Name       string  `json:"name"`
+				Overridden *bool   `json:"overridden,omitempty"`
+				Phase      string  `json:"phase"`
+				State      string  `json:"state"`
+			}{Blocking: c.Blocking, Detail: detail, Kind: c.Kind, Name: c.Name, Overridden: overridden, Phase: c.Phase, State: c.State})
+		}
+		out.Servers = append(out.Servers, item)
+	}
+	return out
+}
+
 // ---- Alerts ------------------------------------------------------------------------
+
+func (h *Handlers) ListIncidents(ctx context.Context, req ListIncidentsRequestObject) (ListIncidentsResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.fleet.ListIncidents(ctx, a, fleet.IncidentFilter{All: deref(req.Params.IncludeAcknowledged)})
+	if err != nil {
+		return nil, err
+	}
+	return ListIncidents200JSONResponse{Items: mapSlice(items, toIncident)}, nil
+}
+
+func (h *Handlers) SnoozeIncident(ctx context.Context, req SnoozeIncidentRequestObject) (SnoozeIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.SnoozeIncident(ctx, a, req.IncidentId, req.Body.Until, req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return SnoozeIncident200JSONResponse(toIncident(v)), nil
+}
+
+func toWindow(v fleet.MaintenanceView) MaintenanceWindow {
+	return MaintenanceWindow{
+		Id: v.ID, GroupId: v.GroupID, ServerId: v.ServerID, Reason: v.Reason,
+		StartsAt: v.StartsAt, EndsAt: v.EndsAt,
+	}
+}
+
+func (h *Handlers) ListMaintenance(ctx context.Context, _ ListMaintenanceRequestObject) (ListMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := h.fleet.ListMaintenance(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	return ListMaintenance200JSONResponse{Items: mapSlice(items, toWindow)}, nil
+}
+
+func (h *Handlers) CreateMaintenance(ctx context.Context, req CreateMaintenanceRequestObject) (CreateMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.CreateMaintenance(ctx, a, req.Body.GroupId, req.Body.ServerId, req.Body.Reason, req.Body.StartsAt, req.Body.EndsAt)
+	if err != nil {
+		return nil, err
+	}
+	return CreateMaintenance201JSONResponse(toWindow(v)), nil
+}
+
+func (h *Handlers) DeleteMaintenance(ctx context.Context, req DeleteMaintenanceRequestObject) (DeleteMaintenanceResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.fleet.DeleteMaintenance(ctx, a, req.WindowId); err != nil {
+		return nil, err
+	}
+	return DeleteMaintenance204Response{}, nil
+}
+
+func (h *Handlers) AcknowledgeIncident(ctx context.Context, req AcknowledgeIncidentRequestObject) (AcknowledgeIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	note := ""
+	if req.Body != nil {
+		note = deref(req.Body.Note)
+	}
+	v, err := h.fleet.AcknowledgeIncident(ctx, a, req.IncidentId, note)
+	if err != nil {
+		return nil, err
+	}
+	return AcknowledgeIncident200JSONResponse(toIncident(v)), nil
+}
 
 func (h *Handlers) ListAlerts(ctx context.Context, req ListAlertsRequestObject) (ListAlertsResponseObject, error) {
 	a, err := actor(ctx)
@@ -356,7 +529,8 @@ func (h *Handlers) ListActivity(ctx context.Context, req ListActivityRequestObje
 	if err != nil {
 		return nil, err
 	}
-	return ListActivity200JSONResponse{Items: mapSlice(es, toActivity)}, nil
+	return ListActivity200JSONResponse{Items: mapSlice(es.Entries, toActivity), Earliest: es.Earliest,
+		KeptUntilDeletion: es.KeptUntilDeletion, RetentionHours: es.RetentionHours, HoldUntil: es.HoldUntil}, nil
 }
 
 func (h *Handlers) GetSSHKey(ctx context.Context, _ GetSSHKeyRequestObject) (GetSSHKeyResponseObject, error) {
@@ -369,4 +543,81 @@ func (h *Handlers) GetSSHKey(ctx context.Context, _ GetSSHKeyRequestObject) (Get
 		return nil, err
 	}
 	return GetSSHKey200JSONResponse{PublicKey: pub, Fingerprint: fp}, nil
+}
+
+func (h *Handlers) GetIncident(ctx context.Context, req GetIncidentRequestObject) (GetIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := h.fleet.GetIncident(ctx, a, req.IncidentId)
+	if err != nil {
+		return nil, err
+	}
+	return GetIncident200JSONResponse(toIncident(v)), nil
+}
+
+func (h *Handlers) AcceptIncident(ctx context.Context, req AcceptIncidentRequestObject) (AcceptIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "reason", Message: "is required"}
+	}
+	v, err := h.fleet.AcceptIncident(ctx, a, req.IncidentId, req.Body.Until, req.Body.Reason)
+	if err != nil {
+		return nil, err
+	}
+	return AcceptIncident200JSONResponse(toIncident(v)), nil
+}
+
+func (h *Handlers) DecideGate(ctx context.Context, req DecideGateRequestObject) (DecideGateResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "decision", Message: "is required"}
+	}
+	run, err := h.fleet.DecideGate(ctx, a, req.RunId, string(req.Body.Decision), deref(req.Body.Note))
+	if err != nil {
+		return nil, err
+	}
+	return DecideGate200JSONResponse(toRun(run)), nil
+}
+
+func patchVersions(vs []proto.PackageVersion) []struct {
+	After  string `json:"after"`
+	Before string `json:"before"`
+	Name   string `json:"name"`
+} {
+	out := make([]struct {
+		After  string `json:"after"`
+		Before string `json:"before"`
+		Name   string `json:"name"`
+	}, 0, len(vs))
+	for _, v := range vs {
+		out = append(out, struct {
+			After  string `json:"after"`
+			Before string `json:"before"`
+			Name   string `json:"name"`
+		}{v.After, v.Before, v.Name})
+	}
+	return out
+}
+
+func (h *Handlers) AssignIncident(ctx context.Context, req AssignIncidentRequestObject) (AssignIncidentResponseObject, error) {
+	a, err := actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if req.Body == nil {
+		return nil, &fleet.ValidationError{Field: "userId", Message: "is required"}
+	}
+	v, err := h.fleet.AssignIncident(ctx, a, req.IncidentId, req.Body.UserId)
+	if err != nil {
+		return nil, err
+	}
+	return AssignIncident200JSONResponse(toIncident(v)), nil
 }

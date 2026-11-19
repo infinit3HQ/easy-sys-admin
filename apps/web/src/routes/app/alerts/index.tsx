@@ -1,13 +1,117 @@
 import { Link, createFileRoute } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { SettingsIcon } from 'lucide-react'
+import { api, call } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { Ago } from '#/components/time'
-import { Empty, PageHeader, Severity, Toggle, cn } from '#/components/kit'
+import { noticeKind } from '#/lib/notice-kind'
+import {
+  Empty,
+  ErrorBanner,
+  PageHeader,
+  Severity,
+  Toggle,
+  cn,
+} from '#/components/kit'
 import { clickableRowClass, followRowLink } from '#/components/row-link'
 import { Button } from '#/components/ui/button'
 import { Card } from '#/components/ui/card'
+
+function NeedsReview() {
+  const qc = useQueryClient()
+  const incidents = useQuery(q.incidents(false))
+  const ack = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().POST('/incidents/{incidentId}/acknowledge', {
+          params: { path: { incidentId: id } },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
+  })
+  const snooze = useMutation({
+    mutationFn: (id: number) =>
+      call(
+        api().POST('/incidents/{incidentId}/snooze', {
+          params: { path: { incidentId: id } },
+          body: {
+            until: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+            reason: 'look again tomorrow',
+          },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['incidents'] }),
+  })
+  const items = incidents.data?.items ?? []
+  if (incidents.error) {
+    return <ErrorBanner error={incidents.error} className="mb-6" />
+  }
+  if (items.length === 0) return null
+  const busy = (m: typeof ack, id: number) => m.isPending && m.variables === id
+  return (
+    <Card className="mb-6">
+      <div className="label px-4 pt-4">Needs review</div>
+      {(ack.error || snooze.error) && (
+        <ErrorBanner error={ack.error ?? snooze.error} className="mx-4 mt-3" />
+      )}
+      <ul className="divide-y divide-line">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center"
+          >
+            <div className="min-w-0 flex-1">
+              <Link
+                to="/app/alerts/notices/$incidentId"
+                params={{ incidentId: item.id }}
+                className="text-sm break-words text-ink hover:text-amber"
+              >
+                {item.message}
+              </Link>
+              <div className="mt-1 text-xs text-muted-foreground">
+                {item.nextStep}
+              </div>
+              <div className="font-mono text-[10px] tracking-wider text-faint uppercase">
+                {noticeKind(item.kind)} · {item.serverName} ·{' '}
+                {item.assigneeName ? `Assigned to ${item.assigneeName} · ` : ''}{' '}
+                <Ago iso={item.lastSeen} />
+              </div>
+            </div>
+            {item.canReview && (
+              <div className="flex gap-2">
+                {item.canHold && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => snooze.mutate(item.id)}
+                    busy={busy(snooze, item.id)}
+                  >
+                    Tomorrow
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => ack.mutate(item.id)}
+                  busy={busy(ack, item.id)}
+                >
+                  Reviewed
+                </Button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="px-4 pb-4 text-xs text-muted-foreground">
+        Reviewed means you have seen it. It opens again if the same thing
+        happens again. Tomorrow hides it for one day, then it comes back.
+        Neither changes the server. Notices about shared servers are reviewed by
+        their owner.
+      </p>
+    </Card>
+  )
+}
 
 export const Route = createFileRoute('/app/alerts/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(q.alerts(false)),
@@ -21,6 +125,7 @@ function Alerts() {
   const items = alerts.data?.items ?? []
   return (
     <div>
+      <NeedsReview />
       <PageHeader kicker="Signals" title="Alerts">
         <div className="flex flex-wrap items-center gap-3">
           <Toggle checked={all} onChange={setAll} label="Include resolved" />
