@@ -228,6 +228,28 @@ base-uri 'none'; object-src 'none'; form-action 'self'
 
 On each managed server esa logs in as a system user `esa` whose key can only run `esa-helper ssh-dispatch`. That command only passes `sudo -n /usr/local/lib/esa/esa-helper <action>` on to sudo, and the sudo rule allows only the helper. The helper runs fixed programs with typed arguments and refuses actions that could cut the server off, such as stopping sshd or touching the firewall. It has no self-update action, so the `esa` key cannot install a different binary as root. Every SSH connection pins the server's host key and stops before sending a credential if the key changed. The details are in [server-helper.md](server-helper.md).
 
+### Why the sudo rule ends in a wildcard
+
+The rule written to `/etc/sudoers.d/esa` is:
+
+```
+Defaults:esa !requiretty
+Defaults:esa env_reset
+Defaults:esa secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *
+```
+
+The `*` lets the `esa` user pass any arguments to one binary. It does not let it run anything else as root. The limit is what the helper accepts, not the sudo rule:
+
+- **One binary.** sudo runs only `/usr/local/lib/esa/esa-helper`, a root-owned file. The SSH installer checks its SHA-256 on the root-owned copy before it writes the rule. The helper has no action that replaces itself.
+- **The key cannot call sudo freely.** The `esa` key's forced command is `esa-helper ssh-dispatch`. It accepts only `sudo -n /usr/local/lib/esa/esa-helper <action> [args...]`, written in the exact quoting the control plane uses, and refuses any other shell syntax, `ssh-dispatch` itself, and `upgrade-exec` (`DispatchArgs` in `apps/esa/internal/hostops/dispatch.go`, tested in `dispatch_test.go`).
+- **Arguments are typed.** Every action parses one fixed set of flags with Go's `flag` package. An unknown flag, a stray argument, or an unknown action is refused before anything runs (`run` in `apps/esa/cmd/esa-helper/main.go`).
+- **No shell.** The helper starts programs with an argument list, never through a shell, so a value cannot become a command. The one `/bin/sh -c` is the fixed uninstall script in `apps/esa/internal/hostops/uninstall.go`, which takes no input.
+- **Each action checks its values.** Protected units, network and power units, and protected containers are refused. Cleanups never prune volumes or images in use. These rules are tested in `apps/esa/internal/hostops/safety_test.go` and listed in [server-helper.md](server-helper.md).
+- **Clean environment.** `env_reset` and `secure_path` stop the caller's environment from changing which programs the helper finds.
+
+Anyone who can act as the `esa` user can run every helper action, the same as the control plane can. The action list is the boundary. Debian's `staff` group can write `/usr/local/lib` (see Known limits below).
+
 ## Teams and sharing
 
 Every account-owned query starts from the caller's account, and one visibility helper adds what is shared with it. Organization roles are `owner`, `admin`, and `viewer`, and new members start as viewers.
@@ -252,7 +274,7 @@ Recorded actions include:
 
 When someone acts on a server through a share, the entry goes to the owning account with `via_account_id`, and a copy goes to the caller's account with `owner_account_id`. Reading logs is recorded too, because logs can hold secrets.
 
-Owners and admins read the log on the Activity page or through `GET /api/v1/activity` (100 entries by default, at most 500). Entries are kept until their account is deleted. If a user is deleted, their entries stay with the user set to empty. There is no pruning job.
+Owners and admins read the log on the Activity page or through `GET /api/v1/activity` (100 entries by default, at most 500). Entries are kept until their account is deleted, or for `ESA_AUDIT_RETENTION` when that is set (see [configuration.md](configuration.md)). If a user is deleted, their entries stay with the user set to empty.
 
 ## Reporting a vulnerability
 
