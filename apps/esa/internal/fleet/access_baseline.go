@@ -90,6 +90,9 @@ func (s *Service) ApproveAccessBaseline(ctx context.Context, a Actor, serverID i
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return err
 	}
+	if err := requirePerson(a, "approve an access baseline"); err != nil {
+		return err
+	}
 	reason = strings.TrimSpace(reason)
 	if reason == "" || utf8.RuneCountInString(reason) > 200 {
 		return invalid("reason", "say why, in at most 200 characters")

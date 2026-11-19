@@ -71,6 +71,11 @@ type Host struct {
 	Docker *DockerClient // nil when Docker is not installed
 	// Root lets tests point file reads at a fixture tree. Empty means "/".
 	Root string
+	// TrustedComposeOwner reports whether files owned by uid may be run by
+	// compose as root. Nil trusts root and the docker group.
+	TrustedComposeOwner func(uid uint32) bool
+	// TrustedComposeGroup is the same for a group that may write them.
+	TrustedComposeGroup func(gid uint32) bool
 }
 
 // NewHost returns a Host for the real machine.

@@ -56,7 +56,7 @@ ESA_WEB_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-web:stable
 
 Generate the database password with `openssl rand -hex 24`. Do not copy these placeholder credentials. Set `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, and `TRAEFIK_CERT_RESOLVER` if your proxy uses different names. Keep `ESA_SEO=false` for private installations.
 
-Create the first account before sharing access to the hostname. With sign-up off, the first user can still initialize an empty installation. To add more people while sign-up stays closed, configure a verified identity provider. `ESA_ALLOWED_EMAILS` restricts sign-in; its presence also disables general password registration.
+Create the first account before sharing access to the hostname. With sign-up off, the first user can still initialize an empty installation. To add more people while sign-up stays closed, configure a verified identity provider and list who may sign in with `ESA_ALLOWED_EMAILS`. Without that list, anyone with an account at the provider can sign in, and esa then refuses private addresses unless you set `ESA_ALLOW_PRIVATE_NETWORKS=true`. `ESA_ALLOWED_EMAILS` restricts sign-in; its presence also disables general password registration.
 
 ## Use published images
 

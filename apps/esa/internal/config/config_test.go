@@ -204,3 +204,43 @@ func TestReportRetentionIsExplicitAndAtLeastOneDay(t *testing.T) {
 		t.Fatal("accepted retention shorter than one day")
 	}
 }
+
+// Private addresses are on by default only when nobody outside the operator
+// can sign in. A provider with no allow list lets any account of that
+// provider in, whatever ESA_SIGNUP says.
+func TestPrivateNetworksDefault(t *testing.T) {
+	standard := func(extra map[string]string) map[string]string {
+		m := base()
+		m["ESA_AUTH_MODE"] = "standard"
+		for k, v := range extra {
+			m[k] = v
+		}
+		return m
+	}
+	google := map[string]string{"ESA_GOOGLE_CLIENT_ID": "id", "ESA_GOOGLE_CLIENT_SECRET": "secret"}
+	cases := []struct {
+		name  string
+		extra map[string]string
+		want  bool
+	}{
+		{"password only, sign-up closed", nil, true},
+		{"sign-up open", map[string]string{"ESA_SIGNUP": "true"}, false},
+		{"google, no allow list", google, false},
+		{"google with an allow list", map[string]string{
+			"ESA_GOOGLE_CLIENT_ID": "id", "ESA_GOOGLE_CLIENT_SECRET": "secret", "ESA_ALLOWED_EMAILS": "me@example.com"}, true},
+	}
+	for _, c := range cases {
+		cfg, err := parse(env(standard(c.extra)))
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if cfg.AllowPrivateNetworks != c.want {
+			t.Errorf("%s: AllowPrivateNetworks = %v, want %v", c.name, cfg.AllowPrivateNetworks, c.want)
+		}
+	}
+	m := standard(google)
+	m["ESA_ALLOW_PRIVATE_NETWORKS"] = "true"
+	if cfg, err := parse(env(m)); err != nil || !cfg.AllowPrivateNetworks {
+		t.Errorf("an explicit setting must win: %v %v", cfg.AllowPrivateNetworks, err)
+	}
+}

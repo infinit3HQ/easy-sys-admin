@@ -748,9 +748,12 @@ export function ConfirmDialog({
 
 export function CopyBlock({
   value,
+  label,
   className,
 }: {
   value: string
+  /** What is copied, for screen readers when a page has several blocks. */
+  label?: string
   className?: string
 }) {
   const [copied, setCopied] = useState(false)
@@ -769,7 +772,9 @@ export function CopyBlock({
         type="button"
         variant="outline"
         size="xs"
-        aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+        aria-label={
+          copied ? 'Copied' : label ? `Copy ${label}` : 'Copy to clipboard'
+        }
         onClick={() => {
           void navigator.clipboard.writeText(value).then(() => {
             setCopied(true)

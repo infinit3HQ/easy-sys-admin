@@ -50,6 +50,11 @@ func (s *Store) postMigrate(ctx context.Context) error {
 	if err := s.installPlanApprovalGuard(ctx); err != nil {
 		return err
 	}
+	// Links mailed by older versions carried a password chosen by whoever
+	// asked. Nothing applies it any more; do not keep it either.
+	if err := s.db.WithContext(ctx).Exec(`UPDATE auth_email_tokens SET password_hash = '' WHERE password_hash <> ''`).Error; err != nil {
+		return err
+	}
 	// One row per existing user, so a provider sign-in still finds them
 	// after identities became their own table.
 	return s.db.WithContext(ctx).Exec(`

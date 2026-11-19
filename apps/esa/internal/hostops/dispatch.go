@@ -27,6 +27,11 @@ func DispatchArgs(cmd string) ([]string, error) {
 	if words[3] == DispatchAction {
 		return nil, errors.New(DispatchAction + " cannot be called through itself")
 	}
+	if words[3] == "upgrade-exec" {
+		// It runs inside the unit upgrade-start creates, past the prechecks
+		// and the unit's kill rules. The esa key never starts it directly.
+		return nil, errors.New("upgrade-exec cannot be called over SSH")
+	}
 	return words[1:], nil
 }
 

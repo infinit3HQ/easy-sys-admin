@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm/clause"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/netguard"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -97,7 +99,8 @@ func (s *Service) AddServer(ctx context.Context, a Actor, in AddServerInput) (Se
 		if errors.As(err, &mismatch) {
 			return ServerView{}, &ConflictError{Message: "the server's host key changed since you checked it (" + remote.Fingerprint(mismatch.Presented) + "); check the key again"}
 		}
-		return ServerView{}, &UnavailableError{Message: "install failed: " + err.Error()}
+		s.log.Info("install helper", "account_id", a.AccountID, "host", srv.Host, "err", err)
+		return ServerView{}, &UnavailableError{Message: "install failed: " + installErrorText(err)}
 	}
 
 	now := s.now()
@@ -105,6 +108,9 @@ func (s *Service) AddServer(ctx context.Context, a Actor, in AddServerInput) (Se
 	srv.HostKeyAcceptedBy, srv.HostKeyAcceptedAt = store.OptionalID(a.UserID), &now
 	err = s.store.InTx(ctx, func(q *store.Queries) error {
 		tx := q.Raw()
+		if err := s.capLocked(tx, a.AccountID, &store.Server{}, s.maxServers, "servers"); err != nil {
+			return err
+		}
 		if err := tx.Omit(clause.Associations).Create(&srv).Error; err != nil {
 			return mapStore(err)
 		}
@@ -235,4 +241,19 @@ func (s *Service) verifyHelper(ctx context.Context, serverID int64) error {
 	s.recordHelper(ctx, serverID, v)
 	s.helperTried.Delete(serverID)
 	return nil
+}
+
+// installErrorText is the reason an install failed, as the person who typed
+// the address may see it. Failures to reach the server are reduced to a
+// category, so the message does not describe the network behind the name.
+// Errors the install script reported about the server itself pass through.
+func installErrorText(err error) string {
+	var (
+		opErr  *net.OpError
+		dnsErr *net.DNSError
+	)
+	if errors.As(err, &opErr) || errors.As(err, &dnsErr) || netguard.IsBlocked(err) {
+		return netErrorText(err)
+	}
+	return err.Error()
 }

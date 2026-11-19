@@ -79,7 +79,7 @@ func TestNetErrorText(t *testing.T) {
 			t.Errorf("netErrorText(%v) = %q, want %q", err, got, want)
 		}
 	}
-	if got := netErrorText(fmt.Errorf("dial: %w", blocked)); !strings.Contains(got, "esa does not connect to 169.254.169.254") {
+	if got := netErrorText(fmt.Errorf("dial: %w", blocked)); !strings.Contains(got, "esa does not connect to that address") {
 		t.Errorf("blocked: %q", got)
 	}
 }

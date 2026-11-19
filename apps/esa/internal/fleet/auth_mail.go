@@ -20,6 +20,9 @@ type AuthMailer interface {
 const (
 	confirmTTL = 24 * time.Hour
 	resetTTL   = time.Hour
+
+	// authMailPerHour caps the mails one address gets from the open forms.
+	authMailPerHour = 3
 )
 
 // RequestPasswordReset emails a reset link when the address belongs to a
@@ -37,7 +40,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 	if !ok {
 		return nil
 	}
-	if err := s.sendAuthMail(ctx, u.ID, u.Email, "reset", ""); err != nil {
+	if err := s.sendAuthMail(ctx, u.ID, u.Email, "reset", false); err != nil {
 		return fmt.Errorf("%w: %w", ErrMailFailed, err)
 	}
 	s.audit(ctx, nil, Actor{UserID: u.ID, AccountID: 0, Source: SourceWeb}, "auth.reset_request", email, nil)
@@ -58,23 +61,21 @@ func (s *Service) ResendConfirmation(ctx context.Context, email string) error {
 	if !ok || u.EmailConfirmed {
 		return nil
 	}
-	if err := s.sendAuthMail(ctx, u.ID, u.Email, "confirm", ""); err != nil {
+	if err := s.sendAuthMail(ctx, u.ID, u.Email, "confirm", false); err != nil {
 		return fmt.Errorf("%w: %w", ErrMailFailed, err)
 	}
 	return nil
 }
 
-// ConfirmEmail marks the password account behind a confirmation link as confirmed.
+// ConfirmEmail marks the password account behind a confirmation link as
+// confirmed. It never sets a password: whoever opens the link proves the
+// mailbox, and only a reset link lets them choose one.
 func (s *Service) ConfirmEmail(ctx context.Context, token string) error {
-	u, pending, err := s.consumeAuthToken(ctx, token, "confirm")
+	u, err := s.consumeAuthToken(ctx, token, "confirm")
 	if err != nil {
 		return err
 	}
-	updates := map[string]any{"email_confirmed": true}
-	if pending != "" {
-		updates["password_hash"] = pending
-	}
-	if err := s.db.WithContext(ctx).Model(&store.User{}).Where("id = ?", u.ID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&store.User{}).Where("id = ?", u.ID).Update("email_confirmed", true).Error; err != nil {
 		return err
 	}
 	s.audit(ctx, nil, Actor{UserID: u.ID, Source: SourceWeb}, "auth.confirm", u.Email, nil)
@@ -82,12 +83,13 @@ func (s *Service) ConfirmEmail(ctx context.Context, token string) error {
 }
 
 // ResetPassword sets a new password from a reset link, confirms the address,
-// and ends every session for that user.
+// ends every session for that user, and revokes their API tokens, so a
+// takeover does not outlive the owner recovering the account.
 func (s *Service) ResetPassword(ctx context.Context, token, pw string) error {
 	if err := validPassword(pw, ""); err != nil {
 		return err
 	}
-	u, _, err := s.consumeAuthToken(ctx, token, "reset")
+	u, err := s.consumeAuthToken(ctx, token, "reset")
 	if err != nil {
 		return err
 	}
@@ -103,7 +105,12 @@ func (s *Service) ResetPassword(ctx context.Context, token, pw string) error {
 			Updates(map[string]any{"password_hash": hash, "email_confirmed": true}).Error; err != nil {
 			return err
 		}
-		return q.Raw().WithContext(ctx).Where("user_id = ?", u.ID).Delete(&store.Session{}).Error
+		if u.PasswordHash == "" {
+			// Adding a first password is not a recovery: no password was
+			// ever at risk, so sessions and tokens stay.
+			return nil
+		}
+		return dropLiveCredentials(q.Raw().WithContext(ctx), u.ID, s.now())
 	})
 	if err != nil {
 		return err
@@ -118,7 +125,10 @@ func (s *Service) localUser(ctx context.Context, email string) (store.User, bool
 	return u, err == nil
 }
 
-func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose, passwordHash string) error {
+// sendAuthMail emails a confirm or reset link. addPassword words a reset
+// link for an account that has no password yet. The link lets the mailbox
+// owner choose one; a password typed by whoever asked is never carried.
+func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose string, addPassword bool) error {
 	ttl := confirmTTL
 	letter := authmail.Letter{
 		Heading:   "Confirm your email",
@@ -134,18 +144,19 @@ func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose
 			Button:    "Choose a new password",
 			Fine:      "The link works for 1 hour and only once. If you did not ask for this, you can ignore this message.",
 		}
-	} else if passwordHash != "" {
-		letter = authmail.Letter{
-			Heading:   "Add a password",
-			Paragraph: "Add a password to the account for this address. Google sign-in keeps working.",
-			Button:    "Add password",
-			Fine:      "The link works for 24 hours and only once. If you did not ask for this, you can ignore this message.",
+		if addPassword {
+			letter = authmail.Letter{
+				Heading:   "Add a password",
+				Paragraph: "Choose a password for the account for this address. Your current sign-in keeps working.",
+				Button:    "Choose a password",
+				Fine:      "The link works for 1 hour and only once. If you did not ask for this, you can ignore this message.",
+			}
 		}
 	}
 	var token string
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
 		var err error
-		token, err = s.issueAuthToken(ctx, q, userID, purpose, ttl, passwordHash)
+		token, err = s.issueAuthToken(ctx, q, userID, purpose, ttl)
 		return err
 	})
 	if err != nil {
@@ -164,19 +175,19 @@ func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose
 		return err
 	}
 	subject := letter.Heading
-	if purpose != "reset" && passwordHash != "" {
+	if addPassword {
 		subject = "Add a password to your account"
 	}
 	return s.authMail.Send(ctx, email, subject, authmail.PlainText(letter), html)
 }
 
-func (s *Service) issueAuthToken(ctx context.Context, q *store.Queries, userID int64, purpose string, ttl time.Duration, passwordHash string) (string, error) {
+func (s *Service) issueAuthToken(ctx context.Context, q *store.Queries, userID int64, purpose string, ttl time.Duration) (string, error) {
 	if err := q.Raw().WithContext(ctx).Where("user_id = ? AND purpose = ?", userID, purpose).Delete(&store.AuthEmailToken{}).Error; err != nil {
 		return "", err
 	}
 	token, hash := randomToken("")
 	row := store.AuthEmailToken{
-		TokenHash: hash, UserID: userID, Purpose: purpose, PasswordHash: passwordHash,
+		TokenHash: hash, UserID: userID, Purpose: purpose,
 		ExpiresAt: s.now().Add(ttl), CreatedAt: s.now(),
 	}
 	if err := q.Raw().WithContext(ctx).Create(&row).Error; err != nil {
@@ -185,9 +196,9 @@ func (s *Service) issueAuthToken(ctx context.Context, q *store.Queries, userID i
 	return token, nil
 }
 
-func (s *Service) consumeAuthToken(ctx context.Context, token, purpose string) (store.User, string, error) {
+func (s *Service) consumeAuthToken(ctx context.Context, token, purpose string) (store.User, error) {
 	if token == "" || len(token) > 128 {
-		return store.User{}, "", ErrAuthToken
+		return store.User{}, ErrAuthToken
 	}
 	var row store.AuthEmailToken
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
@@ -199,16 +210,22 @@ func (s *Service) consumeAuthToken(ctx context.Context, token, purpose string) (
 			_ = q.Raw().WithContext(ctx).Delete(&row).Error
 			return ErrAuthToken
 		}
-		if err := q.Raw().WithContext(ctx).Delete(&row).Error; err != nil {
-			return err
+		// Only the request that deletes the row may use it, so two
+		// requests racing with one link cannot both succeed.
+		del := q.Raw().WithContext(ctx).Where("id = ?", row.ID).Delete(&store.AuthEmailToken{})
+		if del.Error != nil {
+			return del.Error
+		}
+		if del.RowsAffected != 1 {
+			return ErrAuthToken
 		}
 		return q.Raw().WithContext(ctx).First(&row.User, row.UserID).Error
 	})
 	if err != nil {
 		if errors.Is(err, ErrAuthToken) {
-			return store.User{}, "", ErrAuthToken
+			return store.User{}, ErrAuthToken
 		}
-		return store.User{}, "", err
+		return store.User{}, err
 	}
-	return row.User, row.PasswordHash, nil
+	return row.User, nil
 }

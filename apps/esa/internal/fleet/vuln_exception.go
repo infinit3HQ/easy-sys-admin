@@ -26,6 +26,9 @@ func (s *Service) CreateVulnException(ctx context.Context, a Actor, serverID int
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return VulnExceptionView{}, err
 	}
+	if err := requirePerson(a, "accept a risk for a vulnerability"); err != nil {
+		return VulnExceptionView{}, err
+	}
 	advisory = strings.TrimSpace(advisory)
 	pkg = strings.TrimSpace(pkg)
 	reason = strings.TrimSpace(reason)
