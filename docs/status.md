@@ -115,7 +115,7 @@ Checked against a real Ubuntu 24.04 arm64 server unless noted. Rocky Linux 9 pac
 - A plans dialog and a `/pricing` page. Nothing is charged. Self-Hosted is available from the source. Managed Cloud is marked coming soon. The numbers live in `packages/plans`.
 - Public docs at `/docs` in the web app, rendered from `apps/web/src/content/docs`.
 - The source tree is under AGPL-3.0-only. The web footer links to the source and shows the running version and commit (`ESA_SOURCE_URL`, `ESA_VERSION`, `ESA_COMMIT`).
-- Draft Terms of Service and Privacy Policy for the hosted beta, in `TERMS.md` and `PRIVACY.md`, rendered at `/terms` and `/privacy`.
+- Terms of Service and Privacy Policy for the hosted beta, in `TERMS.md` and `PRIVACY.md`, rendered at `/terms` and `/privacy`.
 - CLI: login, status, servers, groups, runs (with `--wait`), alerts.
 - MCP: tools follow scopes; `fleet_summary`, `list_groups`, `list_updates`, `start_run`.
 - Deploy through GitHub Actions to a self-hosted runner, with secrets in the `production` environment.
