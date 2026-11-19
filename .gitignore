@@ -22,4 +22,6 @@ data/
 
 # OS and editor
 .DS_Store
+.vscode/
+.kiro/
 *.local
