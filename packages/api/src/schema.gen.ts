@@ -2361,6 +2361,8 @@ export interface components {
             serverId: number;
             /** @description Shown once. Save in a protected file, never in a URL or command argument. */
             token: string;
+            /** @description The server id and the public key that signs this server's commands. It stays the same when the credential is replaced. The agent runs only commands that match it, so a proxy that starts changing traffic after setup cannot give the agent commands. */
+            signingPin: string;
         };
         AgentCommand: {
             /** Format: int64 */
@@ -2369,6 +2371,13 @@ export interface components {
             args: string[];
             /** Format: date-time */
             expiresAt: string;
+            /**
+             * Format: int64
+             * @description The server the command is for. Part of what is signed.
+             */
+            serverId?: number;
+            /** @description Base64 Ed25519 signature over the command with the account key. An agent with a pin refuses a command without a valid one. */
+            signature?: string;
         };
         Server: {
             /** Format: int64 */

@@ -67,13 +67,13 @@ func TestAuthorizedKeysGaps(t *testing.T) {
 	key := testKeyLine(t)
 
 	writeFile(t, root+"/home/good/.ssh/authorized_keys", "# comment\n"+key+"\n")
-	keys, gaps := h.authorizedKeys("/home/good/.ssh/authorized_keys")
+	keys, gaps := h.authorizedKeys("/home/good", ".ssh/authorized_keys")
 	if len(keys) != 1 || len(gaps) != 0 {
 		t.Fatalf("good: %+v %v", keys, gaps)
 	}
 
 	writeFile(t, root+"/home/bad/.ssh/authorized_keys", key+"\nnot a key line\n")
-	keys, gaps = h.authorizedKeys("/home/bad/.ssh/authorized_keys")
+	keys, gaps = h.authorizedKeys("/home/bad", ".ssh/authorized_keys")
 	if len(keys) != 1 || !slices.Equal(gaps, []string{"authorized_keys unreadable lines"}) {
 		t.Fatalf("bad line: %+v %v", keys, gaps)
 	}
@@ -85,12 +85,12 @@ func TestAuthorizedKeysGaps(t *testing.T) {
 	if err := os.Symlink(root+"/elsewhere", root+"/home/link/.ssh/authorized_keys"); err != nil {
 		t.Fatal(err)
 	}
-	keys, gaps = h.authorizedKeys("/home/link/.ssh/authorized_keys")
+	keys, gaps = h.authorizedKeys("/home/link", ".ssh/authorized_keys")
 	if len(keys) != 0 || !slices.Equal(gaps, []string{"authorized_keys symlink"}) {
 		t.Fatalf("symlink must not be followed: %+v %v", keys, gaps)
 	}
 
-	keys, gaps = h.authorizedKeys("/home/none/.ssh/authorized_keys")
+	keys, gaps = h.authorizedKeys("/home/none", ".ssh/authorized_keys")
 	if len(keys) != 0 || len(gaps) != 0 {
 		t.Fatalf("a missing file is not a gap: %+v %v", keys, gaps)
 	}

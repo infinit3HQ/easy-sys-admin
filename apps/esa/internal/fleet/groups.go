@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -307,23 +308,26 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
 		return GroupView{}, err
 	}
-	if ((g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)) && !a.isPerson() {
-		return GroupView{}, errPersonOnly("turn off the plan requirement")
-	}
-	wasRequired := g.PlanRequired
-	if err := s.applyGroupInput(&g, in); err != nil {
+	// The rules are checked against the row as it is when it is written, so
+	// an edit cannot undo a change that landed after it read the group.
+	var wasRequired bool
+	err = s.store.InTx(ctx, func(q *store.Queries) error {
+		tx := q.Raw().WithContext(ctx)
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND account_id = ?", id, a.AccountID).Take(&g).Error; err != nil {
+			return mapStore(err)
+		}
+		if err := s.checkApprovalRules(a, g, in); err != nil {
+			return err
+		}
+		wasRequired = g.PlanRequired
+		if err := s.applyGroupInput(&g, in); err != nil {
+			return err
+		}
+		return mapStore(tx.Model(&store.Group{}).Where("id = ? AND account_id = ?", g.ID, a.AccountID).
+			Select("*").Omit(clause.Associations).Updates(&g).Error)
+	})
+	if err != nil {
 		return GroupView{}, err
-	}
-	update := s.scoped(ctx, a).Model(&store.Group{}).Where("id = ?", g.ID)
-	if !a.isPerson() {
-		update = update.Where("(NOT plan_required OR ?) AND (NOT two_approvers OR ?)", g.PlanRequired, g.TwoApprovers)
-	}
-	result := update.Select("*").Omit(clause.Associations).Updates(&g)
-	if result.Error != nil {
-		return GroupView{}, mapStore(result.Error)
-	}
-	if result.RowsAffected != 1 {
-		return GroupView{}, errPersonOnly("weaken an approval requirement that changed concurrently")
 	}
 	s.audit(ctx, nil, a, "group.update", g.Name, map[string]any{
 		"clean_enabled": g.CleanEnabled, "updates_enabled": g.UpdatesEnabled, "update_mode": g.UpdateMode,
@@ -366,4 +370,62 @@ func (s *Service) DeleteGroup(ctx context.Context, a Actor, id int64) error {
 		s.audit(ctx, q, a, "group.delete", g.Name, nil)
 		return nil
 	})
+}
+
+// checkApprovalRules guards what an approved plan runs under. A team can hold
+// a group and operate it, but turning off the plan or two-approver rule is for
+// an organization admin who is a person in the web app. A token also cannot
+// remove a blocking check or raise the batch size or failure limit of a group
+// that requires a plan, because a plan runs with those settings.
+func (s *Service) checkApprovalRules(a Actor, g store.Group, in GroupInput) error {
+	weakens := (g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)
+	if weakens {
+		if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+			return err
+		}
+		if !a.isPerson() {
+			return errPersonOnly("turn off the plan requirement")
+		}
+	}
+	if a.isPerson() || !g.PlanRequired {
+		return nil
+	}
+	current := storedChecks(g.HealthChecks)
+	next, err := validChecks(in.Checks)
+	if err != nil {
+		return err
+	}
+	if !keepsBlockingChecks(current, next) {
+		return errPersonOnly("remove a blocking check from a group that requires a plan")
+	}
+	if max(in.Updates.BatchSize, 1) > g.UpdateBatchSize || max(in.Updates.MaxFailures, 1) > g.UpdateMaxFailures {
+		return errPersonOnly("raise the batch size or failure limit of a group that requires a plan")
+	}
+	// Reboots and held packages are not guarded here: an approved plan
+	// carries its own, and a plan group runs updates only from a plan.
+	return nil
+}
+
+// storedChecks decodes a group's checks and normalises them the way new
+// input is, so a check saved by an older version compares equal.
+func storedChecks(raw store.JSON) []HealthCheck {
+	var checks []HealthCheck
+	_ = raw.Decode(&checks)
+	if norm, err := validChecks(checks); err == nil {
+		return norm
+	}
+	return checks
+}
+
+// keepsBlockingChecks reports whether next still has every blocking check of
+// base unchanged. A check is its name and what it checks, so a blocking check
+// pointed at another port, unit or path no longer counts. Both lists come
+// from validChecks, so equal checks compare equal.
+func keepsBlockingChecks(base, next []HealthCheck) bool {
+	for _, b := range base {
+		if b.Blocking && !slices.Contains(next, b) {
+			return false
+		}
+	}
+	return true
 }

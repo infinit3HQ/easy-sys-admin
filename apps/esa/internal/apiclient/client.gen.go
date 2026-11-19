@@ -1033,11 +1033,20 @@ type AgentCommand struct {
 	Args      []string  `json:"args"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	Id        int64     `json:"id"`
+
+	// ServerId The server the command is for. Part of what is signed.
+	ServerId *int64 `json:"serverId,omitempty"`
+
+	// Signature Base64 Ed25519 signature over the command with the account key. An agent with a pin refuses a command without a valid one.
+	Signature *string `json:"signature,omitempty"`
 }
 
 // AgentCredential defines model for AgentCredential.
 type AgentCredential struct {
 	ServerId int64 `json:"serverId"`
+
+	// SigningPin The server id and the public key that signs this server's commands. It stays the same when the credential is replaced. The agent runs only commands that match it, so a proxy that starts changing traffic after setup cannot give the agent commands.
+	SigningPin string `json:"signingPin"`
 
 	// Token Shown once. Save in a protected file, never in a URL or command argument.
 	Token string `json:"token"`

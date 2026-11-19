@@ -41,6 +41,9 @@ func (s *Service) CreateKeyException(ctx context.Context, a Actor, serverID int6
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return KeyExceptionView{}, err
 	}
+	if err := requirePerson(a, "accept a risk for an SSH key"); err != nil {
+		return KeyExceptionView{}, err
+	}
 	user = strings.TrimSpace(user)
 	fingerprint = strings.TrimSpace(fingerprint)
 	reason = strings.TrimSpace(reason)

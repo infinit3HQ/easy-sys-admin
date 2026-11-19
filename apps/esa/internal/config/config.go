@@ -184,8 +184,10 @@ func parse(getenv func(string) string) (Config, error) {
 		return Config{}, err
 	}
 
+	// Strangers can reach the control plane when sign-up is open, or when a
+	// sign-in provider is on and no allow list limits who it lets in.
 	privateDefault := "true"
-	if cfg.Auth.Signup {
+	if cfg.Auth.Signup || (len(cfg.Auth.Providers) > 0 && len(cfg.Auth.AllowedEmails) == 0) {
 		privateDefault = "false"
 	}
 	if cfg.AllowPrivateNetworks, err = parseBool(get("ESA_ALLOW_PRIVATE_NETWORKS", privateDefault)); err != nil {

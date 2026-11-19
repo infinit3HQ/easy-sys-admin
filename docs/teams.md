@@ -52,7 +52,7 @@ See `packages/api/openapi.yaml`, tags `teams` and `sharing`. `Organization` has 
 
 An admin can assign a notice to one current member of its owning space or leave it unassigned. Assignment grants no access and does not resolve the notice. Removing the member clears their assignments and records the change in notice history. A viewer of a shared server does not see the owner's assignee names. Assignment needs the admin token scope as well as the owning-space admin role.
 
-A group can require two distinct current admins to approve its maintenance plans. Add the second admin before enabling this setting. Both approvals need a recent browser sign-in. The first approval expires after 30 minutes; the second does not extend it. Removing or demoting an approver prevents execution. A token cannot approve a plan or lower this requirement. There is no emergency bypass.
+A group can require two distinct current admins to approve its maintenance plans. Add the second admin before enabling this setting. Both approvals need a recent browser sign-in. The first approval expires after 30 minutes; the second does not extend it. Removing or demoting an approver prevents execution. A token cannot approve a plan or lower this requirement. Lowering it also needs the organization admin role: a viewer whose extra team holds the group cannot do it. There is no emergency bypass.
 
 Critical exposure, changed host keys, new SSH keys, known-exploited advisories, and changes from an approved access baseline cannot be snoozed or accepted as a risk. They can still be reviewed with a note.
 

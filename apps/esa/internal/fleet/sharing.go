@@ -454,6 +454,10 @@ func (s *Service) RevokeShareLink(ctx context.Context, a Actor, linkID int64) er
 // UpdateGroupShare changes a share's access. Only admins of the owning
 // account can.
 func (s *Service) UpdateGroupShare(ctx context.Context, a Actor, shareID int64, access string) (GroupShareView, error) {
+	// API tokens cannot hand out access, so they cannot widen it either.
+	if a.TokenID != 0 {
+		return GroupShareView{}, ErrForbidden
+	}
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return GroupShareView{}, err
 	}

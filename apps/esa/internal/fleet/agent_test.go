@@ -199,3 +199,48 @@ func TestOutboundAgentCancellationAndAtRestEncryption(t *testing.T) {
 		t.Fatal("non-idempotent upgrade allowed")
 	}
 }
+
+// Every command carries a signature that the agent can check against the pin
+// it was given when it was set up, so a proxy in front of the control plane
+// cannot give the agent commands of its own.
+func TestOutboundAgentCommandsAreSigned(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	owner := signIn(t, s, "signer")
+	now := s.now()
+	owner.SignedInAt = &now
+	id, secret, err := s.CreateAgentServer(ctx, owner, "outbound", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinText, err := s.AgentSigningPin(ctx, owner.AccountID, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin, err := proto.ParseAgentPin(pinText)
+	if err != nil || pin.ServerID != id {
+		t.Fatalf("pin %q: %+v %v", pinText, pin, err)
+	}
+	agent, err := s.AuthenticateAgent(ctx, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var srv store.Server
+	s.db.First(&srv, id)
+	go func() { _, _ = s.agentCall(ctx, srv, "service", "--unit", "nginx.service", "--action", "restart") }()
+	var cmd *AgentCommand
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline) && cmd == nil; time.Sleep(10 * time.Millisecond) {
+		if cmd, err = s.PollAgent(ctx, agent); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if cmd == nil {
+		t.Fatal("no queued command")
+	}
+	if cmd.ServerID != id || !pin.VerifyAgentCommand(cmd.ServerID, cmd.ID, cmd.Action, cmd.Args, cmd.ExpiresAt.Unix(), cmd.Signature) {
+		t.Fatalf("the command is not signed for the pinned server: %+v", cmd)
+	}
+	if pin.VerifyAgentCommand(cmd.ServerID, cmd.ID, "reboot", cmd.Args, cmd.ExpiresAt.Unix(), cmd.Signature) {
+		t.Fatal("the signature covers a different action too")
+	}
+}

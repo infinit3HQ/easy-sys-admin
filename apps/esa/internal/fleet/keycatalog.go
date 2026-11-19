@@ -185,6 +185,9 @@ func (s *Service) ApproveKeyBaseline(ctx context.Context, a Actor, serverID int6
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
 		return err
 	}
+	if err := requirePerson(a, "approve a key baseline"); err != nil {
+		return err
+	}
 	reason = strings.TrimSpace(reason)
 	if utf8.RuneCountInString(reason) > 200 {
 		return invalid("reason", "must be at most 200 characters")

@@ -253,3 +253,37 @@ func TestQueuedNotificationPreservesResolution(t *testing.T) {
 		t.Fatal("queued recovery was not delivered")
 	}
 }
+
+// Requests that all pass the early count must not each add one more server
+// than the account may have.
+func TestServerCapHoldsUnderParallelEnrollments(t *testing.T) {
+	s := newTestService(t)
+	s.allowPrivate = true
+	s.maxServers = 3
+	ctx := context.Background()
+	a := signIn(t, s, "parallel-cap")
+
+	var (
+		wg sync.WaitGroup
+		mu sync.Mutex
+		ok int
+	)
+	for i := range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := s.CreateEnrollment(ctx, a, EnrollInput{Name: "web-" + strconv.Itoa(i), Host: "192.0.2.2"})
+			if err == nil {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	var n int64
+	s.db.Model(&store.Server{}).Where("account_id = ?", a.AccountID).Count(&n)
+	if n != 3 || ok != 3 {
+		t.Fatalf("%d servers stored and %d enrollments accepted, want 3 and 3", n, ok)
+	}
+}

@@ -40,9 +40,10 @@ func (s *Service) Activity(ctx context.Context, a Actor, limit int) (ActivityPag
 		store.AuditEntry
 		UserName  string
 		UserEmail string
+		Via       string
 	}
 	err := s.db.WithContext(ctx).Table("audit_log").
-		Select("audit_log.*, users.name AS user_name, users.email AS user_email").
+		Select("audit_log.*, users.name AS user_name, users.email AS user_email, audit_log.detail->>'via_account_id' AS via").
 		Joins("LEFT JOIN users ON users.id = audit_log.user_id").
 		Where("audit_log.account_id = ?", a.AccountID).
 		Order("audit_log.created_at DESC, audit_log.id DESC").Limit(limit).Scan(&rows).Error
@@ -64,6 +65,11 @@ func (s *Service) Activity(ctx context.Context, a Actor, limit int) (ActivityPag
 		}
 		if name == "" && r.Source == string(SourceSystem) {
 			name = "esa"
+		}
+		if r.Via != "" {
+			// Someone on a team this account shares with acted. Their name
+			// and address are theirs, the same as the owner's are hidden from them.
+			name = "a member of a team you share with"
 		}
 		out.Entries = append(out.Entries, ActivityEntry{ID: r.ID, Action: r.Action, Target: r.Target, Source: r.Source, UserName: name, Detail: store.JSON(r.Detail), CreatedAt: r.CreatedAt})
 	}

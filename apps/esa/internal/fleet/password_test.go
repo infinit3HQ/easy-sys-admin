@@ -96,10 +96,15 @@ func TestPasswordJoinsProviderAccount(t *testing.T) {
 	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); !errors.Is(err, ErrBadCredentials) {
 		t.Fatalf("password before the link: %v", err)
 	}
-	if err := s.ConfirmEmail(ctx, mailToken(t, box.last)); err != nil {
+	// The link lets the mailbox owner choose the password. The one typed
+	// on the sign-up form is never applied.
+	if err := s.ResetPassword(ctx, mailToken(t, box.last), "the owner picks this"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery")
+	if _, err := s.SignInPassword(ctx, "ana@example.com", "correct horse battery"); !errors.Is(err, ErrBadCredentials) {
+		t.Fatalf("form password after the link: %v", err)
+	}
+	got, err := s.SignInPassword(ctx, "ana@example.com", "the owner picks this")
 	if err != nil || got.User.ID != g.User.ID || got.AccountID != g.AccountID {
 		t.Fatalf("password after confirm: %+v %v", got, err)
 	}

@@ -208,6 +208,9 @@ func (s *Service) CreateChannel(ctx context.Context, a Actor, name, kind string,
 	ch := store.NotifyChannel{AccountID: a.AccountID, Name: name, Kind: kind, Enabled: true, CreatedAt: s.now(), ConfigEnc: "pending"}
 	err = s.store.InTx(ctx, func(q *store.Queries) error {
 		tx := q.Raw()
+		if err := s.capLocked(tx, a.AccountID, &store.NotifyChannel{}, maxChannels, "notification channels"); err != nil {
+			return err
+		}
 		if err := tx.Omit(clause.Associations).Create(&ch).Error; err != nil {
 			return mapStore(err)
 		}

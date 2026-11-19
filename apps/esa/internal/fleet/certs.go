@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -74,7 +75,17 @@ func (s *Service) AddCert(ctx context.Context, a Actor, hostname string, port in
 		return CertView{}, err
 	}
 	c := store.CertTarget{AccountID: a.AccountID, Hostname: hostname, Port: port, CreatedAt: s.now()}
-	if err := s.db.WithContext(ctx).Omit(clause.Associations).Create(&c).Error; err != nil {
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		if err := s.capLocked(q.Raw(), a.AccountID, &store.CertTarget{}, maxCerts, "certificates"); err != nil {
+			return err
+		}
+		return q.Raw().Omit(clause.Associations).Create(&c).Error
+	})
+	if err != nil {
+		var conflict *ConflictError
+		if errors.As(err, &conflict) {
+			return CertView{}, err
+		}
 		return CertView{}, mapStore(err)
 	}
 	s.audit(ctx, nil, a, "cert.add", hostname, nil)

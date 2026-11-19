@@ -3,6 +3,7 @@ package hostops
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"sort"
 	"strconv"
@@ -146,24 +147,69 @@ func (h *Host) ServiceAction(ctx context.Context, unit, action string) error {
 	default:
 		return &BadRequestError{Reason: "action must be start, stop, or restart"}
 	}
-	if networkUnits[unit] {
-		return &RefusedError{Reason: unit + " runs networking or the firewall and cannot be changed from esa"}
+	if err := unitRefusal(unit, unit, action); err != nil {
+		return err
+	}
+	if action != "stop" && strings.Contains(unit, "@") && !h.unitLoaded(ctx, unit) {
+		return &RefusedError{Reason: unit + " is a template instance that is not loaded; esa only acts on existing instances"}
+	}
+	// systemctl follows alias names such as dbus-org.fedoraproject.FirewallD1.service,
+	// so the rules apply to every name the unit has.
+	names, err := h.unitNames(ctx, unit)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if name == unit {
+			continue
+		}
+		if err := unitRefusal(name, unit+" ("+name+")", action); err != nil {
+			return err
+		}
+	}
+	_, err = h.output(ctx, 2*time.Minute, "systemctl", action, "--no-block", unit)
+	return err
+}
+
+// unitRefusal applies the network, power and protected unit rules to one
+// name. shown is how the unit is named in the message.
+func unitRefusal(name, shown, action string) error {
+	if networkUnits[name] {
+		return &RefusedError{Reason: shown + " runs networking or the firewall and cannot be changed from esa"}
 	}
 	switch action {
 	case "start", "restart":
-		if noStartUnits[unit] {
-			return &RefusedError{Reason: unit + " powers off or isolates the server and cannot be started from esa"}
-		}
-		if strings.Contains(unit, "@") && !h.unitLoaded(ctx, unit) {
-			return &RefusedError{Reason: unit + " is a template instance that is not loaded; esa only acts on existing instances"}
+		if noStartUnits[name] {
+			return &RefusedError{Reason: shown + " powers off or isolates the server and cannot be started from esa"}
 		}
 	case "stop":
-		if protectedUnits[unit] {
-			return &RefusedError{Reason: unit + " is protected and cannot be stopped from esa"}
+		if protectedUnits[name] {
+			return &RefusedError{Reason: shown + " is protected and cannot be stopped from esa"}
 		}
 	}
-	_, err := h.output(ctx, 2*time.Minute, "systemctl", action, "--no-block", unit)
-	return err
+	return nil
+}
+
+// unitNames returns the unit's canonical name and every alias systemd knows.
+func (h *Host) unitNames(ctx context.Context, unit string) ([]string, error) {
+	out, err := h.output(ctx, 20*time.Second, "systemctl", "show", "--property=Id,Names", "--", unit)
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	sawID := false
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok || (key != "Id" && key != "Names") {
+			continue
+		}
+		sawID = sawID || (key == "Id" && strings.TrimSpace(value) != "")
+		names = append(names, strings.Fields(value)...)
+	}
+	if !sawID {
+		return nil, fmt.Errorf("systemctl show %s named no unit", unit)
+	}
+	return names, nil
 }
 
 // unitLoaded reports whether systemd has the unit in memory, as listed by
