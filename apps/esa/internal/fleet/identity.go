@@ -28,6 +28,9 @@ type SignInResult struct {
 	// NeedsConfirm is set for a password account that cannot sign in until
 	// it opens the confirmation link. Provider sign-in never sets it.
 	NeedsConfirm bool
+	// AddPassword is set when a sign-up form named an address that already
+	// signs in with a provider. The mail lets its owner choose a password.
+	AddPassword bool
 }
 
 // SignIn records a successful login. A user without a personal space gets
@@ -88,6 +91,14 @@ func (s *Service) upsertIdentity(db *gorm.DB, issuer, subject, email, name strin
 			if ferr == nil {
 				u = found
 				linked = true
+				// The provider proved this address. A password set on an
+				// account that never confirmed it was chosen by someone
+				// who did not, so it goes, with everything it opened.
+				if found.PasswordHash != "" && !found.EmailConfirmed && s.passwordsCanBePlanted() {
+					if err := dropUnprovenPassword(db, found.ID, now); err != nil {
+						return store.User{}, false, err
+					}
+				}
 			} else if !errors.Is(ferr, gorm.ErrRecordNotFound) {
 				return store.User{}, false, ferr
 			}
@@ -223,3 +234,31 @@ func defaultAccountName(u store.User) string {
 	}
 	return name + "'s fleet"
 }
+
+// dropUnprovenPassword removes the password of an account whose address was
+// never confirmed, and every credential that password could have created.
+func dropUnprovenPassword(db *gorm.DB, userID int64, now time.Time) error {
+	if err := db.Model(&store.User{}).Where("id = ?", userID).Update("password_hash", "").Error; err != nil {
+		return err
+	}
+	if err := dropLiveCredentials(db, userID, now); err != nil {
+		return err
+	}
+	return db.Where("user_id = ?", userID).Delete(&store.AuthEmailToken{}).Error
+}
+
+// dropLiveCredentials ends a user's sessions and revokes their API tokens.
+func dropLiveCredentials(db *gorm.DB, userID int64, now time.Time) error {
+	if err := db.Where("user_id = ?", userID).Delete(&store.Session{}).Error; err != nil {
+		return err
+	}
+	return db.Model(&store.APIToken{}).Where("user_id = ? AND revoked_at IS NULL", userID).
+		Update("revoked_at", now).Error
+}
+
+// passwordsCanBePlanted reports whether a stranger could have created a
+// password account for someone else's address: sign-up is open, or mail is
+// on and the account never opened its link. With sign-up closed and no mail,
+// the only password account is the operator's own, and the operator vouches
+// for it.
+func (s *Service) passwordsCanBePlanted() bool { return s.signup || s.authMail != nil }

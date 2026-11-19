@@ -166,7 +166,7 @@ The helper enforces these rules itself, whatever the control plane asks. Breakin
 
 ### Services
 
-Unit names must match `^[A-Za-z0-9][A-Za-z0-9@._:\-]{0,200}\.service$`, so only services are accepted. Actions run as `systemctl <action> --no-block <unit>`.
+Unit names must match `^[A-Za-z0-9][A-Za-z0-9@._:\-]{0,200}\.service$`, so only services are accepted. Actions run as `systemctl <action> --no-block <unit>`. systemctl follows alias names, so before acting the helper reads every name the unit has (`systemctl show --property=Id,Names`) and applies the protected, network and power rules to all of them. `dbus-org.fedoraproject.FirewallD1.service` is refused because it is `firewalld.service`. If the names cannot be read, nothing runs.
 
 | Units                                                                                                                                                                                                                                                                                     | Rule                                                                  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |

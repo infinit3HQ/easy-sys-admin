@@ -132,6 +132,10 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				signupError(w, r, "failed")
 				return
 			}
+			if res.AddPassword {
+				http.Redirect(w, r, "/login?mode=verify&sent=password&email="+url.QueryEscape(res.User.Email), http.StatusSeeOther)
+				return
+			}
 			if res.NeedsConfirm {
 				http.Redirect(w, r, "/login?mode=verify&sent=confirm&email="+url.QueryEscape(res.User.Email), http.StatusSeeOther)
 				return

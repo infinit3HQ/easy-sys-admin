@@ -50,6 +50,8 @@ func TestDispatchArgs(t *testing.T) {
 		"sudo -n /usr/local/lib/esa/esa-helper",
 		"sudo -n /usr/local/lib/esa/esa-helper ssh-dispatch",
 		"sudo -n /usr/local/lib/esa/esa-helper 'ssh-dispatch'",
+		// Only the transient unit that upgrade-start creates runs this.
+		"sudo -n /usr/local/lib/esa/esa-helper upgrade-exec --run-id 9 --mode all",
 		"sudo /usr/local/lib/esa/esa-helper status",
 		"sudo -n -u root /usr/local/lib/esa/esa-helper status",
 		"sudo -n /bin/sh -c id",

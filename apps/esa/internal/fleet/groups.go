@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -307,8 +308,8 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
 		return GroupView{}, err
 	}
-	if ((g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)) && !a.isPerson() {
-		return GroupView{}, errPersonOnly("turn off the plan requirement")
+	if err := s.checkApprovalRules(a, g, in); err != nil {
+		return GroupView{}, err
 	}
 	wasRequired := g.PlanRequired
 	if err := s.applyGroupInput(&g, in); err != nil {
@@ -366,4 +367,60 @@ func (s *Service) DeleteGroup(ctx context.Context, a Actor, id int64) error {
 		s.audit(ctx, q, a, "group.delete", g.Name, nil)
 		return nil
 	})
+}
+
+// checkApprovalRules guards what an approved plan runs under. A team can hold
+// a group and operate it, but turning off the plan or two-approver rule is for
+// an organization admin who is a person in the web app. A token also cannot
+// remove a blocking check or raise the batch size or failure limit of a group
+// that requires a plan, because a plan is approved against those settings.
+func (s *Service) checkApprovalRules(a Actor, g store.Group, in GroupInput) error {
+	weakens := (g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)
+	if weakens {
+		if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+			return err
+		}
+		if !a.isPerson() {
+			return errPersonOnly("turn off the plan requirement")
+		}
+	}
+	if a.isPerson() || !g.PlanRequired {
+		return nil
+	}
+	var current []HealthCheck
+	_ = g.HealthChecks.Decode(&current)
+	next, err := validChecks(in.Checks)
+	if err != nil {
+		return err
+	}
+	if !keepsBlockingChecks(current, next) {
+		return errPersonOnly("remove a blocking check from a group that requires a plan")
+	}
+	if max(in.Updates.BatchSize, 1) > g.UpdateBatchSize || max(in.Updates.MaxFailures, 1) > g.UpdateMaxFailures {
+		return errPersonOnly("raise the batch size or failure limit of a group that requires a plan")
+	}
+	if in.Updates.RebootIfRequired && !g.RebootIfRequired {
+		return errPersonOnly("turn on reboots for a group that requires a plan")
+	}
+	var held []string
+	_ = g.HoldPackages.Decode(&held)
+	for _, h := range held {
+		if !slices.Contains(cleanList(in.Updates.Hold), h) {
+			return errPersonOnly("release a held package of a group that requires a plan")
+		}
+	}
+	return nil
+}
+
+// keepsBlockingChecks reports whether next still has every blocking check of
+// base unchanged. A check is its name and what it checks, so a blocking check
+// pointed at another port, unit or path no longer counts. Both lists come
+// from validChecks, so equal checks compare equal.
+func keepsBlockingChecks(base, next []HealthCheck) bool {
+	for _, b := range base {
+		if b.Blocking && !slices.Contains(next, b) {
+			return false
+		}
+	}
+	return true
 }

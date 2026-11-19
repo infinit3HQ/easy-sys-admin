@@ -255,6 +255,17 @@ func (s *Service) prepareRun(ctx context.Context, a Actor, req RunRequest, q *st
 		}
 		if opts.Checks == nil {
 			opts.Checks = checks
+		} else {
+			norm, err := validChecks(opts.Checks)
+			if err != nil {
+				return store.Run{}, err
+			}
+			opts.Checks = norm
+			if !keepsBlockingChecks(checks, opts.Checks) {
+				// Options add checks. Dropping or changing a blocking one is
+				// an override, which a person makes with a reason.
+				return store.Run{}, invalid("options", "a run keeps the group's blocking checks as they are; override one with a reason in the web app")
+			}
 		}
 	}
 	if !req.FromPlan || req.Kind != RunUpdate {

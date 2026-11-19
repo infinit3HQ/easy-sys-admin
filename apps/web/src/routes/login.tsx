@@ -49,7 +49,7 @@ export const Route = createFileRoute('/login')({
       .optional(),
     email: z.string().max(320).optional(),
     token: z.string().max(200).optional(),
-    sent: z.enum(['confirm', 'reset']).optional(),
+    sent: z.enum(['confirm', 'reset', 'password']).optional(),
     confirmed: z.coerce.string().optional(),
     reset: z.coerce.string().optional(),
   }),
@@ -132,7 +132,9 @@ function Login() {
                 : verify
                   ? sent === 'confirm'
                     ? 'We sent a confirmation link. Open it, then sign in. It works for 24 hours.'
-                    : 'This address is not confirmed yet. We can send the link again.'
+                    : sent === 'password'
+                      ? 'This address already signs in another way. If it can add a password, we emailed a link to choose one.'
+                      : 'This address is not confirmed yet. We can send the link again.'
                   : resetting
                     ? 'Choose a password of at least 10 characters.'
                     : forgot
@@ -155,6 +157,12 @@ function Login() {
             {sent === 'confirm' && !error && (
               <Notice className="mt-4">
                 Check your email for a confirmation link. It works for 24 hours.
+              </Notice>
+            )}
+            {sent === 'password' && !error && (
+              <Notice className="mt-4">
+                Open the link in your email and choose your password there. The
+                password you typed here is not used. The link works for 1 hour.
               </Notice>
             )}
             {sent === 'reset' && !error && (
@@ -224,7 +232,7 @@ function Login() {
               </form>
             )}
 
-            {verify && (
+            {verify && sent !== 'password' && (
               <form
                 method="post"
                 action="/auth/email/resend"

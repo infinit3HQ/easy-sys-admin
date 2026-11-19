@@ -91,6 +91,8 @@ These are enforced in `hostops` and pinned by `hostops/safety_test.go`. Do not w
 - Network and firewall units (`networking`, `systemd-networkd`, `NetworkManager`, `ufw`, `nftables`, `iptables`, `ip6tables`, `netfilter-persistent`, `firewalld`) are never started, stopped, or restarted.
 - Power, reboot, suspend, rescue, and emergency units are never started or restarted.
 - Unit names must match `unitNameRe` (`.service` only). Reject anything with shell syntax.
+- The three rules above apply to every alias of a unit, not only the name given. `ServiceAction` resolves names with `systemctl show` and refuses when any of them is listed. Do not add a path that compares only the typed name.
+- `upgrade-exec` runs only inside the unit that `upgrade-start` creates. `DispatchArgs` refuses it over SSH.
 - Template instances (`name@instance`) are started or restarted only when systemd already has them loaded.
 - Protected containers (default prefixes `traefik`, `authentik`, `portainer`, `crowdsec`, or the server's own list) need `--confirm <exact name>` for actions and updates. Compose project and service names count as names.
 - `container-update` refuses containers not managed by docker compose.

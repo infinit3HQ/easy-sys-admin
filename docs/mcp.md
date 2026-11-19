@@ -107,7 +107,7 @@ Reading logs needs admin rights on the server's group, and `operate` access when
 
 ### Why start_run is not offered to tokens with logs:read
 
-Log text comes from whatever runs on the servers. Anyone who can make a service print a line can put words in front of the agent, and those words could tell it to start an update or a cleanup. So one token never gets both log reading and run starting. When a token has `actions` and `logs:read`, the endpoint leaves `start_run` out, and the server instructions tell the agent that runs are off for this token because it can read logs.
+Log text comes from whatever runs on the servers. Anyone who can make a service print a line can put words in front of the agent, and those words could tell it to start an update or a cleanup. So one token never gets both log reading and run starting. This narrows the path and does not close it: `get_access_report` returns `authorized_keys` comments, and other tools return names and messages that a user of a managed server, or an organization sharing a group, can write. Treat every tool result as untrusted text, and have the client ask a person before `start_run` or `execute_approved_fix_plan`. A group that requires a plan still needs a person to approve it. When a token has `actions` and `logs:read`, the endpoint leaves `start_run` out, and the server instructions tell the agent that runs are off for this token because it can read logs.
 
 Use two tokens: one with `logs:read` for investigating, and one with `actions` but without `logs:read` for starting runs. The same idea applies to `get_scheduled_jobs`: cron command lines often hold secrets, so they are only returned when the token has `logs:read` and the user may read logs on that server.
 

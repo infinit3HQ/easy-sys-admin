@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
@@ -106,16 +107,20 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 		return SignInResult{}, ErrEmailTaken
 	}
 	if findErr == nil {
-		// Same person, already signed in with a provider. The password is
-		// stored only after they open the link, so knowing the address is
-		// not enough to take the account.
+		// Same person, already signed in with a provider. The password typed
+		// here is dropped. The mailbox owner chooses one at the link, so
+		// knowing the address is not enough to take the account.
 		if s.authMail == nil {
 			return SignInResult{}, ErrProviderAccount
 		}
-		if mailErr := s.sendAuthMail(ctx, existing.ID, existing.Email, "confirm", hash); mailErr != nil {
+		if s.AuthLimited("mail\n"+existing.Email, authMailPerHour, time.Hour) {
+			return SignInResult{User: existing, NeedsConfirm: true, AddPassword: true}, nil
+		}
+		s.AuthHit("mail\n" + existing.Email)
+		if mailErr := s.sendAuthMail(ctx, existing.ID, existing.Email, "reset", true); mailErr != nil {
 			return SignInResult{User: existing}, fmt.Errorf("%w: %w", ErrMailFailed, mailErr)
 		}
-		return SignInResult{User: existing, NeedsConfirm: true}, nil
+		return SignInResult{User: existing, NeedsConfirm: true, AddPassword: true}, nil
 	}
 	if !errors.Is(findErr, gorm.ErrRecordNotFound) {
 		return SignInResult{}, findErr
@@ -174,7 +179,7 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 		return res, err
 	}
 	res.NeedsConfirm = true
-	if mailErr := s.sendAuthMail(ctx, res.User.ID, res.User.Email, "confirm", ""); mailErr != nil {
+	if mailErr := s.sendAuthMail(ctx, res.User.ID, res.User.Email, "confirm", false); mailErr != nil {
 		return res, fmt.Errorf("%w: %w", ErrMailFailed, mailErr)
 	}
 	return res, nil

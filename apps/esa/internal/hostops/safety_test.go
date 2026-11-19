@@ -196,7 +196,7 @@ func TestVSCodeKeepsNewestAndInUseCopies(t *testing.T) {
 }
 
 func TestProtectedUnitsCannotBeStopped(t *testing.T) {
-	run := &recordingRunner{}
+	run := &recordingRunner{out: map[string]string{"systemctl show": "Id=nginx.service\nNames=nginx.service"}}
 	h := &Host{Run: run}
 	for _, unit := range []string{"esa-agent.service", "ssh.service", "sshd.service", "docker.service", "containerd.service"} {
 		err := h.ServiceAction(context.Background(), unit, "stop")
@@ -210,9 +210,60 @@ func TestProtectedUnitsCannotBeStopped(t *testing.T) {
 	if err := h.ServiceAction(context.Background(), "nginx.service", "restart"); err != nil {
 		t.Fatal(err)
 	}
-	if len(run.cmds) != 1 || run.cmds[0] != "systemctl restart --no-block nginx.service" {
+	want := []string{"systemctl show --property=Id,Names -- nginx.service", "systemctl restart --no-block nginx.service"}
+	if len(run.cmds) != len(want) || run.cmds[0] != want[0] || run.cmds[1] != want[1] {
 		t.Fatalf("unexpected commands %v", run.cmds)
 	}
+}
+
+// systemctl follows alias names, so a protected unit must be refused under
+// every name it has, not only the one the caller typed.
+func TestServiceActionRefusesAliasesOfProtectedUnits(t *testing.T) {
+	show := func(unit string) string { return "systemctl show --property=Id,Names -- " + unit }
+	run := &recordingRunner{out: map[string]string{
+		show("dbus-org.fedoraproject.FirewallD1.service"): "Id=firewalld.service\nNames=firewalld.service dbus-org.fedoraproject.FirewallD1.service",
+		show("dbus-org.freedesktop.network1.service"):     "Id=systemd-networkd.service\nNames=systemd-networkd.service dbus-org.freedesktop.network1.service",
+		show("dbus-broker.service"):                       "Id=dbus-broker.service\nNames=dbus-broker.service dbus.service",
+		show("dbus-org.freedesktop.login1.service"):       "Id=systemd-logind.service\nNames=systemd-logind.service dbus-org.freedesktop.login1.service",
+		show("poweroff.service"):                          "Id=systemd-poweroff.service\nNames=systemd-poweroff.service poweroff.service",
+	}}
+	h := &Host{Run: run}
+	ctx := context.Background()
+	refused := []struct{ unit, action string }{
+		{"dbus-org.fedoraproject.FirewallD1.service", "stop"},
+		{"dbus-org.fedoraproject.FirewallD1.service", "restart"},
+		{"dbus-org.freedesktop.network1.service", "stop"},
+		{"dbus-broker.service", "stop"},
+		{"dbus-org.freedesktop.login1.service", "stop"},
+		{"poweroff.service", "start"},
+	}
+	for _, c := range refused {
+		err := h.ServiceAction(ctx, c.unit, c.action)
+		if _, ok := err.(*RefusedError); !ok {
+			t.Errorf("%s %s: want RefusedError, got %v", c.action, c.unit, err)
+		}
+	}
+	for _, cmd := range run.cmds {
+		if !strings.HasPrefix(cmd, "systemctl show") {
+			t.Fatalf("refused actions must not change anything, ran %q", cmd)
+		}
+	}
+	// A unit systemd does not describe is not acted on, even if the command succeeds.
+	silent := &Host{Run: &recordingRunner{}}
+	if err := silent.ServiceAction(ctx, "nginx.service", "stop"); err == nil {
+		t.Error("stop went ahead although systemctl show named no unit")
+	}
+	// A unit systemd cannot describe is not acted on.
+	failing := &Host{Run: failingRunner{}}
+	if err := failing.ServiceAction(ctx, "nginx.service", "stop"); err == nil {
+		t.Error("stop went ahead although the unit's names could not be read")
+	}
+}
+
+type failingRunner struct{}
+
+func (failingRunner) Run(context.Context, time.Duration, string, ...string) (Result, error) {
+	return Result{Exit: 1, Stderr: []byte("boom")}, nil
 }
 
 func TestServiceActionRejectsInjection(t *testing.T) {
@@ -330,6 +381,7 @@ func TestVSCodeRefusesSymlinkedPaths(t *testing.T) {
 func TestServiceActionRefusesPowerAndNetworkUnits(t *testing.T) {
 	run := &recordingRunner{out: map[string]string{
 		"systemctl list-units --all --plain --no-legend --no-pager -- wg-quick@wg0.service": "wg-quick@wg0.service loaded active exited WireGuard via wg-quick(8) for wg0",
+		"systemctl show": "Id=ok.service",
 	}}
 	h := &Host{Run: run}
 	ctx := context.Background()
