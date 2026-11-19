@@ -54,6 +54,12 @@ Go tests that touch the database need `ESA_TEST_DATABASE_URL` pointing at a disp
 
 Docs, UI copy and commit messages use plain English: short sentences, sentence-case headings, active voice, real numbers and paths. No marketing words, no emojis, no em dashes. Commit subjects are short and imperative, for example `Add ESA_ALLOW_PRIVATE_NETWORKS setting`; web-only changes start with `web:`. The body says why.
 
+## Branches and commits
+
+- Name new branches with a prefix that describes the change, such as `feat/`, `fix/`, `docs/`, `chore/` or `release/`. Never use `codex/` or another coding tool's name as a prefix.
+- Keep commit messages focused on the project change. Leave out coding tool names, session details and automation metadata. Keep the required DCO sign-off.
+- When merging a pull request, use a project-focused commit title. Prefer a squash merge with a specific title and body so the commit describes the change on its own.
+
 ## Keep docs current
 
 When behaviour changes, update the page that describes it in the same change:
