@@ -26,6 +26,8 @@ Signed-off-by: Your Name <you@example.com>
 
 That name and email must be the commit's author. The DCO check on a pull request compares them. Set `user.name` and `user.email` before you commit if they are wrong.
 
+If GitHub writes your commits with a different address, such as your `users.noreply.github.com` address on a web merge, add a line to `.mailmap` that maps it to the address in your sign-off. The check accepts either.
+
 ```sh
 git commit -s -m "Add ESA_ALLOW_PRIVATE_NETWORKS setting"
 ```
