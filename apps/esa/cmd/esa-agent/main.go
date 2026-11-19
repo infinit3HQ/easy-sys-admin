@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/agent"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
 func main() {
@@ -21,6 +23,26 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+	// The pin comes from the installer, out of band. With it, the agent runs
+	// only commands the control plane signed for this server.
+	if raw := os.Getenv("ESA_AGENT_PIN"); raw != "" {
+		pin, err := proto.ParseAgentPin(raw)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		client.WithPin(pin)
+		// systemd sets STATE_DIRECTORY from StateDirectory=; it can list
+		// several directories separated by colons.
+		if dirs := os.Getenv("STATE_DIRECTORY"); dirs != "" {
+			if err := client.WithStateDir(strings.SplitN(dirs, ":", 2)[0]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "esa-agent: ESA_AGENT_PIN is not set, so commands are not verified; reinstall with a signing pin")
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()

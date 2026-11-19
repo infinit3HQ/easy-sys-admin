@@ -183,6 +183,7 @@ func (s *Service) serverViews(ctx context.Context, a Actor, ids []int64) ([]Serv
 				continue
 			}
 			v.Access, v.OwnerTeam = Access(sh.Access), ownerNames[srv.AccountID]
+			v.Note = "" // the owning team's note, not for another team
 		}
 		role, err := rc.forAccess(ctx, v.Access, srv.GroupID)
 		if err != nil {

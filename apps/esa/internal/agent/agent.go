@@ -13,7 +13,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +29,9 @@ type Command struct {
 	Action    string    `json:"action"`
 	Args      []string  `json:"args"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// ServerID and Signature are checked against the pin when there is one.
+	ServerID  int64  `json:"serverId"`
+	Signature string `json:"signature"`
 }
 type Result struct {
 	ID     int64  `json:"id"`
@@ -36,6 +41,72 @@ type Result struct {
 type Client struct {
 	base, token string
 	http        *http.Client
+	// pin, when set, makes the agent run only commands signed by the control
+	// plane for this server. Without one, the agent trusts whatever answers
+	// at its origin, which includes any proxy in front of the control plane.
+	pin *proto.AgentPin
+	// lastID is the highest command id accepted. Ids rise with every command
+	// the control plane queues, so a signed command that something replays or
+	// holds back and delivers late is refused. stateFile keeps it across
+	// restarts when the agent has a state directory.
+	lastID    int64
+	stateFile string
+}
+
+// WithStateDir keeps the highest accepted command id in dir, and starts from
+// the one saved there.
+func (c *Client) WithStateDir(dir string) error {
+	path := filepath.Join(dir, "last-command-id")
+	raw, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		id, perr := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+		if perr != nil || id < 0 {
+			return errors.New("the saved command id is not a number")
+		}
+		c.lastID = id
+	case !errors.Is(err, os.ErrNotExist):
+		return errors.New("cannot read the saved command id")
+	}
+	c.stateFile = path
+	return nil
+}
+
+// saveLastID writes the mark before the command runs. If it cannot be written
+// the command still runs: the mark in memory still refuses replays until the
+// next restart.
+func (c *Client) saveLastID() {
+	if c.stateFile == "" {
+		return
+	}
+	tmp := c.stateFile + ".tmp"
+	if os.WriteFile(tmp, []byte(strconv.FormatInt(c.lastID, 10)+"\n"), 0o600) == nil {
+		_ = os.Rename(tmp, c.stateFile)
+	}
+}
+
+// WithPin makes the client check every command against pin and returns it.
+func (c *Client) WithPin(pin proto.AgentPin) *Client {
+	c.pin = &pin
+	return c
+}
+
+// commandTrusted reports whether cmd may run. Without a pin every command
+// passes this check, as before. With one, the command must carry a valid
+// signature for this server and a higher id than any accepted before.
+func (c *Client) commandTrusted(cmd Command) bool {
+	if c.pin == nil {
+		return true
+	}
+	if cmd.ID <= c.lastID {
+		return false
+	}
+	if !c.pin.VerifyAgentCommand(cmd.ServerID, cmd.ID, cmd.Action, cmd.Args, cmd.ExpiresAt.Unix(), cmd.Signature) {
+		return false
+	}
+	c.lastID = cmd.ID
+	c.saveLastID()
+	return true
 }
 
 func New(rawURL, token string) (*Client, error) {
@@ -50,7 +121,7 @@ func New(rawURL, token string) (*Client, error) {
 	if !strings.HasPrefix(token, "esa_agent_") || len(token) > 200 || strings.ContainsAny(token, "\r\n\t ") {
 		return nil, errors.New("invalid agent credential")
 	}
-	return &Client{strings.TrimRight(rawURL, "/"), token, &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("agent redirects are refused") }}}, nil
+	return &Client{base: strings.TrimRight(rawURL, "/"), token: token, http: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("agent redirects are refused") }}}, nil
 }
 
 // ReadToken rejects symlinks, special files, and credentials readable by others.
@@ -206,7 +277,14 @@ func (c *Client) Run(ctx context.Context, execute func(context.Context, Command)
 			}
 			continue
 		}
-		result := execute(ctx, *poll.Command)
+		var result Result
+		if c.commandTrusted(*poll.Command) {
+			result = execute(ctx, *poll.Command)
+		} else {
+			// Never run it. Report the refusal so the control plane does not
+			// wait for a result until the command expires.
+			result = failure(poll.Command.ID, "the command is not signed for this server")
+		}
 		for time.Now().Before(poll.Command.ExpiresAt) {
 			if c.request(ctx, "result", result, nil) == nil {
 				break

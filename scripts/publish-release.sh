@@ -52,8 +52,19 @@ for i in "${!images[@]}"; do
   fi
 done
 
+# The server helper and agent are built into the control plane image and
+# installed as root on servers. Publish their hashes here, so the installer
+# can be pinned to a value that does not come from the server that sends them.
+work=$(mktemp -d)
+cid=''
+cleanup() { [[ -z "$cid" ]] || docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$work"; }
 notes=$(mktemp)
-trap 'rm -f "$notes"' EXIT
+trap 'cleanup; rm -f "$notes"' EXIT
+cid=$(docker create --platform linux/amd64 "${images[0]}@${digests[0]}")
+docker cp "$cid:/usr/local/share/esa/helpers/." "$work/"
+for f in esa-helper-linux-amd64 esa-helper-linux-arm64 esa-agent-linux-amd64 esa-agent-linux-arm64; do
+  [[ -s "$work/$f" ]] || { echo "$f is missing from the control plane image." >&2; exit 1; }
+done
 {
   printf 'Container images for Linux AMD64 and ARM64. Set both image references in the [self-hosting guide](https://easysysadmin.app/docs/self-hosting).\n\n'
   printf '| Version tag | Digest reference |\n| --- | --- |\n'
@@ -64,6 +75,12 @@ trap 'rm -f "$notes"' EXIT
       exit 1
     fi
     printf '| `%s:%s` | `%s@%s` |\n' "$image" "$tag" "$image" "${digests[$i]}"
+  done
+  printf '\nOutbound installer script (`/enroll/outbound/install.sh`): `%s`\n' "$(git show "$sha:apps/esa/internal/server/outbound-install.sh" | sha256sum | cut -d' ' -f1)"
+  printf '\nServer binaries installed by the outbound installer, from the control plane image above. Pin them with `ESA_HELPER_SHA256` and `ESA_AGENT_SHA256`.\n\n'
+  printf '| File | SHA-256 |\n| --- | --- |\n'
+  for f in esa-helper-linux-amd64 esa-helper-linux-arm64 esa-agent-linux-amd64 esa-agent-linux-arm64; do
+    printf '| `%s` | `%s` |\n' "$f" "$(sha256sum "$work/$f" | cut -d' ' -f1)"
   done
 } > "$notes"
 gh release create "$tag" --repo "$repository" --verify-tag --title "$tag" --generate-notes --notes-file "$notes"

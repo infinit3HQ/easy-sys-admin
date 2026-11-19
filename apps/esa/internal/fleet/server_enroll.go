@@ -54,6 +54,9 @@ func (s *Service) CreateEnrollment(ctx context.Context, a Actor, in EnrollInput)
 	expires := s.now().Add(enrollTTL)
 	err = s.store.InTx(ctx, func(q *store.Queries) error {
 		tx := q.Raw()
+		if err := s.capLocked(tx, a.AccountID, &store.Server{}, s.maxServers, "servers"); err != nil {
+			return err
+		}
 		if err := tx.Omit(clause.Associations).Create(&srv).Error; err != nil {
 			return mapStore(err)
 		}

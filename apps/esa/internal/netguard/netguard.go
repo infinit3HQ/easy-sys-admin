@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"sync"
 	"syscall"
+	"time"
 )
 
 // BlockedError means the address is not allowed by the policy.
@@ -19,13 +21,20 @@ type BlockedError struct {
 	IP netip.Addr
 	// Private is true when ESA_ALLOW_PRIVATE_NETWORKS would allow it.
 	Private bool
+	// Local is true when the address belongs to this machine.
+	Local bool
 }
 
+// Error does not name the address. A host name can resolve to an internal
+// address, and the message goes back to whoever typed the name.
 func (e *BlockedError) Error() string {
-	if e.Private {
-		return "esa does not connect to " + e.IP.String() + ": private and internal addresses are blocked (ESA_ALLOW_PRIVATE_NETWORKS)"
+	if e.Local {
+		return "esa does not connect to an address of the machine it runs on (ESA_ALLOW_PRIVATE_NETWORKS allows it)"
 	}
-	return "esa does not connect to " + e.IP.String() + ": link-local, metadata, multicast, and unspecified addresses are always blocked"
+	if e.Private {
+		return "esa does not connect to that address: private and internal addresses are blocked (ESA_ALLOW_PRIVATE_NETWORKS)"
+	}
+	return "esa does not connect to that address: link-local, metadata, multicast, and unspecified addresses are always blocked"
 }
 
 // IsBlocked reports whether err comes from the address policy.
@@ -76,7 +85,49 @@ func Check(ip netip.Addr, allowPrivate bool) error {
 	if ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip) || !ip.IsGlobalUnicast() {
 		return &BlockedError{IP: ip, Private: true}
 	}
+	// A public address that belongs to this machine reaches its own services
+	// from the inside, past any firewall in front of it.
+	if isLocalAddress(ip) {
+		return &BlockedError{IP: ip, Private: true, Local: true}
+	}
 	return nil
+}
+
+// interfaceAddrs lists this machine's addresses. Tests replace it.
+var interfaceAddrs = net.InterfaceAddrs
+
+// The address list is read at most once a minute, not on every dial.
+var localCache struct {
+	sync.Mutex
+	at    time.Time
+	addrs []net.Addr
+}
+
+// isLocalAddress reports whether ip is assigned to this machine. When the
+// list cannot be read it reports false and the address is judged by the
+// other rules: blocking every dial for that would stop all of esa.
+func isLocalAddress(ip netip.Addr) bool {
+	localCache.Lock()
+	if time.Since(localCache.at) > time.Minute || localCache.addrs == nil {
+		if addrs, err := interfaceAddrs(); err == nil {
+			localCache.addrs, localCache.at = addrs, time.Now()
+		}
+	}
+	addrs := localCache.addrs
+	localCache.Unlock()
+	for _, a := range addrs {
+		var local net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			local = v.IP
+		case *net.IPAddr:
+			local = v.IP
+		}
+		if l, ok := netip.AddrFromSlice(local); ok && l.Unmap() == ip {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckIP is Check for a net.IP.

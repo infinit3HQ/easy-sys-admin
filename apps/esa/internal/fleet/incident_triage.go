@@ -84,6 +84,9 @@ func (s *Service) GetIncident(ctx context.Context, a Actor, id int64) (IncidentV
 			if ev.Actor == "" {
 				ev.Actor = "a member of the owning space"
 			}
+			if row.AccountID != a.AccountID {
+				ev.Detail = "" // a person wrote it for their own team
+			}
 		}
 		v.Events = append(v.Events, ev)
 	}
@@ -102,6 +105,10 @@ func (s *Service) incidentView(a Actor, r store.SecurityIncident) IncidentView {
 		v.AssigneeID, v.AssigneeName = r.AssigneeID, r.Assignee.Name
 	}
 	v.CanHold = v.CanReview && !protectedIncident(r)
+	if r.AccountID != a.AccountID {
+		// Notes and snooze reasons are the owning team's, not the viewers of a share.
+		v.Note, v.Reason = "", ""
+	}
 	return v
 }
 

@@ -34,10 +34,12 @@ export function AgentReauth({ returnTo }: { returnTo: string }) {
 export function AgentSecret({
   serverId,
   token,
+  signingPin,
   onClose,
 }: {
   serverId: number
   token: string
+  signingPin: string
   onClose: () => void
 }) {
   return (
@@ -47,7 +49,14 @@ export function AgentSecret({
         again. It expires after one year. Keep it in a protected file on the
         server.
       </p>
-      <CopyBlock value={token} />
+      <CopyBlock value={token} label="the credential" />
+      <p className="my-3 text-sm">
+        Copy the signing pin too. The agent runs only commands signed for this
+        server, so a proxy that starts changing traffic after setup cannot give
+        it work. The installer asks for the pin. It is also{' '}
+        <code className="font-mono">ESA_AGENT_PIN</code> in the file below.
+      </p>
+      <CopyBlock value={signingPin} label="the signing pin" />
       <p className="my-3 text-sm">
         Install esa-agent and the helper using the{' '}
         <Link
@@ -61,7 +70,8 @@ export function AgentSecret({
         only.
       </p>
       <CopyBlock
-        value={`ESA_AGENT_URL=${typeof window === 'undefined' ? 'https://your-esa-origin' : window.location.origin}\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token`}
+        label="the agent settings"
+        value={`ESA_AGENT_URL=${typeof window === 'undefined' ? 'https://your-esa-origin' : window.location.origin}\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token\nESA_AGENT_PIN=${signingPin}`}
       />
       <Notice className="my-3">
         Server ID {serverId}. Commands wait for the agent to connect. A missing
@@ -74,7 +84,9 @@ export function AgentSecret({
 
 export function AgentConnection({ serverId }: { serverId: number }) {
   const [confirm, setConfirm] = useState<'rotate' | 'revoke' | null>(null)
-  const [token, setToken] = useState<string | null>(null)
+  const [secret, setSecret] = useState<{ token: string; pin: string } | null>(
+    null,
+  )
   const change = useMutation({
     mutationFn: async (action: 'rotate' | 'revoke') => {
       if (action === 'rotate') {
@@ -83,7 +95,7 @@ export function AgentConnection({ serverId }: { serverId: number }) {
             params: { path: { serverId } },
           }),
         )
-        setToken(data.token)
+        setSecret({ token: data.token, pin: data.signingPin })
       } else
         await call(
           api().DELETE('/servers/{serverId}/agent-credential', {
@@ -98,11 +110,12 @@ export function AgentConnection({ serverId }: { serverId: number }) {
   })
   return (
     <div className="space-y-4">
-      {token ? (
+      {secret ? (
         <AgentSecret
           serverId={serverId}
-          token={token}
-          onClose={() => setToken(null)}
+          token={secret.token}
+          signingPin={secret.pin}
+          onClose={() => setSecret(null)}
         />
       ) : (
         <Panel title="Outbound connection">

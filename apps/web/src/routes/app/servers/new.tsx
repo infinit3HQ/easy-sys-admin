@@ -508,6 +508,7 @@ function OutboundFlow() {
       <AgentSecret
         serverId={create.data.serverId}
         token={create.data.token}
+        signingPin={create.data.signingPin}
         onClose={() => {
           navigate({
             to: '/app/servers/$serverId',

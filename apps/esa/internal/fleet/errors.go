@@ -66,3 +66,12 @@ func mapStore(err error) error {
 func errPersonOnly(what string) error {
 	return invalid("planRequired", "only a person signed in to the web app can %s", what)
 }
+
+// requirePerson refuses an approval made through a token. Approvals are made
+// by a person signed in to the web app, so an agent cannot give them.
+func requirePerson(a Actor, what string) error {
+	if a.isPerson() {
+		return nil
+	}
+	return invalid("actor", "only a person signed in to the web app can %s", what)
+}

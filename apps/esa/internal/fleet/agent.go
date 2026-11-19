@@ -2,6 +2,9 @@ package fleet
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -25,6 +29,10 @@ type AgentCommand struct {
 	Action    string    `json:"action"`
 	Args      []string  `json:"args"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// ServerID and Signature let an agent that holds a pin check that the
+	// control plane, not something in front of it, sent the command.
+	ServerID  int64  `json:"serverId,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 func agentContext(id int64, kind string) string { return fmt.Sprintf("agent_task:%d:%s", id, kind) }
@@ -44,6 +52,11 @@ func (s *Service) CreateAgentServer(ctx context.Context, a Actor, name string, g
 	if err := s.agentAdmin(ctx, a); err != nil {
 		return 0, "", err
 	}
+	// The pin is read after the credential is made. Make sure the key can be
+	// read now, so a failure does not leave a credential nobody is shown.
+	if _, err := s.accountKey(ctx, a.AccountID); err != nil {
+		return 0, "", err
+	}
 	srv, _, err := s.validateNewServer(ctx, a, name, "outbound.invalid", 22, groupID, "")
 	if err != nil {
 		return 0, "", err
@@ -56,6 +69,9 @@ func (s *Service) CreateAgentServer(ctx context.Context, a Actor, name string, g
 			return err
 		} else if m, ok := findMember(ms, a.UserID); !ok || !Role(m.Role).AtLeast(RoleAdmin) {
 			return ErrForbidden
+		}
+		if err := s.capLocked(q.Raw(), a.AccountID, &store.Server{}, s.maxServers, "servers"); err != nil {
+			return err
 		}
 		if err := q.Raw().Omit(clause.Associations).Create(&srv).Error; err != nil {
 			return mapStore(err)
@@ -75,6 +91,9 @@ func (s *Service) CreateAgentServer(ctx context.Context, a Actor, name string, g
 // RotateAgentCredential invalidates credentials and pending work atomically.
 func (s *Service) RotateAgentCredential(ctx context.Context, a Actor, id int64) (string, error) {
 	if err := s.agentAdmin(ctx, a); err != nil {
+		return "", err
+	}
+	if _, err := s.accountKey(ctx, a.AccountID); err != nil {
 		return "", err
 	}
 	srv, err := s.loadServer(ctx, a, id)
@@ -248,8 +267,12 @@ func (s *Service) agentCall(ctx context.Context, srv store.Server, action string
 	if !expires.After(now) {
 		return remote.ExecResult{}, ctx.Err()
 	}
+	signer, err := s.accountKey(ctx, srv.AccountID)
+	if err != nil {
+		return fail("could not sign the outbound command")
+	}
 	var row store.AgentTask
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var cred store.AgentCredential
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("server_id = ? AND account_id = ? AND revoked = false AND expires_at > ?", srv.ID, srv.AccountID, s.now()).Take(&cred).Error; err != nil {
 			return &UnavailableError{Message: "outbound connection is disabled"}
@@ -268,7 +291,12 @@ func (s *Service) agentCall(ctx context.Context, srv store.Server, action string
 		if args == nil {
 			args = []string{}
 		}
-		raw, _ := json.Marshal(AgentCommand{row.ID, action, args, expires})
+		command := AgentCommand{ID: row.ID, Action: action, Args: args, ExpiresAt: expires, ServerID: srv.ID}
+		command.Signature, err = signAgentCommand(signer, command)
+		if err != nil {
+			return err
+		}
+		raw, _ := json.Marshal(command)
 		sealed, err := s.box.Seal(raw, agentContext(row.ID, "command"))
 		if err != nil {
 			return err
@@ -320,4 +348,37 @@ func (s *Service) agentCall(ctx context.Context, srv store.Server, action string
 // PruneAgentTasks keeps only unexpired receipts. No task output is an audit log.
 func (s *Service) PruneAgentTasks(ctx context.Context) {
 	s.db.WithContext(ctx).Where("expires_at < ?", s.now()).Delete(&store.AgentTask{})
+}
+
+// signAgentCommand signs a command with the account key. The agent checks it
+// against the pin from AgentSigningPin.
+func signAgentCommand(k *accountSigner, c AgentCommand) (string, error) {
+	sig, err := k.signer.Sign(rand.Reader, proto.AgentCommandMessage(c.ServerID, c.ID, c.Action, c.Args, c.ExpiresAt.Unix()))
+	if err != nil {
+		return "", err
+	}
+	if sig.Format != ssh.KeyAlgoED25519 || len(sig.Blob) != ed25519.SignatureSize {
+		return "", errors.New("the account key does not make Ed25519 signatures")
+	}
+	return base64.StdEncoding.EncodeToString(sig.Blob), nil
+}
+
+// AgentSigningPin returns the pin an outbound agent is set up with: the server
+// it serves and the public key that signs its commands. It is shown once with
+// the credential and given to the agent out of band, so it does not depend on
+// the connection the commands arrive on.
+func (s *Service) AgentSigningPin(ctx context.Context, accountID, serverID int64) (string, error) {
+	k, err := s.accountKey(ctx, accountID)
+	if err != nil {
+		return "", err
+	}
+	cp, ok := k.signer.PublicKey().(ssh.CryptoPublicKey)
+	if !ok {
+		return "", errors.New("the account key has no public key to pin")
+	}
+	pub, ok := cp.CryptoPublicKey().(ed25519.PublicKey)
+	if !ok {
+		return "", errors.New("the account key is not an Ed25519 key")
+	}
+	return proto.FormatAgentPin(serverID, pub), nil
 }

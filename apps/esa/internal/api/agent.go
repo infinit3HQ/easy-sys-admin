@@ -18,7 +18,11 @@ func (h *Handlers) CreateAgentServer(ctx context.Context, r CreateAgentServerReq
 	if e != nil {
 		return nil, e
 	}
-	return CreateAgentServer201JSONResponse{ServerId: id, Token: token}, nil
+	pin, e := h.fleet.AgentSigningPin(ctx, a.AccountID, id)
+	if e != nil {
+		return nil, e
+	}
+	return CreateAgentServer201JSONResponse{ServerId: id, Token: token, SigningPin: pin}, nil
 }
 func (h *Handlers) RotateAgentCredential(ctx context.Context, r RotateAgentCredentialRequestObject) (RotateAgentCredentialResponseObject, error) {
 	a, e := actor(ctx)
@@ -29,7 +33,11 @@ func (h *Handlers) RotateAgentCredential(ctx context.Context, r RotateAgentCrede
 	if e != nil {
 		return nil, e
 	}
-	return RotateAgentCredential200JSONResponse{ServerId: r.ServerId, Token: token}, nil
+	pin, e := h.fleet.AgentSigningPin(ctx, a.AccountID, r.ServerId)
+	if e != nil {
+		return nil, e
+	}
+	return RotateAgentCredential200JSONResponse{ServerId: r.ServerId, Token: token, SigningPin: pin}, nil
 }
 func (h *Handlers) RevokeAgentCredential(ctx context.Context, r RevokeAgentCredentialRequestObject) (RevokeAgentCredentialResponseObject, error) {
 	a, e := actor(ctx)
@@ -52,7 +60,7 @@ func (h *Handlers) PollAgent(ctx context.Context, r PollAgentRequestObject) (Pol
 	}
 	out := PollAgent200JSONResponse{}
 	if cmd != nil {
-		out.Command = &AgentCommand{Id: cmd.ID, Action: cmd.Action, Args: cmd.Args, ExpiresAt: cmd.ExpiresAt}
+		out.Command = &AgentCommand{Id: cmd.ID, Action: cmd.Action, Args: cmd.Args, ExpiresAt: cmd.ExpiresAt, ServerId: &cmd.ServerID, Signature: &cmd.Signature}
 	}
 	return out, nil
 }
