@@ -47,3 +47,13 @@ An account owns servers, groups, runs, alerts, channels, certificates, tokens, a
 ## API
 
 See `packages/api/openapi.yaml`, tags `teams` and `sharing`. `Organization` has `personal`, `adminTeamName`, and `viewerTeamName`. `Group` and `Server` have `access`, `ownerTeam`, and `yourRole`. A group shared in also has `shareId`.
+
+## Notice assignment and plan approvals
+
+An admin can assign a notice to one current member of its owning space or leave it unassigned. Assignment grants no access and does not resolve the notice. Removing the member clears their assignments and records the change in notice history. A viewer of a shared server does not see the owner's assignee names. Assignment needs the admin token scope as well as the owning-space admin role.
+
+A group can require two distinct current admins to approve its maintenance plans. Add the second admin before enabling this setting. Both approvals need a recent browser sign-in. The first approval expires after 30 minutes; the second does not extend it. Removing or demoting an approver prevents execution. A token cannot approve a plan or lower this requirement. There is no emergency bypass.
+
+Critical exposure, changed host keys, new SSH keys, known-exploited advisories, and changes from an approved access baseline cannot be snoozed or accepted as a risk. They can still be reviewed with a note.
+
+A token cannot move a server to a group with fewer required approvals. Database guards also refuse that move or a protected-group deletion by an older control plane. Current browser writes mark their transaction only after the permission checks. A person can still move the server or delete its group. Token group updates also check the current database policy when saving, so a concurrent policy increase cannot be overwritten by an older read.

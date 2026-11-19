@@ -11,7 +11,11 @@ Each ready server is polled about once a minute. The snapshot includes CPU, memo
 
 Samples are kept 48 hours by default. Hourly averages are kept 90 days. Charts for a short window use the raw samples. Longer windows use the hourly averages. A server that stops answering is polled every 5 minutes instead of every minute. The TCP connect gives up after 5 seconds.
 
-The board loads the servers in the current space every 15 seconds.
+The board loads the servers in the current space every 15 seconds. A server whose helper is too old to collect the exposure summary is counted at the top of the board.
+
+Each server can carry a short note. It stays in the control plane and is shown on the board. It is not sent to the machine.
+
+On a server's status tab, the fullest disk can show about how many days it has until it fills. The estimate uses up to 14 days of samples. A flat or shrinking disk shows no estimate.
 
 ## Updates
 
@@ -57,17 +61,41 @@ Journal lines for one unit, or the log of one container. The API allows 1 to 100
 
 ## Access and security reports
 
-The access report lists users with a login shell, the fingerprints of their SSH keys, who is in the sudo and docker groups, recent logins, and failed SSH attempts.
+The Keys page lists each fingerprint across the servers you can see, and lets an admin give it a name. The list is only the standard `authorized_keys` files of accounts with a login shell. A key in another file, or one installed by a certificate, is not included. Naming a key does not change the server. Looking up a name shows where that name still appears in the files a current helper has read. A missing row is not proof that access was removed. An admin can approve the keys currently recorded on one server. Later checks report a key that appears, disappears, or changes its restriction. The approval does not change the server. A helper older than the current report is marked, and its last complete summary is kept instead of being replaced with an empty one.
 
-The security report lists listening ports and their processes, the firewall, CrowdSec, fail2ban, and unattended-upgrades.
+The access report lists users with a login shell, whether each password is locked, empty, or set, and the fingerprints of their SSH keys. It does not return the password hash or the key. It lists sudo rules from `/etc/sudoers` and `/etc/sudoers.d`, including `NOPASSWD` and `ALL`. Aliases are not expanded, and includes that point outside that directory are skipped. It also shows who is in the sudo and docker groups, recent logins, failed SSH attempts, and the SSH server's password, root, empty-password, public-key, and forwarding settings.
+
+The security report lists listening ports, the user that owns each socket, and whether the socket is on every interface, on loopback, or on one address. A `docker-proxy` socket is joined to the container that publishes it. A port Docker publishes is listed even when `ss` does not show it, and its firewall result is unknown, because Docker can bypass ufw. The report shows ufw rules when ufw is active, up to 40 lines. nftables is named only. It also shows unattended-upgrades. CrowdSec and fail2ban are shown only when that server has them installed. The same page shows restic or Borg result files from `/var/lib/esa/recovery` when an operator put them there. Esa does not run those tools. A success in the file is not proof the data can be restored.
+
+The board keeps a short summary of that picture, refreshed about once an hour: sockets listening on all interfaces, sockets on one address, those SSH flags, the firewall name, extra uid 0 accounts, and `NOPASSWD ALL` rules. A socket on every interface is not proof that a network can reach it. A socket on one address is not proof either way. If a check does not run, the summary names that gap instead of treating the missing list as a clean result. The summary shows when it was last collected and when the control plane last tried. The user list and login addresses are not stored. A helper older than this summary says so, and its empty fields are not treated as a clean result. Reinstall the helper to collect it.
+
+An exposure alert is off until you turn it on under alert settings. It fires for password login, empty passwords, root password login, no firewall, an extra uid 0 account, or a `NOPASSWD ALL` rule. Host key changes, weak exposure, and old security updates also appear in the review list. A host key change cannot be snoozed.
+
+A maintenance window, set under alert settings, quiets ordinary notices for at most 7 days. Checks still run. A host key change and a new SSH key are still sent.
+
+After a package upgrade, the control plane reads status again. A failed unit that was not already failed, or more unhealthy or restarting containers than before, fails that server. A problem that was already there does not. A batch can then stop.
+
+A group can store up to eight checks: a TCP connect, an HTTP GET or HEAD, a systemd service, or a container. Each one uses the server's enrolled address. You cannot type a different host. HTTP does not follow a redirect. A blocking failure stops that server, before apt and again after. An advisory failure is written on the run and the upgrade continues. When you start an update you can mark canaries. Those servers go first. If one of them fails, the others are skipped. You can watch the canaries for up to 10 minutes. The checks repeat every 15 seconds, and a failure skips the rest. The run page and `GET /runs/{id}/report` list the packages, the checks, and why a server was skipped.
+
+An agent can propose a typed plan. The Plans page is where a person approves or rejects it. A token cannot approve. Approval lasts 30 minutes. Running it twice returns the same run. A token that can read logs cannot run a plan.
+
+Two more alerts are on by default. A new socket on all interfaces, and a new SSH key, each send one notice. The socket notice does not claim the internet can connect. The first report seeds the baseline and does not alert. A security update that is still pending after 7 days also alerts. The wait is the number of days in alert settings. The board already turns yellow as soon as a security update is pending.
+
+When ufw is active, each listening socket says whether ufw allows it, denies it, or does not mention it. Sockets on every interface that ufw does not mention are counted on the board. If fail2ban is installed, each jail shows how many addresses it currently bans. If CrowdSec is installed, the report shows how many decisions are active. The addresses are not collected. A server without either tool is not marked for that. An SSH key shows its `from=` restriction, and whether it forces a command. The command text is not shown. A uid 0 key with neither restriction is marked.
 
 Scheduled jobs lists cron entries and systemd timers. Cron command lines are hidden from a token that cannot read logs, because those lines often contain secrets.
 
+A group with two or more servers that have a current exposure summary lists where they differ: password login, root login, firewall, and sockets listening on all interfaces. A socket that is not on every server in the group is named. Reachability is not verified.
+
 ## Alerts
 
-An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, and host key change.
+An alert fires after its condition has held for the duration you set, and it resolves when the condition clears. Kinds include disk, inodes, memory, unreachable, failed unit, unhealthy container, certificate expiry, failed run, host key change, exposure, a new socket on all interfaces, a new SSH key, and security updates that have been waiting. Exposure is off until you enable it. The new-port and new-key notices fire once. An admin can mark them reviewed or snooze them for at most 7 days. A snooze comes back on its own. A later event for the same thing opens it again. Reviewing or snoozing does not change the server. Notifications are stored before they are sent, and a restart retries them. Five failures leave the delivery marked dead. A maintenance window quiets ordinary notices and does not hide a host key change or a new SSH key. A security update alerts after the number of days you set, 7 by default.
+
+A socket notice resolves when a complete check no longer sees any of its recorded sockets. A grouped notice keeps the full list even when its message shows only eight sockets. A failed socket or Docker-port read leaves the notice open. Older grouped notices without a stored list stay open because esa cannot tell whether every socket has gone. Resolution does not prove that the port is unreachable.
 
 Channels are ntfy, a generic webhook, Discord, Slack, and email. You can send a test message. Certificate checks are a list of TLS endpoints the control plane connects to.
+
+On Monday after 08:00 UTC, each space with a channel gets one summary if there is something to say: unreachable servers, security updates that have been waiting at least 7 days, and new sockets on all interfaces or SSH keys from the past week. A quiet week sends nothing. If the control plane is down that Monday, that week is skipped.
 
 ## Organizations and spaces
 
@@ -102,3 +130,29 @@ A token works in the space where it was created. Demoting or removing a member l
 ## Audit log
 
 The activity page is the audit log. Each change is recorded with the actor and a short detail. Calls are marked web, API, MCP, or system. The log is not pruned. It does not contain passwords, private keys, or token secrets.
+
+## Responsibility and two-admin approvals
+
+The notice page lets an admin assign one current member of the owning space. Assignment does not grant access, resolve the notice, or change the server. The notice history records assignment changes. A member leaving the space clears their assignments. People viewing a shared server do not see the owning space's assignee names.
+
+A group's settings can require two different admins to approve maintenance plans. Add a second admin before enabling it. Both admins must have signed in within the last 15 minutes. The first approval expires after 30 minutes; the second cannot extend it. An approver leaving or losing the admin role prevents execution. Tokens cannot approve or lower this requirement.
+
+Critical exposure, host-key changes, new SSH keys, known-exploited advisories, and approved-access changes cannot be snoozed or accepted as a risk. You can still mark them reviewed and add a note.
+
+## Reachability from a probe you run
+
+The security tab shows TCP observations submitted by machines you choose. Run `esa servers probe web-01 --source office --port 443` from the network you want to check. Use your scheduler to repeat it every 5 minutes. Evidence becomes stale after 15 minutes. A successful connection means reached from that probe, not from the whole internet. A refused or timed-out connection means not reached from that probe. A DNS or local network error is unknown. The last complete observation stays visible after an unknown attempt. Changing the server's enrolled address invalidates its old observations.
+
+Only an admin of the owning group can submit evidence, using an API token with the actions scope. A viewer can read evidence for servers they can see. Esa does not start an external probe service or alter a firewall. No probe evidence means unknown reachability.
+
+## Retention
+
+The hosted retention policy is 365 days for audit entries and 90 days for resolved notice history and superseded vulnerability scan reports after the operator enables pruning. While pruning is off, those records stay longer. Open, reviewed, snoozed, and accepted notices stay. The latest scan stays even if it is stale, so an expired result does not look clean. Run reports and backup evidence receipts stay until the account is deleted. An audit hold pauses pruning.
+
+Self-hosted installs keep all of this history by default. The operator can configure `ESA_AUDIT_RETENTION` and `ESA_REPORT_RETENTION` in the environment. A person in the app cannot shorten them.
+
+## Outbound connections and Rocky Linux 9
+
+Servers without incoming SSH can use the [outbound agent](/outbound-agent). Registration and credential rotation require a recently signed-in space admin. The agent runs the same typed helper actions, with expiring commands and no automatic replay after a disconnect.
+
+Rocky Linux 9 supports RPM inventory, security metadata, and approved DNF updates. Install `dnf-utils` for reboot checks. The helper refuses unapproved dependencies, package erasures, kernel removal, versionlocks, and untrusted signatures. Other RHEL-family releases remain unsupported.

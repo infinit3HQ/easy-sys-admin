@@ -104,6 +104,10 @@ func (s *Service) UpdateAlertRule(ctx context.Context, a Actor, kind string, ena
 		if threshold < 1 || threshold > 90 {
 			return AlertRuleView{}, invalid("threshold", "must be between 1 and 90 days")
 		}
+	case AlertSecurityUpdate:
+		if threshold < 0 || threshold > 90 {
+			return AlertRuleView{}, invalid("threshold", "must be between 0 and 90 days")
+		}
 	default:
 		threshold = r.Threshold
 	}
@@ -290,9 +294,43 @@ func (s *Service) notify(ctx context.Context, accountID int64, msg Message) {
 	if err := s.db.WithContext(ctx).Where("account_id = ? AND enabled", accountID).Find(&chans).Error; err != nil {
 		return
 	}
+	if s.silenced(ctx, accountID, msg.ServerID, msg.Kind) {
+		return
+	}
+	if len(chans) > 0 && s.holdForSummary(ctx, accountID, msg) {
+		return
+	}
 	for _, ch := range chans {
 		s.enqueueNotify(ch, msg)
 	}
+}
+
+func (s *Service) notifyResolved(ctx context.Context, accountID, serverID int64, kind, title, body string) {
+	url := ""
+	if s.publicURL != nil {
+		url = s.publicURL.JoinPath("/app/alerts").String()
+	}
+	s.notify(ctx, accountID, Message{
+		Title: "Resolved: " + title, Body: body, Severity: "info", Resolved: true,
+		Kind: kind, ServerID: serverID, URL: url,
+	})
+}
+
+func (s *Service) silenced(ctx context.Context, accountID, serverID int64, kind string) bool {
+	if kind == string(AlertHostKey) || kind == string(AlertNewKey) || kind == "vuln" || kind == "access" {
+		return false
+	}
+	now := s.now()
+	var n int64
+	q := s.db.WithContext(ctx).Model(&store.MaintenanceWindow{}).
+		Where("account_id = ? AND starts_at <= ? AND ends_at > ?", accountID, now, now)
+	if serverID == 0 {
+		q = q.Where("server_id IS NULL AND group_id IS NULL")
+	} else {
+		q = q.Where("server_id = ? OR (server_id IS NULL AND (group_id IS NULL OR group_id = (SELECT group_id FROM servers WHERE id = ?)))", serverID, serverID)
+	}
+	q.Count(&n)
+	return n > 0
 }
 
 func (s *Service) sendOne(ctx context.Context, ch store.NotifyChannel, msg Message) error {

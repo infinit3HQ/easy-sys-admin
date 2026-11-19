@@ -1,0 +1,82 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:4134bce9-63fc-46f1-af6c-cd73a3ce9163",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-17T00:00:00Z",
+    "tools": [
+      {
+        "vendor": "easy-sys-admin",
+        "name": "esa",
+        "version": "comparison"
+      }
+    ],
+    "component": {
+      "type": "operating-system",
+      "name": "ubuntu",
+      "version": "24.04",
+      "bom-ref": "os",
+      "properties": [
+        {
+          "name": "esa:server",
+          "value": "synthetic-ubuntu-24.04"
+        },
+        {
+          "name": "esa:images",
+          "value": "not read"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "operating-system",
+      "name": "ubuntu",
+      "version": "24.04",
+      "bom-ref": "os-ubuntu"
+    },
+    {
+      "type": "library",
+      "name": "openssl",
+      "version": "3.0.13-0ubuntu3",
+      "purl": "pkg:deb/ubuntu/openssl@3.0.13-0ubuntu3?arch=amd64\u0026distro=ubuntu-24.04",
+      "bom-ref": "openssl:amd64"
+    },
+    {
+      "type": "library",
+      "name": "libssl3t64",
+      "version": "3.0.13-0ubuntu3",
+      "purl": "pkg:deb/ubuntu/libssl3t64@3.0.13-0ubuntu3?arch=amd64\u0026distro=ubuntu-24.04\u0026upstream=openssl",
+      "bom-ref": "libssl3t64:amd64"
+    },
+    {
+      "type": "library",
+      "name": "curl",
+      "version": "8.5.0-2ubuntu10",
+      "purl": "pkg:deb/ubuntu/curl@8.5.0-2ubuntu10?arch=amd64\u0026distro=ubuntu-24.04",
+      "bom-ref": "curl:amd64"
+    },
+    {
+      "type": "library",
+      "name": "libc6",
+      "version": "2.39-0ubuntu8",
+      "purl": "pkg:deb/ubuntu/libc6@2.39-0ubuntu8?arch=amd64\u0026distro=ubuntu-24.04\u0026upstream=glibc",
+      "bom-ref": "libc6:amd64"
+    },
+    {
+      "type": "library",
+      "name": "bash",
+      "version": "5.2.21-2ubuntu4",
+      "purl": "pkg:deb/ubuntu/bash@5.2.21-2ubuntu4?arch=amd64\u0026distro=ubuntu-24.04",
+      "bom-ref": "bash:amd64"
+    },
+    {
+      "type": "library",
+      "name": "linux-image-6.8.0-31-generic",
+      "version": "6.8.0-31.31",
+      "purl": "pkg:deb/ubuntu/linux-image-6.8.0-31-generic@6.8.0-31.31?arch=amd64\u0026distro=ubuntu-24.04\u0026upstream=linux",
+      "bom-ref": "linux-image-6.8.0-31-generic:amd64"
+    }
+  ]
+}

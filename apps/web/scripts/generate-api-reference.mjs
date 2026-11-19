@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-const spec = parse(readFileSync(resolve(root, 'packages/api/openapi.yaml'), 'utf8'))
+const spec = parse(
+  readFileSync(resolve(root, 'packages/api/openapi.yaml'), 'utf8'),
+)
 const methods = ['get', 'post', 'put', 'patch', 'delete']
 
 const tagOrder = []
@@ -24,7 +26,11 @@ for (const [path, item] of Object.entries(spec.paths ?? {})) {
     if (!op) continue
     const tag = op.tags?.[0] ?? 'other'
     if (!groups.has(tag)) groups.set(tag, [])
-    const auth = Array.isArray(op.security) && op.security.length === 0 ? 'Public' : 'Session or token'
+    const auth = op.security?.some((entry) => 'agentToken' in entry)
+      ? 'Server agent token'
+      : Array.isArray(op.security) && op.security.length === 0
+        ? 'Public'
+        : 'Session or token'
     groups.get(tag).push({
       method: method.toUpperCase(),
       path,
@@ -55,7 +61,7 @@ const lines = [
   '',
   'Every error has the shape `{"error": {"code": "...", "message": "..."}}`. Codes include `bad_request` (400), `unauthorized` (401), `forbidden` (403), `not_found` (404), `conflict` (409), and `unavailable` (502).',
   '',
-  'Paths marked Public do not need a session or a token.',
+  'Paths marked Public do not need a session or a token. The outbound agent sends X-Esa-Agent-Token, bound to one server. It cannot use a browser session or a user API token for these machine endpoints.',
   '',
 ]
 
@@ -66,9 +72,14 @@ for (const tag of ordered) {
   if (about) lines.push(about, '')
   lines.push('| Method | Path | Auth | Summary |', '| --- | --- | --- | --- |')
   for (const op of groups.get(tag)) {
-    lines.push(`| ${cell(op.method)} | \`${cell(op.path)}\` | ${cell(op.auth)} | ${cell(op.summary)} |`)
+    lines.push(
+      `| ${cell(op.method)} | \`${cell(op.path)}\` | ${cell(op.auth)} | ${cell(op.summary)} |`,
+    )
   }
   lines.push('')
 }
 
-writeFileSync(resolve(root, 'apps/web/src/content/docs/api.md'), `${lines.join('\n')}\n`)
+writeFileSync(
+  resolve(root, 'apps/web/src/content/docs/api.md'),
+  `${lines.join('\n')}\n`,
+)

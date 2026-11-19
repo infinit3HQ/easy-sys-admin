@@ -581,7 +581,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Users with a login shell, SSH keys, sudo and docker group members, recent logins */
+        /** Login users, password state, sudo rules, SSH settings, recent logins */
         get: operations["getServerAccess"];
         put?: never;
         post?: never;
@@ -600,7 +600,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Listening ports, firewall, CrowdSec and fail2ban, unattended-upgrades */
+        /** Listening ports, firewall rules, CrowdSec and fail2ban, unattended-upgrades */
         get: operations["getServerSecurity"];
         put?: never;
         post?: never;
@@ -621,6 +621,214 @@ export interface paths {
         };
         /** Cron entries and systemd timers */
         get: operations["getServerJobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/recovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Backup reports an operator wrote on the server */
+        get: operations["getServerRecovery"];
+        put?: never;
+        /** Store one backup result. The same Idempotency-Key returns the first result and does not change it. */
+        post: operations["submitServerRecovery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register an outbound server. Requires a recently signed-in space admin. The credential is shown once. */
+        post: operations["createAgentServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/agent-credential": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin. */
+        post: operations["rotateAgentCredential"];
+        /** Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server. */
+        delete: operations["revokeAgentCredential"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/poll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim at most one helper command for the authenticated outbound server. A claimed command is never redelivered. */
+        post: operations["pollAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agent/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Return a claimed helper result. The first result wins. Expired and rotated commands are refused. */
+        post: operations["submitAgentResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/reachability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Read connection evidence submitted by probes an operator runs. */
+        get: operations["getReachability"];
+        put?: never;
+        /** Record an operator-run TCP probe for a server owned by this space. Does not run a probe or change the server. */
+        post: operations["submitReachability"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/sbom": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** The server's installed distro packages as a CycloneDX 1.5 SBOM, for a scanner you run. esa sends it nowhere. */
+        get: operations["getServerSbom"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** The newest vulnerability scan of this server, ranked, with the scanner and database age */
+        get: operations["getServerScan"];
+        put?: never;
+        /** Import a Grype JSON report made from this server's SBOM. Up to 10 MiB. */
+        post: operations["importServerScan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/vuln-exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set one scan match aside until a date. The match stays in the list. An exception is not a fix. */
+        post: operations["createVulnException"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/vuln-exceptions/{exceptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a scan exception. This does not change the server or the scan. */
+        delete: operations["deleteVulnException"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/advisories": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Exact affected versions from an imported local feed */
+        get: operations["getServerAdvisories"];
         put?: never;
         post?: never;
         delete?: never;
@@ -809,7 +1017,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -817,6 +1025,564 @@ export interface paths {
         get: operations["getRun"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** SSH key fingerprints seen in standard authorized_keys files */
+        get: operations["listKeys"];
+        /** Name a fingerprint in this space, or clear the name */
+        put: operations["labelKey"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download of the key, update, and exposure evidence this account can see */
+        get: operations["getEvidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Named backup datasets and how old a success may be */
+        get: operations["listDatasets"];
+        put?: never;
+        /** Add a dataset policy (admin) */
+        post: operations["createDataset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{datasetId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                datasetId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a dataset policy (admin). This does not change a server. */
+        delete: operations["deleteDataset"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Typed maintenance plans waiting for a person */
+        get: operations["listPlans"];
+        put?: never;
+        /** Store a typed plan. This does not change a server. */
+        post: operations["proposePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        /** One typed plan */
+        get: operations["getPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve a plan from a browser session. A token cannot approve. */
+        post: operations["approvePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a plan from a browser session. A token cannot reject. */
+        post: operations["rejectPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Withdraw a plan that has not started. This never touches a server. */
+        post: operations["cancelPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/plans/{planId}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an approved plan once. A token that can read logs cannot execute. */
+        post: operations["executePlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/gate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Continue or stop a run waiting after its canaries. Only a person in the web app can decide. */
+        post: operations["decideGate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{runId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /** Package result and checks for one update run */
+        get: operations["getPatchReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve the keys currently recorded on this server as a new baseline version. Refused when the recorded keys are not current. */
+        post: operations["approveKeyBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/access-baseline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve the last recorded accounts, sudo rules, and SSH settings. Refused when that check is stale or incomplete. This does not change the server. */
+        post: operations["approveAccessBaseline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-baseline/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Earlier key approvals of this server, newest first */
+        get: operations["listBaselineVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-exceptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        /** Fingerprints expected on this server until a date. This does not change the server. */
+        get: operations["listKeyExceptions"];
+        put?: never;
+        /** Expect one fingerprint on one login until a date */
+        post: operations["createKeyException"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/servers/{serverId}/key-exceptions/{exceptionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a key exception. This does not change the server. */
+        delete: operations["deleteKeyException"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/identities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owners of keys in this space, with how many grants carry their keys */
+        get: operations["listIdentities"];
+        /** Record what an owner is and their status. The name is the key label. This does not change a server. */
+        put: operations["saveIdentity"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/offboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Keys with this name from the files a current helper has read */
+        get: operations["offboarding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Windows that quiet ordinary notifications */
+        get: operations["listMaintenance"];
+        put?: never;
+        /** Quiet ordinary notifications for at most 7 days */
+        post: operations["createMaintenance"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/maintenance/{windowId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                windowId: components["parameters"]["WindowId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a maintenance window */
+        delete: operations["deleteMaintenance"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Security notices that still need a person to look at them */
+        get: operations["listIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        /** One security notice with its history */
+        get: operations["getIncident"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/assignee": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Assign a notice to a member of its owning space, or clear the assignment. */
+        put: operations["assignIncident"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept the risk until a time within 90 days, with a reason. The notice stays and returns at the expiry or when it changes. */
+        post: operations["acceptIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide a notice until a time within 7 days. A new occurrence ends the snooze. A host key change cannot be snoozed. */
+        post: operations["snoozeIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/incidents/{incidentId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record that a person has reviewed this notice, with an optional note. This does not resolve it or change the server. */
+        post: operations["acknowledgeIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alerts/routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** How this space's warnings reach its channels */
+        get: operations["getRouting"];
+        /** Send warnings at once or in one daily summary. Critical notices, host key changes, and new SSH keys are always sent at once. */
+        put: operations["setRouting"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The 100 most recent notification sends of this space */
+        get: operations["listDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/deliveries/{deliveryId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a send that gave up again. A send that may have arrived is not retried. */
+        post: operations["retryDelivery"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1334,6 +2100,266 @@ export interface components {
             other: number;
             /** Format: date-time */
             checkedAt?: string | null;
+            /** @description True when no package check has succeeded for 12 hours, two missed checks. The counts are then old, or there are none because a check has never run. */
+            stale: boolean;
+        };
+        Exposure: {
+            /**
+             * Format: date-time
+             * @description When this summary was last collected successfully.
+             */
+            checkedAt: string;
+            /**
+             * Format: date-time
+             * @description When the control plane last tried to collect it. A failed try updates this and leaves checkedAt unchanged.
+             */
+            attemptedAt: string;
+            /** @description True when no collection has succeeded for two expected intervals (2 hours). The fields below are then old evidence, not the current state. */
+            stale: boolean;
+            /** @description False when the helper is too old. Reinstall it. Do not treat the other fields as a clean result. */
+            ready: boolean;
+            /** @description Deprecated alias of listeningOnAllInterfaces. Same list. Not proof the internet can connect. */
+            publicPorts: string[];
+            /** @description Sockets bound to every interface, as port/proto, for example 22/tcp. Reachability is not verified. */
+            listeningOnAllInterfaces: string[];
+            /** @description Sockets on one non-loopback address, as "address port/proto". Not proof the internet can connect, and not proof it cannot. */
+            specificBinds: string[];
+            passwordAuth: boolean;
+            permitRootLogin: string;
+            permitEmptyPasswords: boolean;
+            pubkeyAuth: boolean;
+            /** @description True when sshd -T was read. pubkeyAuth is meaningful only then. */
+            sshRead: boolean;
+            firewall: string;
+            /** @description Login accounts other than root with uid 0. */
+            extraRoot: number;
+            /** @description Sudo rules that grant NOPASSWD and ALL. */
+            noPasswordAll: number;
+            /** @description Sockets on every interface that an active ufw does not mention. */
+            uncovered: number;
+            /** @description Checks that did not run for this summary. Do not treat a missing list as a clean result. */
+            gaps: string[];
+        };
+        KeyOccurrence: {
+            /** Format: int64 */
+            serverId: number;
+            serverName: string;
+            user: string;
+            comment: string;
+            from: string;
+            /** @description This login's key line has a forced command. The same key can be unrestricted on another login. */
+            hasCommand: boolean;
+            /** Format: date-time */
+            observedAt: string;
+        };
+        Key: {
+            fingerprint: string;
+            keyType: string;
+            /** @description True when any occurrence forces a command. The command text is not stored. */
+            hasCommand: boolean;
+            /** @description Name given in this space. Empty until someone sets one. */
+            label: string;
+            uses: components["schemas"]["KeyOccurrence"][];
+        };
+        KeyList: {
+            /** @description At most 2000 key grants, ordered by fingerprint. */
+            items: components["schemas"]["Key"][];
+        };
+        /** @description Servers and key fingerprints the caller can see. It has no private keys, password hashes, or login user lists. */
+        EvidenceExport: {
+            /** Format: date-time */
+            exportedAt: string;
+            servers: {
+                /** Format: int64 */
+                id: number;
+                name: string;
+                /** Format: date-time */
+                updatesCheckedAt?: string | null;
+                securityUpdates: number;
+                otherUpdates: number;
+                updatesStale: boolean;
+                /** Format: date-time */
+                exposureCheckedAt?: string | null;
+                exposureReady: boolean;
+                exposureStale: boolean;
+            }[];
+            keys: {
+                fingerprint: string;
+                label: string;
+                servers: string[];
+            }[];
+        };
+        Dataset: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @description How old a successful backup of this dataset may be, in hours. */
+            maxAgeHours: number;
+        };
+        DatasetList: {
+            items: components["schemas"]["Dataset"][];
+        };
+        DatasetInput: {
+            name: string;
+            maxAgeHours: number;
+        };
+        Offboarding: {
+            /** @description What this report does not prove. */
+            statement: string;
+            /** @description The owner's keys. */
+            items: components["schemas"]["Key"][];
+            identity: components["schemas"]["Identity"];
+            /** Format: date-time */
+            generatedAt: string;
+            /** @description True only when every visible server has a current key list with no gaps and you see the whole space. Even then it does not prove access was removed. */
+            complete: boolean;
+            /** @description True when some servers belong to another organization. */
+            partial: boolean;
+            grants: {
+                /** Format: int64 */
+                serverId: number;
+                server: string;
+                user: string;
+                fingerprint: string;
+                keyType: string;
+                from: string;
+                hasCommand: boolean;
+                /** Format: date-time */
+                observedAt: string;
+                /** @description Why this server's key list is not current. Empty when it is. */
+                unchecked: string;
+            }[];
+            unchecked: {
+                /** Format: int64 */
+                serverId: number;
+                server: string;
+                reason: string;
+            }[];
+            /** @description The owner's fingerprints that open more than one login. */
+            sharedKeys: string[];
+            /** @description The report as Markdown, to keep or send. */
+            markdown: string;
+        };
+        Identity: {
+            name: string;
+            /** @enum {string} */
+            kind: "person" | "service" | "shared";
+            /** @enum {string} */
+            status: "active" | "leaving" | "left";
+            note: string;
+            /** @description Keys named for this owner. */
+            keys: number;
+            /** @description Logins that carry those keys on servers you can see. */
+            grants: number;
+            servers: number;
+        };
+        IdentityInput: {
+            name: string;
+            /** @enum {string} */
+            kind: "person" | "service" | "shared";
+            /** @enum {string} */
+            status: "active" | "leaving" | "left";
+            note?: string;
+        };
+        IdentityList: {
+            items: components["schemas"]["Identity"][];
+        };
+        BaselineVersion: {
+            version: number;
+            keys: number;
+            reason: string;
+            /** Format: date-time */
+            approvedAt: string;
+            approvedBy: string;
+        };
+        KeyException: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            user: string;
+            fingerprint: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        KeyExceptionInput: {
+            user: string;
+            fingerprint: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        KeyExceptionList: {
+            items: components["schemas"]["KeyException"][];
+        };
+        VulnException: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            advisory: string;
+            package: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        VulnExceptionInput: {
+            advisory: string;
+            package: string;
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        BaselineVersionList: {
+            items: components["schemas"]["BaselineVersion"][];
+        };
+        MaintenanceWindow: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** Format: int64 */
+            serverId?: number | null;
+            reason: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+        };
+        MaintenanceList: {
+            /** @description Windows that have not ended, earliest first, at most 200. */
+            items: components["schemas"]["MaintenanceWindow"][];
+        };
+        MaintenanceRequest: {
+            reason: string;
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            /** Format: int64 */
+            groupId?: number | null;
+            /** Format: int64 */
+            serverId?: number | null;
+        };
+        KeyLabelRequest: {
+            fingerprint: string;
+            /** @description Empty clears the name. */
+            label: string;
+        };
+        AgentCredential: {
+            /** Format: int64 */
+            serverId: number;
+            /** @description Shown once. Save in a protected file, never in a URL or command argument. */
+            token: string;
+        };
+        AgentCommand: {
+            /** Format: int64 */
+            id: number;
+            action: string;
+            args: string[];
+            /** Format: date-time */
+            expiresAt: string;
         };
         Server: {
             /** Format: int64 */
@@ -1350,15 +2376,29 @@ export interface components {
             /** Format: int64 */
             groupId?: number | null;
             groupName?: string | null;
+            /**
+             * @description Outbound servers do not accept incoming SSH connections from esa.
+             * @enum {string}
+             */
+            connection?: "ssh" | "outbound";
             /** @enum {string} */
             enrollment: "pending" | "ready";
             hostKeyFingerprint: string;
             helperVersion: string;
+            /** @description Helper actions this control plane has that the installed helper does not. Reinstall the helper to add them. Empty when it has every action; actions a helper never reported are judged by the actions helpers had before they reported a list. */
+            helperMissing?: string[];
+            /**
+             * Format: date-time
+             * @description When the helper last said which actions it has. Null when it was never asked.
+             */
+            helperCheckedAt?: string | null;
             arch: string;
             hostsControlPlane: boolean;
             /** @description Container name prefixes that need typed confirmation. Empty means the defaults (traefik, authentik, portainer, crowdsec). */
             protectedContainers: string[];
             hasStoredLogin: boolean;
+            /** @description A short note kept in the control plane. It is not sent to the server. */
+            note: string;
             /** Format: date-time */
             createdAt: string;
             status: components["schemas"]["ServerStatus"];
@@ -1371,6 +2411,8 @@ export interface components {
             presentedFingerprint: string;
             metrics?: components["schemas"]["ServerMetrics"] | null;
             updates?: components["schemas"]["UpdateCounts"] | null;
+            /** @description Hourly summary of public listeners and a few SSH and sudo flags. Null until the first collection. User lists and login addresses are not stored. */
+            exposure?: components["schemas"]["Exposure"] | null;
         };
         ServerDetail: {
             server: components["schemas"]["Server"];
@@ -1465,6 +2507,8 @@ export interface components {
             clearGroup?: boolean;
             hostsControlPlane?: boolean;
             protectedContainers?: string[];
+            /** @description Replace the note. Empty clears it. Omit to leave it unchanged. */
+            note?: string;
         };
         AcceptHostKeyRequest: {
             /** @description Must equal the presented fingerprint, to confirm what you checked. */
@@ -1488,6 +2532,8 @@ export interface components {
         MetricsResponse: {
             window: string;
             points: components["schemas"]["MetricPoint"][];
+            /** @description About how many days until the fullest disk reaches 100 percent, from up to 14 days of samples. Absent when the trend is flat, falling, or shorter than a day. */
+            diskFullInDays?: number | null;
         };
         ContainerActionRequest: {
             /** @description The container's name; required for protected containers. */
@@ -1644,6 +2690,8 @@ export interface components {
             items: components["schemas"]["LogLine"][];
         };
         AccessReport: {
+            /** @description 1 when the helper collected the fields below. 0 means reinstall the helper. */
+            revision: number;
             users: components["schemas"]["LocalUser"][];
             groups: {
                 [key: string]: string[];
@@ -1652,18 +2700,49 @@ export interface components {
             failedSsh24h: number;
             passwordAuth: boolean;
             permitRootLogin: string;
+            permitEmptyPasswords: boolean;
+            /** @description Meaningful when sshRead is true. */
+            pubkeyAuth: boolean;
+            x11Forwarding: boolean;
+            allowTcpForwarding: string;
+            kbdInteractive: boolean;
+            listenPorts: number[];
+            listenAddresses: string[];
+            /** @description True when sshd -T returned a config. */
+            sshRead: boolean;
+            sudoRules: components["schemas"]["SudoRule"][];
+            /** @description True when a sudoers include outside /etc/sudoers.d was skipped, or a file could not be read. */
+            sudoIncomplete: boolean;
+            /** @description Checks that did not run. An empty result is not clean when a gap is listed. */
+            gaps: string[];
+        };
+        SudoRule: {
+            source: string;
+            /** @description A user, or a group name with a leading percent sign. */
+            who: string;
+            runAs: string;
+            noPassword: boolean;
+            commands: string;
+            /** @description True when the command is ALL. */
+            unrestricted: boolean;
         };
         LocalUser: {
             name: string;
             uid: number;
             home: string;
             shell: string;
+            /** @description locked, none, set, or unknown. Never a hash. Empty when the helper is older than this field. */
+            password: string;
             authorizedKeys: components["schemas"]["AuthorizedKey"][];
         };
         AuthorizedKey: {
             type: string;
             fingerprint: string;
             comment: string;
+            /** @description The from= restriction. Empty when the key has none. */
+            from: string;
+            /** @description True when the key forces a command. The command text is not returned. */
+            hasCommand: boolean;
         };
         LoginRecord: {
             user: string;
@@ -1672,21 +2751,91 @@ export interface components {
             at: string;
         };
         SecurityReport: {
+            /** @description 1 when the helper collected the fields below. 0 means reinstall the helper. */
+            revision: number;
             listening: components["schemas"]["Listener"][];
             firewall: string;
+            /**
+             * @description The ufw default for incoming connections. Absent when ufw is not active, the policy could not be read, or the helper is older.
+             * @enum {string}
+             */
+            firewallDefaultIncoming?: "deny" | "reject" | "allow";
+            /** @description Up to 40 lines from an active ufw. Empty for nftables, which is named only. */
+            firewallRules: string[];
             crowdsec: string;
+            /** @description Current CrowdSec decisions. Addresses are not included. */
+            crowdSecBans: number;
             fail2ban: string;
+            fail2banJails: components["schemas"]["BanJail"][];
             unattendedUpgrades: boolean;
+            /** @description Checks that did not run. An empty listener list is not clean when listening sockets is listed. */
+            gaps: string[];
+        };
+        BanJail: {
+            name: string;
+            /** @description Addresses currently banned. The addresses are not included. */
+            banned: number;
         };
         Listener: {
             proto: string;
             address: string;
             port: number;
             process: string;
+            user: string;
+            /**
+             * @description all is every interface. local is loopback.
+             * @enum {string}
+             */
+            exposure: "all" | "local" | "other";
+            /** @description Set when docker-proxy publishes this port for a container. */
+            container?: string;
+            /** @description allow, deny, or unmentioned when ufw is active. Empty otherwise. */
+            ufw: string;
         };
         JobsReport: {
             cron: components["schemas"]["CronEntry"][];
             timers: components["schemas"]["Timer"][];
+        };
+        RecoveryReport: {
+            revision: number;
+            statement: string;
+            sources: {
+                tool: string;
+                toolVersion: string;
+                dataset: string;
+                snapshot: string;
+                backupState: string;
+                /** Format: date-time */
+                backupAt?: string | null;
+                checkKind: string;
+                checkState: string;
+                /** Format: date-time */
+                checkAt?: string | null;
+                restoreState: string;
+                smokeState: string;
+                /** @description current, stale, unknown, or future. Unknown is not a current success. Stale means the backup time is more than 7 days ago. */
+                freshness?: string;
+                /** @description What this file does not prove. A sampled check is not a full read, and a backup success is not a restore. */
+                note?: string;
+                /** @description within, older, or none. none means this account has no policy for the dataset. That is not a current backup. */
+                policy?: string;
+            }[];
+            gaps: string[];
+        };
+        AdvisoryReport: {
+            coverage: string;
+            distro: string;
+            release: string;
+            packages: number;
+            /** @enum {string} */
+            feed: "not imported" | "imported" | "unreadable";
+            matches: {
+                id: string;
+                package: string;
+                version: string;
+                fixed: string;
+                severity: string;
+            }[];
         };
         CronEntry: {
             source: string;
@@ -1745,6 +2894,28 @@ export interface components {
              * @default 1
              */
             maxFailures: number;
+            /** @description Require two distinct current admins to approve a plan. Requires planRequired. Only a person can weaken this rule. */
+            twoApprovers: boolean;
+            /** @description An interactive update or cleanup must be an approved plan. A schedule still runs. */
+            planRequired: boolean;
+        };
+        HealthCheck: {
+            name: string;
+            /** @enum {string} */
+            kind: "tcp" | "http" | "unit" | "container";
+            /** @description A blocking failure stops that server. An advisory failure is recorded and the upgrade continues. */
+            blocking: boolean;
+            port?: number;
+            /** @description For http, use HTTPS and verify the certificate. The name is the server enrolled address. */
+            tls?: boolean;
+            /** @enum {string} */
+            method?: "GET" | "HEAD";
+            /** @description For http, a path on the enrolled server. It must start with a slash. */
+            path?: string;
+            /** @description A systemd service name. .service is added when omitted. */
+            unit?: string;
+            /** @description A Docker container name. */
+            container?: string;
         };
         GroupInput: {
             name: string;
@@ -1752,6 +2923,8 @@ export interface components {
             timezone: string;
             clean: components["schemas"]["CleanPolicy"];
             updates: components["schemas"]["UpdatePolicy"];
+            /** @description Run before and after a package upgrade. At most 8. Each dials this group's servers, never an address you type. */
+            checks?: components["schemas"]["HealthCheck"][];
         };
         Group: {
             /** Format: int64 */
@@ -1769,6 +2942,7 @@ export interface components {
             timezone: string;
             clean: components["schemas"]["CleanPolicy"];
             updates: components["schemas"]["UpdatePolicy"];
+            checks: components["schemas"]["HealthCheck"][];
             serverCount: number;
             /** Format: date-time */
             nextClean?: string | null;
@@ -1796,12 +2970,30 @@ export interface components {
             batchSize?: number;
             /** @description For update and reboot runs, stop after this many servers fail. Omit to use the group's setting (1 without a group). */
             maxFailures?: number;
+            /** @description Omit to keep the group's checks. An update copies them onto the run. */
+            checks?: components["schemas"]["HealthCheck"][];
+            /** @description These servers run first. One failure among them skips the rest, even when the failure limit is higher. */
+            canaryServerIds?: number[];
+            /** @description How long the canary checks repeat before the other servers start. */
+            observeSeconds?: number;
+            /** @description Set only on a run started from a plan. The helper installs only these packages and stops if apt would change any other. Ignored on a request. */
+            readonly approved?: string[];
+            /** @description The run pauses after its canaries until a person decides. */
+            waitAfterCanaries?: boolean;
+            override?: components["schemas"]["CheckOverride"];
         };
         StartRunRequest: {
             kind: components["schemas"]["RunKind"];
             /** Format: int64 */
             groupId?: number | null;
             serverIds?: number[];
+            /** @description On an update, these servers run first. One failure among them skips the rest. */
+            canaryServerIds?: number[];
+            /** @description Repeat the canary checks for this many seconds before the other servers start. Needs a canary and a check. 0 checks once. */
+            observeSeconds?: number;
+            /** @description Pause after the canaries pass until a person continues or stops the run on its page. An unanswered gate stops the run after 24 hours. */
+            waitAfterCanaries?: boolean;
+            override?: components["schemas"]["CheckOverride"];
             /** @description Overrides the group's settings. Omit to use them. */
             options?: components["schemas"]["RunOptions"] | null;
         };
@@ -1843,9 +3035,198 @@ export interface components {
             /** Format: int64 */
             bytesFreed: number;
             servers: components["schemas"]["RunServer"][];
+            gate?: components["schemas"]["RunGate"];
         };
+        ScanReport: {
+            imported: boolean;
+            scanner: string;
+            scannerVersion: string;
+            /**
+             * Format: date-time
+             * @description When the scanner's vulnerability database was built.
+             */
+            dbBuilt?: string | null;
+            /** Format: date-time */
+            importedAt?: string | null;
+            /** @description True when nothing was imported, the database is more than 2 days old or unknown, or the scan is more than 2 days old. */
+            stale: boolean;
+            /** @description What this result does not prove. */
+            coverage: string;
+            /** @description The kernel from the last status check, as uname -r. Empty when that check has not run. */
+            runningKernel?: string;
+            matches: {
+                id: string;
+                aliases?: string[];
+                package: string;
+                version: string;
+                /** @description As the scanner reported it. */
+                severity: string;
+                fixState: string;
+                fixedIn?: string[];
+                knownExploited?: boolean;
+                epss?: number;
+                /** @description 1 known exploited, 2 high or critical with a fix, 3 the rest. */
+                tier: number;
+                reason: string;
+                /** @description This package is a kernel build that is installed but is not the kernel the server is running. The match is kept. */
+                notRunningKernel?: boolean;
+                /** @description The image this match was found in. Empty when the report did not give one. */
+                imageDigest?: string;
+                /** @description The image name the report used. A later tag change does not drop the match. */
+                imageTag?: string;
+                /**
+                 * Format: date-time
+                 * @description Set when a person has set this match aside until this date. The match stays. An exception is not a fix.
+                 */
+                exceptedUntil?: string | null;
+            }[];
+        };
+        /** @description Lets the named blocking checks fail before the upgrade, for this run only. A failure after the upgrade still stops the server. Only a person in the web app can set it. */
+        CheckOverride: {
+            checks: string[];
+            reason: string;
+            /** Format: int64 */
+            readonly by?: number;
+        } | null;
+        /** @description Set when the run waits for a person after its canaries. */
+        RunGate: {
+            /** @enum {string} */
+            state: "waiting" | "continued" | "stopped" | "expired";
+            /**
+             * Format: date-time
+             * @description When the run reached the gate.
+             */
+            at?: string | null;
+            /** @description Who decided. Empty while waiting. */
+            by: string;
+            note: string;
+        } | null;
         RunList: {
             items: components["schemas"]["Run"][];
+        };
+        PatchServer: {
+            /** Format: int64 */
+            serverId: number;
+            name: string;
+            status: string;
+            error: string;
+            canary: boolean;
+            /** @description Packages the helper recorded as upgraded. 0 when the detail has no package list. */
+            packages: number;
+            /** @description Packages the helper upgraded. */
+            installed: string[];
+            /** @description Pending packages left alone because they are held. */
+            held: string[];
+            /** @description Pending packages left alone because the plan did not list them, often found by apt after the approval. */
+            notApproved: string[];
+            /** @description Each upgraded package with its version before and after. after is empty when the helper could not read it: unknown, not guessed. */
+            versions: {
+                name: string;
+                before: string;
+                after: string;
+            }[];
+            /** @description Set when status got worse after the upgrade. */
+            health: string;
+            checks: {
+                name: string;
+                kind: string;
+                phase: string;
+                state: string;
+                detail?: string;
+                blocking: boolean;
+                /** @description A failed check before the upgrade that a person let pass for this run. */
+                overridden?: boolean;
+            }[];
+        };
+        PlanBody: {
+            /** @enum {string} */
+            kind: "measure" | "clean" | "update";
+            /** Format: int64 */
+            groupId?: number | null;
+            serverIds?: number[];
+            /** @enum {string} */
+            updateMode?: "security" | "all";
+            hold?: string[];
+            rebootIfRequired?: boolean;
+            observeSeconds?: number;
+            canaryServerIds?: number[];
+            buildCache?: boolean;
+            vscode?: boolean;
+            journal?: boolean;
+            journalSize?: string;
+            /** @description The packages the plan approves. Pick some of the pending packages, or leave it out to approve all of them. The helper installs nothing else. */
+            packages?: string[];
+            /** @description Every pending package when the plan was proposed. A different list at execution invalidates the plan. */
+            readonly pending?: string[];
+            /** @description Pause the plan's run after its canaries until a person continues it. */
+            waitAfterCanaries?: boolean;
+            /** @description The servers the plan covered when it was proposed. A server added to or removed from the group since invalidates the plan. */
+            readonly pinnedServerIds?: number[];
+        };
+        ProbeInput: {
+            /** @description A stable label for the probe location. */
+            source: string;
+            /** @description Must equal the server's enrolled host. */
+            host: string;
+            port: number;
+            /** @enum {string} */
+            state: "reachable" | "not_reached" | "unknown";
+            /** @enum {string} */
+            reason: "none" | "refused" | "timeout" | "dns_failed" | "network_error";
+            /** Format: date-time */
+            observedAt: string;
+        };
+        ProbeObservation: {
+            source: string;
+            host: string;
+            port: number;
+            /**
+             * @description Only this probe's latest attempt. Not a result for the whole internet.
+             * @enum {string}
+             */
+            state: "reachable" | "not_reached" | "unknown";
+            reason: string;
+            /** Format: date-time */
+            attemptedAt: string;
+            /** @description True after 15 minutes without a current attempt. Stale evidence is unknown. */
+            stale: boolean;
+            /** @description The last reachable or not_reached result. An unknown attempt does not erase it. */
+            lastKnownState?: string;
+            /** Format: date-time */
+            lastKnownAt?: string | null;
+        };
+        FixPlan: {
+            /** Format: int64 */
+            id: number;
+            /**
+             * @description executing until the run finishes, then the run's status.
+             * @enum {string}
+             */
+            status: "submitted" | "approved" | "rejected" | "cancelled" | "executing" | "succeeded" | "partial" | "failed" | "skipped" | "expired" | "invalidated";
+            approvals: number;
+            approvalsRequired: number;
+            fingerprint: string;
+            body: components["schemas"]["PlanBody"];
+            /** Format: date-time */
+            expiresAt?: string | null;
+            /** Format: int64 */
+            runId?: number | null;
+            reason: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PlanList: {
+            /** @description The 100 most recent plans, newest first. */
+            items: components["schemas"]["FixPlan"][];
+        };
+        PatchReport: {
+            /** Format: int64 */
+            runId: number;
+            status: string;
+            summary: string;
+            observeSeconds: number;
+            canaries: number[];
+            servers: components["schemas"]["PatchServer"][];
         };
         Alert: {
             /** Format: int64 */
@@ -1868,11 +3249,107 @@ export interface components {
         AlertList: {
             items: components["schemas"]["Alert"][];
         };
+        Incident: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            serverId: number;
+            serverName: string;
+            /**
+             * Format: int64
+             * @description Assigned member. Hidden from other spaces.
+             */
+            assigneeId?: number | null;
+            /** @description Assigned member display name. Hidden from other spaces. */
+            assigneeName?: string;
+            /** @description Whether this notice can be snoozed or accepted as a risk. Critical and access-change notices cannot. */
+            canHold: boolean;
+            /** @description True when the notice is in your own space and your role and token allow marking it reviewed or snoozing it. A notice about a shared server is reviewed by its owner. */
+            canReview: boolean;
+            kind: string;
+            subject: string;
+            /**
+             * @description resolved means a fresh check no longer saw it. Missing data never resolves a notice.
+             * @enum {string}
+             */
+            state: "open" | "acknowledged" | "snoozed" | "accepted" | "resolved";
+            /**
+             * Format: date-time
+             * @description When a snooze or an accepted risk ends.
+             */
+            snoozeUntil?: string | null;
+            /** @description Why it was snoozed or accepted. */
+            snoozeReason?: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /** @description How often it came back after being resolved. */
+            recurrences?: number;
+            /** @description The reviewer's latest note. */
+            note?: string;
+            /** @description History, oldest first. Only getIncident fills it. */
+            events?: components["schemas"]["IncidentEvent"][];
+            message: string;
+            /** @description What a person can do next. It does not change the server. */
+            nextStep: string;
+            /** Format: date-time */
+            firstSeen: string;
+            /** Format: date-time */
+            lastSeen: string;
+            /** Format: date-time */
+            ackedAt?: string | null;
+        };
+        Routing: {
+            /** @enum {string} */
+            warnings: "immediate" | "daily";
+            /** @description Hour of the daily summary in timezone. */
+            hour: number;
+            /** @example Asia/Colombo */
+            timezone: string;
+        };
+        Delivery: {
+            /** Format: int64 */
+            id: number;
+            channel: string;
+            title: string;
+            severity: string;
+            /**
+             * @description dead means it gave up after its retries.
+             * @enum {string}
+             */
+            state: "queued" | "sending" | "sent" | "dead";
+            attempts: number;
+            lastError: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            sentAt?: string | null;
+        };
+        DeliveryList: {
+            items: components["schemas"]["Delivery"][];
+        };
+        IncidentEvent: {
+            /** @enum {string} */
+            kind: "opened" | "reopened" | "recurred" | "snooze_broken" | "resolved" | "acknowledged" | "snoozed" | "accepted" | "returned" | "assigned" | "unassigned";
+            /** @description esa for the control plane. People of another organization are not named. */
+            actor: string;
+            detail: string;
+            /** Format: date-time */
+            at: string;
+        };
+        IncidentHold: {
+            /** Format: date-time */
+            until: string;
+            reason: string;
+        };
+        IncidentList: {
+            /** @description The 100 most recently seen notices. */
+            items: components["schemas"]["Incident"][];
+        };
         AlertRule: {
             /** Format: int64 */
             id: number;
             /** @enum {string} */
-            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key";
+            kind: "disk" | "inode" | "memory" | "unreachable" | "failed_unit" | "container" | "reboot_required" | "cert_expiry" | "run_failed" | "host_key" | "exposure" | "new_port" | "new_key" | "security_update";
             enabled: boolean;
             /**
              * Format: double
@@ -2000,6 +3477,20 @@ export interface components {
         };
         ActivityList: {
             items: components["schemas"]["ActivityEntry"][];
+            /**
+             * Format: date-time
+             * @description Oldest audit row still kept for this account. Empty when there are none.
+             */
+            earliest?: string | null;
+            /** @description True when the install has not set ESA_AUDIT_RETENTION. Rows stay until the account is deleted. */
+            keptUntilDeletion: boolean;
+            /** @description How old a row must be before a prune can delete it. Zero when rows are kept until deletion. */
+            retentionHours: number;
+            /**
+             * Format: date-time
+             * @description While this time is in the future, pruning deletes nothing. Only the install can set it.
+             */
+            holdUntil?: string | null;
         };
         SSHKey: {
             publicKey: string;
@@ -2018,6 +3509,12 @@ export interface components {
         };
     };
     parameters: {
+        AgentToken: string;
+        PlanId: number;
+        RunId: number;
+        WindowId: number;
+        DeliveryId: number;
+        IncidentId: number;
         ServerId: number;
         GroupId: number;
         ChannelId: number;
@@ -3033,6 +4530,385 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getServerRecovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recovery evidence. A success is not proof the data can be restored. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecoveryReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitServerRecovery: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Stored. A later result does not replace an earlier one. This does not run a backup or a restore. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createAgentServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    name: string;
+                    /** Format: int64 */
+                    groupId?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description Registered server and one-time credential. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    rotateAgentCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One-time replacement credential. The previous credential stops working immediately. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentCredential"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeAgentCredential: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    pollAgent: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Esa-Agent-Token": components["parameters"]["AgentToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No command, or one command with a bounded expiry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        command?: components["schemas"]["AgentCommand"];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitAgentResult: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-Esa-Agent-Token": components["parameters"]["AgentToken"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    id: number;
+                    output: string;
+                    exit: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Result recorded. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getReachability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Observations from each probe. Missing evidence is unknown. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProbeObservation"][];
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    submitReachability: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProbeInput"];
+            };
+        };
+        responses: {
+            /** @description Observation recorded. An older or repeated observation does not replace newer evidence. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerSbom: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description CycloneDX JSON */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The scan. No import is not a clean result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    importServerScan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description The stored scan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createVulnException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VulnExceptionInput"];
+            };
+        };
+        responses: {
+            /** @description The exception */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VulnException"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteVulnException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getServerAdvisories: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matches and coverage. A package that is absent is not certified safe. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdvisoryReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
     listGroups: {
         parameters: {
             query?: never;
@@ -3401,7 +5277,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                runId: number;
+                runId: components["parameters"]["RunId"];
             };
             cookie?: never;
         };
@@ -3415,6 +5291,901 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Run"];
                 };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Keys the actor can see. This is not every key on the server. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    labelKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Saved */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getEvidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No key material, password hashes, or user lists. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvidenceExport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listDatasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Policies for this account. A dataset that is not listed is not current. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetInput"];
+            };
+        };
+        responses: {
+            /** @description The policy */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteDataset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                datasetId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listPlans: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Plans in this space */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    proposePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanBody"];
+            };
+        };
+        responses: {
+            /** @description The plan */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approvePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The approved plan. It expires after 30 minutes. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    rejectPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The plan */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FixPlan"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    executePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                planId: components["parameters"]["PlanId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. A repeat returns the same run. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    decideGate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @enum {string} */
+                    decision: "continue" | "stop";
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getPatchReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What each server did. A skipped server stays in the list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatchReport"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveKeyBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. Later scans report drift. This does not change the server. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    approveAccessBaseline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Saved. A later check reports changes. This does not change the server. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listBaselineVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Versions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BaselineVersionList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listKeyExceptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Exceptions. One does not mean access was removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyExceptionList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createKeyException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KeyExceptionInput"];
+            };
+        };
+        responses: {
+            /** @description The exception */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KeyException"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteKeyException: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                serverId: components["parameters"]["ServerId"];
+                exceptionId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listIdentities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Owners */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    saveIdentity: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IdentityInput"];
+            };
+        };
+        responses: {
+            /** @description The owner */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Identity"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    offboarding: {
+        parameters: {
+            query: {
+                label: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matches, plus what this check does not cover */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Offboarding"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Windows that have not ended */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    createMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MaintenanceRequest"];
+            };
+        };
+        responses: {
+            /** @description The window */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceWindow"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteMaintenance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                windowId: components["parameters"]["WindowId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listIncidents: {
+        parameters: {
+            query?: {
+                /** @description Also list acknowledged, snoozed, accepted, and resolved notices. */
+                includeAcknowledged?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Incidents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident, with events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    assignIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    userId: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncidentHold"];
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    snoozeIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IncidentHold"];
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    acknowledgeIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    note?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The incident */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Routing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    setRouting: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Routing"];
+            };
+        };
+        responses: {
+            /** @description The setting */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Routing"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listDeliveries: {
+        parameters: {
+            query?: {
+                /** @description Only sends that gave up after their retries. */
+                failed?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deliveries, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeliveryList"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    retryDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deliveryId: components["parameters"]["DeliveryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Error"];
         };
@@ -3743,6 +6514,7 @@ export interface operations {
     listActivity: {
         parameters: {
             query?: {
+                /** @description The page asks for 200. A download asks for 5000, the newest rows only. */
                 limit?: number;
             };
             header?: never;

@@ -98,6 +98,13 @@ func (s *Service) AccountPublicKey(ctx context.Context, a Actor) (publicKey, fin
 
 // endpoint builds the SSH endpoint for a ready server.
 func (s *Service) endpoint(ctx context.Context, srv store.Server) (remote.Endpoint, error) {
+	if srv.Connection == "outbound" {
+		ep := remote.Endpoint{ServerID: srv.ID, Transport: func(ctx context.Context, action string, args ...string) (remote.ExecResult, error) {
+			return s.agentCall(ctx, srv, action, args...)
+		}}
+		ep.Capabilities = s.helperCapabilities(ctx, srv, ep)
+		return ep, nil
+	}
 	if srv.Enrollment != "ready" || srv.HostKey == "" {
 		return remote.Endpoint{}, &UnavailableError{Message: srv.Name + " has not finished enrollment"}
 	}
@@ -109,5 +116,7 @@ func (s *Service) endpoint(ctx context.Context, srv store.Server) (remote.Endpoi
 	if err != nil {
 		return remote.Endpoint{}, err
 	}
-	return remote.Endpoint{ServerID: srv.ID, Host: srv.Host, Port: srv.Port, User: srv.Username, HostKey: hk, Signer: k.signer}, nil
+	ep := remote.Endpoint{ServerID: srv.ID, Host: srv.Host, Port: srv.Port, User: srv.Username, HostKey: hk, Signer: k.signer}
+	ep.Capabilities = s.helperCapabilities(ctx, srv, ep)
+	return ep, nil
 }

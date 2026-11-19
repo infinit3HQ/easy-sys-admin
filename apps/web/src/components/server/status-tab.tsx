@@ -33,6 +33,7 @@ export function StatusTab({ serverId }: { serverId: number }) {
     )
   }
   const mem = snap.memTotal ? (100 * snap.memUsed) / snap.memTotal : 0
+  const fullest = fullestMount(snap.disks)
   const points = metrics.data?.points ?? []
 
   return (
@@ -164,6 +165,9 @@ export function StatusTab({ serverId }: { serverId: number }) {
                     <div className="mt-1 font-mono text-[10px] break-all text-faint">
                       {d.device} · {d.fsType} · {bytes(d.avail)} free
                       {d.inodesTotal ? ` · inodes ${pct(inodes)}` : ''}
+                      {fullest === d.mount &&
+                        metrics.data?.diskFullInDays != null &&
+                        ` · about ${metrics.data.diskFullInDays} ${metrics.data.diskFullInDays === 1 ? 'day' : 'days'} until full`}
                     </div>
                   </div>
                 )
@@ -182,6 +186,13 @@ export function StatusTab({ serverId }: { serverId: number }) {
               <KeyValue k="Helper" v={data.server.helperVersion || '—'} />
               <KeyValue k="Collected" v={<When iso={snap.collectedAt} />} />
             </dl>
+            {(data.server.helperMissing?.length ?? 0) > 0 && (
+              <Notice tone="warn" className="mt-4">
+                The helper on this server does not have{' '}
+                {data.server.helperMissing?.join(', ')}. Those reports and
+                actions are off until you reinstall it from Settings.
+              </Notice>
+            )}
             {snap.rebootRequired && (
               <Notice tone="warn" className="mt-4">
                 Reboot required
@@ -261,4 +272,19 @@ export function StatusTab({ serverId }: { serverId: number }) {
       </div>
     </div>
   )
+}
+
+function fullestMount(
+  disks: ReadonlyArray<{ mount: string; total: number; used: number }>,
+) {
+  let mount = ''
+  let highest = -1
+  for (const d of disks) {
+    const used = d.total ? (100 * d.used) / d.total : 0
+    if (used > highest) {
+      highest = used
+      mount = d.mount
+    }
+  }
+  return mount
 }

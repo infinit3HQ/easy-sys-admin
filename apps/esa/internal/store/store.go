@@ -31,8 +31,10 @@ type Queries struct {
 // Store owns the connection pool.
 type Store struct {
 	*Queries
-	pool  *pgxpool.Pool
-	sqlDB *sql.DB
+	pool        *pgxpool.Pool
+	sqlDB       *sql.DB
+	runLocks    *sql.DB
+	serverLocks *sql.DB
 }
 
 // Open connects to PostgreSQL. databaseURL is a libpq URL or keyword/value
@@ -82,11 +84,24 @@ func Open(ctx context.Context, databaseURL string, log *slog.Logger) (*Store, er
 		return nil, fmt.Errorf("open gorm: %w", err)
 	}
 
-	return &Store{Queries: &Queries{db: db}, pool: pool, sqlDB: sqlDB}, nil
+	// Advisory locks occupy a session for the whole maintenance operation.
+	// Keep run locks, server locks, and ordinary queries in separate pools:
+	// on small hosts a batch can otherwise hold every query connection and
+	// wait forever for the query it needs before releasing its own lock.
+	lockPool := func() *sql.DB {
+		locked := stdlib.OpenDB(*cfg.ConnConfig.Copy())
+		locked.SetMaxOpenConns(int(cfg.MaxConns))
+		locked.SetMaxIdleConns(min(2, int(cfg.MaxConns)))
+		locked.SetConnMaxIdleTime(5 * time.Minute)
+		return locked
+	}
+	return &Store{Queries: &Queries{db: db}, pool: pool, sqlDB: sqlDB, runLocks: lockPool(), serverLocks: lockPool()}, nil
 }
 
 // Close closes every connection.
 func (s *Store) Close() {
+	_ = s.runLocks.Close()
+	_ = s.serverLocks.Close()
 	_ = s.sqlDB.Close()
 	s.pool.Close()
 }
@@ -117,4 +132,15 @@ func notFound(err error) error {
 		return ErrNotFound
 	}
 	return err
+}
+
+// MaintenanceConn returns a dedicated session from the appropriate lock pool.
+// Run and server locks have independent capacity, so waiting runs cannot
+// consume all sessions required to finish the work holding those locks.
+func (s *Store) MaintenanceConn(ctx context.Context, run bool) (*sql.Conn, error) {
+	db := s.serverLocks
+	if run {
+		db = s.runLocks
+	}
+	return db.Conn(ctx)
 }

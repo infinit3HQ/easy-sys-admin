@@ -65,6 +65,11 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		PollConcurrency: cfg.PollConcurrency, SSHConnectTimeout: cfg.SSHConnectTimeout,
 		MaxServersPerAccount: cfg.MaxServersPerAccount,
 		MaxOrgsPerUser:       cfg.MaxOrgsPerUser,
+		AdvisoryFeed:         cfg.AdvisoryFeed,
+		Scanner:              cfg.Scanner,
+		AuditRetention:       cfg.AuditRetention,
+		ReportRetention:      cfg.ReportRetention,
+		AuditHoldUntil:       cfg.AuditHoldUntil,
 		MetricsRawRetention:  cfg.MetricsRawRetention, MetricsHourlyRetention: cfg.MetricsHourlyRetention,
 	})
 	sessions := auth.NewSessions(st, fl, cfg.SecureCookies(), log)
@@ -83,6 +88,7 @@ func Run(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	auth.Routes(mux, cfg, oidc, sessions, fl, log)
 	api.Mount(mux, fl, sessions, cfg.Auth, log)
 	api.MountEnroll(mux, fl, log)
+	mountAgentDownloads(mux, cfg.HelperDir)
 
 	handler := chain(mux,
 		recoverPanics(log),

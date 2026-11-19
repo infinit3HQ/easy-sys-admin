@@ -33,7 +33,12 @@ func invalid(field, format string, args ...any) error {
 
 // ConflictError means the change clashes with existing state, for example a
 // duplicate name or a run already in progress.
-type ConflictError struct{ Message string }
+type ConflictError struct {
+	Message string
+	// Code replaces the generic "conflict" code when set, for example
+	// "helper_incompatible".
+	Code string
+}
 
 func (e *ConflictError) Error() string { return e.Message }
 
@@ -54,4 +59,10 @@ func mapStore(err error) error {
 		return &ConflictError{Message: "an item with that name already exists"}
 	}
 	return err
+}
+
+// errPersonOnly refuses a change that weakens a safety rule unless a person
+// makes it in the web app.
+func errPersonOnly(what string) error {
+	return invalid("planRequired", "only a person signed in to the web app can %s", what)
 }

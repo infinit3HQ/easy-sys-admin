@@ -3,7 +3,9 @@ package fleet
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
@@ -16,6 +18,7 @@ type UpdateServerInput struct {
 	ClearGroup          bool
 	HostsControlPlane   *bool
 	ProtectedContainers *[]string
+	Note                *string
 }
 
 // UpdateServer changes a server's name, group, or protection settings.
@@ -43,18 +46,78 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 		}
 		changes["group_id"] = *in.GroupID
 	}
+	if _, moves := changes["group_id"]; moves && !a.isPerson() {
+		if err := s.keepPlanGroup(ctx, srv, in); err != nil {
+			return ServerView{}, err
+		}
+	}
 	if in.HostsControlPlane != nil {
 		changes["hosts_control_plane"] = *in.HostsControlPlane
 	}
 	if in.ProtectedContainers != nil {
 		changes["protected_containers"] = store.MustJSON(cleanList(*in.ProtectedContainers))
 	}
-	if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Updates(changes).Error; err != nil {
-		return ServerView{}, mapStore(err)
+	if in.Note != nil {
+		note, err := cleanNote(*in.Note)
+		if err != nil {
+			return ServerView{}, err
+		}
+		changes["note"] = note
 	}
-	delete(changes, "updated_at")
-	s.audit(ctx, nil, a, "server.update", srv.Name, changes)
+	if err := s.store.InTx(ctx, func(q *store.Queries) error {
+		if a.isPerson() {
+			if err := q.Raw().Exec("SELECT set_config('esa.person_write','true',true)").Error; err != nil {
+				return err
+			}
+		}
+		if err := q.Raw().Model(&store.Server{}).Where("id = ? AND account_id = ?", srv.ID, a.AccountID).Updates(changes).Error; err != nil {
+			return mapStore(err)
+		}
+		delete(changes, "updated_at")
+		s.audit(ctx, q, a, "server.update", srv.Name, changes)
+		return nil
+	}); err != nil {
+		return ServerView{}, err
+	}
 	return s.GetServer(ctx, a, id)
+}
+
+// keepPlanGroup refuses to move a server out of a group that requires a
+// plan, unless the new group requires one too. Moving it would let a token
+// update the server without an approved plan.
+func (s *Service) keepPlanGroup(ctx context.Context, srv store.Server, in UpdateServerInput) error {
+	if srv.GroupID == nil {
+		return nil
+	}
+	if in.GroupID != nil && !in.ClearGroup && *in.GroupID == *srv.GroupID {
+		return nil
+	}
+	var from store.Group
+	if err := s.db.WithContext(ctx).Where("id = ?", *srv.GroupID).Take(&from).Error; err != nil {
+		return mapStore(err)
+	}
+	if !from.PlanRequired {
+		return nil
+	}
+	if !in.ClearGroup && in.GroupID != nil {
+		var to store.Group
+		if err := s.db.WithContext(ctx).Where("id = ?", *in.GroupID).Take(&to).Error; err == nil && to.PlanRequired && (!from.TwoApprovers || to.TwoApprovers) {
+			return nil
+		}
+	}
+	if from.TwoApprovers {
+		return errPersonOnly("move a server into a group with fewer required approvals")
+	}
+	return errPersonOnly("move a server out of a group that requires a plan")
+}
+
+// cleanNote keeps a single line of at most 200 characters.
+func cleanNote(s string) (string, error) {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) > 200 {
+		return "", invalid("note", "must be at most 200 characters")
+	}
+	return s, nil
 }
 
 // AcceptHostKey accepts the new host key a server presented. fingerprint

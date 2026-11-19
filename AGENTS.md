@@ -14,14 +14,14 @@ easy-sys-admin manages a fleet of Linux servers. A Go control plane (`esa serve`
 
 ## Layout
 
-| Path             | Contents                                                                                  |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| `apps/esa`       | Go module: `cmd/esa`, `cmd/esa-helper`, `internal/*` (business logic in `internal/fleet`) |
+| Path             | Contents                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `apps/esa`       | Go module: `cmd/esa`, `cmd/esa-helper`, `internal/*` (business logic in `internal/fleet`)                             |
 | `apps/web`       | Web app: `src/routes`, `src/components`, `src/lib`, `src/server` (proxy and MCP). Public docs are the `/docs` routes. |
-| `packages/api`   | `openapi.yaml` and the generated TypeScript types                                         |
-| `packages/plans` | Plan names, prices, and hosted beta caps, shared by the web app and the docs              |
-| `deploy`         | Compose stack for one Docker host behind Traefik                                          |
-| `docs`           | Documentation. `docs/archive` holds old plans; do not treat them as current               |
+| `packages/api`   | `openapi.yaml` and the generated TypeScript types                                                                     |
+| `packages/plans` | Plan names, prices, and hosted beta caps, shared by the web app and the docs                                          |
+| `deploy`         | Compose stack for one Docker host behind Traefik                                                                      |
+| `docs`           | Documentation. `docs/archive` holds old plans; do not treat them as current                                           |
 
 ## Setup and commands
 
@@ -68,3 +68,4 @@ When behaviour changes, update the page that describes it in the same change:
 | MCP tools                        | `docs/mcp.md`                                 |
 | A design choice                  | `docs/decisions.md`                           |
 | A feature landed or a gap closed | `docs/status.md`                              |
+| A roadmap item moved             | `docs/roadmap.md`                             |

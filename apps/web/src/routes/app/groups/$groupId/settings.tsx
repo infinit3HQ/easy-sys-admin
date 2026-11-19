@@ -7,7 +7,7 @@ import {
 import { useState } from 'react'
 import { Trash2Icon, UnlinkIcon } from 'lucide-react'
 import type { GroupInput } from '@esa/api'
-import { api, call } from '#/lib/api'
+import { api, call, orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { GroupForm } from '#/components/group-form'
 import { ConfirmDialog, Panel } from '#/components/kit'
@@ -18,7 +18,7 @@ import { Route as GroupRoute } from './route'
 
 export const Route = createFileRoute('/app/groups/$groupId/settings')({
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.group(params.groupId)),
+    orNotFound(context.queryClient.ensureQueryData(q.group(params.groupId))),
   head: ({ loaderData }) => ({
     meta: [
       {
@@ -85,6 +85,7 @@ function GroupSettings() {
           timezone: g.timezone,
           clean: g.clean,
           updates: g.updates,
+          checks: g.checks,
         }}
         submitLabel="Save group"
         busy={save.isPending}

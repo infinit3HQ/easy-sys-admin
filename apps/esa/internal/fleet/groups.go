@@ -32,8 +32,10 @@ type UpdatePolicy struct {
 	RebootIfRequired bool
 	// BatchSize servers are worked on at once (1 to 50). The run stops
 	// after MaxFailures servers fail (1 to 1000). 0 on input means 1.
-	BatchSize   int
-	MaxFailures int
+	BatchSize    int
+	MaxFailures  int
+	TwoApprovers bool
+	PlanRequired bool
 }
 
 // GroupInput creates or replaces a group.
@@ -42,6 +44,7 @@ type GroupInput struct {
 	Timezone string
 	Clean    CleanPolicy
 	Updates  UpdatePolicy
+	Checks   []HealthCheck
 }
 
 // GroupView is a group as the front doors show it.
@@ -64,6 +67,7 @@ type GroupView struct {
 	// YourRole is the actor's effective role on the group (see roleOn),
 	// limited by the share when another account owns it.
 	YourRole Role
+	Checks   []HealthCheck
 }
 
 func toGroupView(g store.Group) GroupView {
@@ -77,10 +81,15 @@ func toGroupView(g store.Group) GroupView {
 			Enabled: g.UpdatesEnabled, Mode: proto.UpdateMode(g.UpdateMode), Days: splitDays(g.UpdateDays),
 			Time: g.UpdateTime, Hold: []string{}, RebootIfRequired: g.RebootIfRequired,
 			BatchSize: max(g.UpdateBatchSize, 1), MaxFailures: max(g.UpdateMaxFailures, 1),
+			PlanRequired: g.PlanRequired, TwoApprovers: g.TwoApprovers,
 		},
-		LastRuns: []RunView{},
+		LastRuns: []RunView{}, Checks: []HealthCheck{},
 	}
 	_ = g.HoldPackages.Decode(&v.Updates.Hold)
+	_ = g.HealthChecks.Decode(&v.Checks)
+	if v.Checks == nil {
+		v.Checks = []HealthCheck{}
+	}
 	now := time.Now()
 	if sc, err := parseSchedule(g.CleanDays, g.CleanTime, g.Timezone); err == nil && g.CleanEnabled {
 		n := sc.Next(now)
@@ -135,6 +144,10 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	if err := validBatching(in.Updates.BatchSize, in.Updates.MaxFailures); err != nil {
 		return err
 	}
+	checks, err := validChecks(in.Checks)
+	if err != nil {
+		return err
+	}
 	hold := cleanList(in.Updates.Hold)
 	for _, p := range hold {
 		if !pkgNameRe.MatchString(p) {
@@ -147,6 +160,24 @@ func (s *Service) applyGroupInput(g *store.Group, in GroupInput) error {
 	g.UpdatesEnabled, g.UpdateMode, g.UpdateDays, g.UpdateTime = in.Updates.Enabled, string(in.Updates.Mode), strings.Join(us.Days, ","), us.Time
 	g.HoldPackages, g.RebootIfRequired = store.MustJSON(hold), in.Updates.RebootIfRequired
 	g.UpdateBatchSize, g.UpdateMaxFailures = max(in.Updates.BatchSize, 1), max(in.Updates.MaxFailures, 1)
+	if in.Updates.PlanRequired && (in.Clean.Enabled || in.Updates.Enabled) {
+		return invalid("planRequired", "a group that requires a plan cannot clean or update on a schedule; turn the schedules off first")
+	}
+	if in.Updates.TwoApprovers && !in.Updates.PlanRequired {
+		return invalid("twoApprovers", "require an approved plan first")
+	}
+	if in.Updates.TwoApprovers && !g.TwoApprovers {
+		var admins int64
+		if err := s.db.Model(&store.Membership{}).Where("account_id = ? AND role IN ?", g.AccountID, []string{"owner", "admin"}).Count(&admins).Error; err != nil {
+			return err
+		}
+		if admins < 2 {
+			return invalid("twoApprovers", "add a second admin before requiring two approvals")
+		}
+	}
+	g.TwoApprovers = in.Updates.TwoApprovers
+	g.PlanRequired = in.Updates.PlanRequired
+	g.HealthChecks = store.MustJSON(checks)
 
 	// Mark the most recent slot as taken, so saving the form never starts a
 	// run (or records a "missed" one) for a time that already passed.
@@ -276,15 +307,29 @@ func (s *Service) UpdateGroup(ctx context.Context, a Actor, id int64, in GroupIn
 	if err := canAct(a, role, RoleAdmin, ScopeAdmin); err != nil {
 		return GroupView{}, err
 	}
+	if ((g.PlanRequired && !in.Updates.PlanRequired) || (g.TwoApprovers && !in.Updates.TwoApprovers)) && !a.isPerson() {
+		return GroupView{}, errPersonOnly("turn off the plan requirement")
+	}
+	wasRequired := g.PlanRequired
 	if err := s.applyGroupInput(&g, in); err != nil {
 		return GroupView{}, err
 	}
-	if err := s.db.WithContext(ctx).Omit(clause.Associations).Save(&g).Error; err != nil {
-		return GroupView{}, mapStore(err)
+	update := s.scoped(ctx, a).Model(&store.Group{}).Where("id = ?", g.ID)
+	if !a.isPerson() {
+		update = update.Where("(NOT plan_required OR ?) AND (NOT two_approvers OR ?)", g.PlanRequired, g.TwoApprovers)
+	}
+	result := update.Select("*").Omit(clause.Associations).Updates(&g)
+	if result.Error != nil {
+		return GroupView{}, mapStore(result.Error)
+	}
+	if result.RowsAffected != 1 {
+		return GroupView{}, errPersonOnly("weaken an approval requirement that changed concurrently")
 	}
 	s.audit(ctx, nil, a, "group.update", g.Name, map[string]any{
 		"clean_enabled": g.CleanEnabled, "updates_enabled": g.UpdatesEnabled, "update_mode": g.UpdateMode,
 		"batch_size": g.UpdateBatchSize, "max_failures": g.UpdateMaxFailures,
+		"two_approvers": g.TwoApprovers, "plan_required": g.PlanRequired, "plan_required_before": wasRequired,
+		"hold": in.Updates.Hold, "health_checks": checkNames(in.Checks),
 	})
 	return s.GetGroup(ctx, a, id)
 }
@@ -298,9 +343,27 @@ func (s *Service) DeleteGroup(ctx context.Context, a Actor, id int64) error {
 	if err := s.scoped(ctx, a).Where("id = ?", id).Take(&g).Error; err != nil {
 		return mapStore(err)
 	}
-	if err := s.db.WithContext(ctx).Where("id = ? AND account_id = ?", id, a.AccountID).Delete(&store.Group{}).Error; err != nil {
-		return err
+	if g.PlanRequired && !a.isPerson() {
+		return errPersonOnly("delete a group that requires a plan")
 	}
-	s.audit(ctx, nil, a, "group.delete", g.Name, nil)
-	return nil
+	return s.store.InTx(ctx, func(q *store.Queries) error {
+		if a.isPerson() {
+			if err := q.Raw().Exec("SELECT set_config('esa.person_write','true',true)").Error; err != nil {
+				return err
+			}
+		}
+		del := q.Raw().Where("id = ? AND account_id = ?", id, a.AccountID)
+		if !a.isPerson() {
+			del = del.Where("NOT plan_required")
+		}
+		result := del.Delete(&store.Group{})
+		if result.Error != nil {
+			return mapStore(result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return errPersonOnly("delete a group that requires a plan")
+		}
+		s.audit(ctx, q, a, "group.delete", g.Name, nil)
+		return nil
+	})
 }

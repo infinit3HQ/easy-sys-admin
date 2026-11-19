@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gorm.io/gorm"
@@ -33,6 +34,13 @@ type Message struct {
 	Severity string // info | warning | critical
 	Resolved bool
 	URL      string
+	// Kind and ServerID let a maintenance window skip ordinary notices.
+	// host_key and new_key are never skipped.
+	Kind     string
+	ServerID int64
+	// Summary marks a summary message (the Monday digest, the daily
+	// warning summary). It is sent at once, never held for a summary.
+	Summary bool
 }
 
 // Deps are the service's collaborators.
@@ -62,6 +70,18 @@ type Deps struct {
 	// MaxOrgsPerUser caps organizations one user can own, not counting
 	// their personal space. Zero uses 20.
 	MaxOrgsPerUser int
+	// AdvisoryFeed is a local JSON file of exact affected package versions.
+	// Empty means matching is off. The control plane never downloads it.
+	AdvisoryFeed string
+	// Scanner is the path of a Grype binary for the daily scan. Empty is off.
+	Scanner string
+	// AuditRetention is how long audit rows are kept. Zero keeps them until
+	// the account is deleted. A space admin cannot set this.
+	AuditRetention  time.Duration
+	ReportRetention time.Duration
+	// AuditHoldUntil stops pruning until this time. Zero means no hold.
+	// A space admin cannot set this.
+	AuditHoldUntil time.Time
 	// MetricsRawRetention and MetricsHourlyRetention say how long metric
 	// samples and hourly averages are kept. Zero uses 48 hours and 90 days.
 	MetricsRawRetention    time.Duration
@@ -105,6 +125,21 @@ type Service struct {
 
 	// serverLocks serialises maintenance runs per server.
 	serverLocks sync.Map // int64 -> *sync.Mutex
+	holderOnce  sync.Once
+	holderID    string
+	// helperTried holds when the helper's capabilities were last asked for,
+	// per server, so an unreachable server is not asked on every poll.
+	helperTried sync.Map // int64 -> time.Time
+
+	// exposureBudget is how many exposure reports this poll cycle may start.
+	exposureBudget atomic.Int32
+	advisoryFeed   string
+	scanner        string
+	// scanDBAt is when the scanner's database was last updated.
+	scanDBAt        time.Time
+	auditRetention  time.Duration
+	reportRetention time.Duration
+	auditHoldUntil  time.Time
 }
 
 // New returns a Service.
@@ -124,6 +159,11 @@ func New(baseCtx context.Context, d Deps) *Service {
 		pollConcurrency: orDefault(d.PollConcurrency, defaultPollConcurrency),
 		connectTimeout:  orDefault(d.SSHConnectTimeout, remote.DefaultConnectTimeout),
 		maxServers:      orDefault(d.MaxServersPerAccount, maxServers),
+		advisoryFeed:    d.AdvisoryFeed,
+		scanner:         d.Scanner,
+		auditRetention:  d.AuditRetention,
+		reportRetention: d.ReportRetention,
+		auditHoldUntil:  d.AuditHoldUntil,
 		maxOrgs:         orDefault(d.MaxOrgsPerUser, maxOrgsPerUser),
 		rawRetention:    orDefault(d.MetricsRawRetention, defaultRawRetention),
 		hourlyRetention: orDefault(d.MetricsHourlyRetention, defaultHourlyRetention),

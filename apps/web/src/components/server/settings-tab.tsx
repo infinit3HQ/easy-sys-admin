@@ -23,6 +23,7 @@ import {
 import { Button } from '#/components/ui/button'
 import { Input } from '#/components/ui/input'
 import { Textarea } from '#/components/ui/textarea'
+import { AgentConnection } from '#/components/server/agent-setup'
 import { useServerAccess } from '#/components/server/use-access'
 
 export function SettingsTab({ serverId }: { serverId: number }) {
@@ -37,11 +38,12 @@ export function SettingsTab({ serverId }: { serverId: number }) {
     (g) => g.access === 'own' || g.id === s.groupId,
   )
   const [name, setName] = useState(s.name)
+  const [note, setNote] = useState(s.note)
   const [groupId, setGroupId] = useState<number | null>(s.groupId ?? null)
   const [cp, setCp] = useState(s.hostsControlPlane)
   const [prot, setProt] = useState(s.protectedContainers.join(', '))
   const [del, setDel] = useState(false)
-  const [uninstall, setUninstall] = useState(true)
+  const [uninstall, setUninstall] = useState(s.connection !== 'outbound')
   const [reinstallUser, setReinstallUser] = useState('root')
   const [reinstallKey, setReinstallKey] = useState('')
 
@@ -55,6 +57,7 @@ export function SettingsTab({ serverId }: { serverId: number }) {
             groupId: groupId ?? undefined,
             clearGroup: groupId === null,
             hostsControlPlane: cp,
+            note,
             protectedContainers: prot
               .split(',')
               .map((p) => p.trim())
@@ -62,7 +65,10 @@ export function SettingsTab({ serverId }: { serverId: number }) {
           },
         }),
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['server', serverId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['server', serverId] })
+      qc.invalidateQueries({ queryKey: ['overview'] })
+    },
   })
   const remove = useMutation({
     mutationFn: () =>
@@ -111,6 +117,17 @@ export function SettingsTab({ serverId }: { serverId: number }) {
           <fieldset disabled={!canAct} className="space-y-4">
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} />
+            </Field>
+            <Field
+              label="Note"
+              hint="Shown on the board. Kept here, not sent to the server. 200 characters."
+            >
+              <Textarea
+                value={note}
+                maxLength={200}
+                rows={2}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </Field>
             <Field
               label="Group"
@@ -167,15 +184,35 @@ export function SettingsTab({ serverId }: { serverId: number }) {
       <div className="min-w-0 space-y-6">
         <Panel title="Connection">
           <dl className="space-y-2">
-            <KeyValue wrap k="SSH" v={`${s.username}@${s.host}:${s.port}`} />
+            {s.connection === 'outbound' ? (
+              <KeyValue k="Transport" v="Outbound HTTPS" />
+            ) : (
+              <KeyValue wrap k="SSH" v={`${s.username}@${s.host}:${s.port}`} />
+            )}
             <KeyValue
               wrap
               k="Host key"
-              v={s.hostKeyFingerprint || 'not accepted yet'}
+              v={
+                s.connection === 'outbound'
+                  ? 'Not used for outbound connections'
+                  : s.hostKeyFingerprint || 'not accepted yet'
+              }
             />
             <KeyValue
               k="Helper"
               v={`${s.helperVersion || '—'} · ${s.arch || '—'}`}
+            />
+            <KeyValue
+              wrap
+              k="Helper actions"
+              tone={s.helperMissing?.length ? 'warn' : undefined}
+              v={
+                s.helperMissing?.length
+                  ? `missing ${s.helperMissing.join(', ')}`
+                  : s.helperCheckedAt
+                    ? 'all'
+                    : 'not asked yet'
+              }
             />
             <KeyValue
               k="Stored login"
@@ -185,7 +222,10 @@ export function SettingsTab({ serverId }: { serverId: number }) {
           </dl>
         </Panel>
 
-        {canAct && (
+        {canAct && s.connection === 'outbound' && (
+          <AgentConnection serverId={serverId} />
+        )}
+        {canAct && s.connection !== 'outbound' && (
           <Panel title="Update or reinstall the helper">
             <p className="mb-4 text-xs text-muted-foreground">
               Needs a sudo login again
@@ -234,10 +274,15 @@ export function SettingsTab({ serverId }: { serverId: number }) {
         {canAct && (
           <Panel title="Remove" className="border-fail/30">
             <Toggle
+              disabled={s.connection === 'outbound'}
               checked={uninstall}
               onChange={setUninstall}
               label="Also remove esa from the server"
-              hint="Deletes the esa user, its sudo rule, and the helper."
+              hint={
+                s.connection === 'outbound'
+                  ? 'Uninstall the agent and helper locally before removing this server. Outbound connections cannot uninstall themselves.'
+                  : 'Deletes the esa user, its sudo rule, and the helper.'
+              }
             />
             <Button
               className="mt-3"

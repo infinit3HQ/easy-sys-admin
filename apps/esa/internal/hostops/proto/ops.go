@@ -30,6 +30,13 @@ type PendingPackage struct {
 	Security bool   `json:"security"`
 }
 
+// PackageVersion is one upgraded package.
+type PackageVersion struct {
+	Name   string `json:"name"`
+	Before string `json:"before"`
+	After  string `json:"after"`
+}
+
 // Precheck answers `esa-helper upgrade-precheck`.
 type Precheck struct {
 	OK       bool     `json:"ok"`
@@ -45,17 +52,24 @@ type UpgradeStarted struct {
 // UpgradeResult is written by the detached upgrade job and read back with
 // `esa-helper upgrade-status`.
 type UpgradeResult struct {
-	RunID          int64      `json:"runId"`
-	State          string     `json:"state"` // running | succeeded | failed
-	Mode           UpdateMode `json:"mode"`
-	StartedAt      time.Time  `json:"startedAt"`
-	FinishedAt     time.Time  `json:"finishedAt,omitzero"`
-	Packages       []string   `json:"packages"`
-	Skipped        []string   `json:"skipped,omitempty"`
-	ExitCode       int        `json:"exitCode"`
-	Error          string     `json:"error,omitempty"`
-	RebootRequired bool       `json:"rebootRequired"`
-	LogTail        []string   `json:"logTail,omitempty"`
+	RunID      int64      `json:"runId"`
+	State      string     `json:"state"` // running | succeeded | failed
+	Mode       UpdateMode `json:"mode"`
+	StartedAt  time.Time  `json:"startedAt"`
+	FinishedAt time.Time  `json:"finishedAt,omitzero"`
+	Packages   []string   `json:"packages"`
+	Skipped    []string   `json:"skipped,omitempty"`
+	// NotApproved are pending packages left out because the run's --allow
+	// list did not name them.
+	NotApproved []string `json:"notApproved,omitempty"`
+	// Versions are the upgraded packages with the version before (from
+	// apt's plan) and after (read from dpkg once the install finished).
+	// After is empty when dpkg could not be read: unknown, not guessed.
+	Versions       []PackageVersion `json:"versions,omitempty"`
+	ExitCode       int              `json:"exitCode"`
+	Error          string           `json:"error,omitempty"`
+	RebootRequired bool             `json:"rebootRequired"`
+	LogTail        []string         `json:"logTail,omitempty"`
 }
 
 // ---- Cleanups --------------------------------------------------------------
@@ -144,30 +158,68 @@ type LogLine struct {
 
 // ---- Audits ------------------------------------------------------------------
 
+// ReportRevision is set on access and security reports from a helper that
+// collects the fields below. An older helper omits it. The control plane
+// treats 0 as "reinstall the helper" and does not read the zero values as
+// a clean bill of health.
+const ReportRevision = 2
+
 // AccessReport answers `esa-helper access`.
 type AccessReport struct {
-	Users           []LocalUser         `json:"users"`
-	Groups          map[string][]string `json:"groups"`
-	Logins          []Login             `json:"logins"`
-	FailedSSH24h    int                 `json:"failedSsh24h"`
-	PasswordAuth    bool                `json:"passwordAuth"`
-	PermitRootLogin string              `json:"permitRootLogin"`
+	Revision             int                 `json:"revision"`
+	Users                []LocalUser         `json:"users"`
+	Groups               map[string][]string `json:"groups"`
+	Logins               []Login             `json:"logins"`
+	FailedSSH24h         int                 `json:"failedSsh24h"`
+	PasswordAuth         bool                `json:"passwordAuth"`
+	PermitRootLogin      string              `json:"permitRootLogin"`
+	PermitEmptyPasswords bool                `json:"permitEmptyPasswords"`
+	PubkeyAuth           bool                `json:"pubkeyAuth"`
+	X11Forwarding        bool                `json:"x11Forwarding"`
+	AllowTcpForwarding   string              `json:"allowTcpForwarding"`
+	KbdInteractive       bool                `json:"kbdInteractive"`
+	ListenPorts          []int               `json:"listenPorts"`
+	ListenAddresses      []string            `json:"listenAddresses"`
+	// SSHRead is true when `sshd -T` returned a config. The bools above are
+	// meaningful only then.
+	SSHRead        bool       `json:"sshRead"`
+	SudoRules      []SudoRule `json:"sudoRules"`
+	SudoIncomplete bool       `json:"sudoIncomplete"`
+	// Gaps names checks that did not run. Missing ssh settings are not "off".
+	Gaps []string `json:"gaps"`
+}
+
+// SudoRule is one command spec from sudoers. Aliases are not expanded.
+// Includes outside /etc/sudoers.d are not followed.
+type SudoRule struct {
+	Source       string `json:"source"`
+	Who          string `json:"who"`
+	RunAs        string `json:"runAs"`
+	NoPassword   bool   `json:"noPassword"`
+	Commands     string `json:"commands"`
+	Unrestricted bool   `json:"unrestricted"`
 }
 
 // LocalUser is an account with a login shell.
+// Password is locked, none, set, or unknown. It is never a hash.
 type LocalUser struct {
 	Name           string          `json:"name"`
 	UID            int             `json:"uid"`
 	Home           string          `json:"home"`
 	Shell          string          `json:"shell"`
+	Password       string          `json:"password"`
 	AuthorizedKeys []AuthorizedKey `json:"authorizedKeys"`
 }
 
 // AuthorizedKey is one line of an authorized_keys file.
+// From is the from= restriction. HasCommand is true when the line forces a
+// command. The command text is not returned, because it can hold a secret.
 type AuthorizedKey struct {
 	Type        string `json:"type"`
 	Fingerprint string `json:"fingerprint"`
 	Comment     string `json:"comment"`
+	From        string `json:"from"`
+	HasCommand  bool   `json:"hasCommand"`
 }
 
 // Login is one entry from `last`.
@@ -179,19 +231,46 @@ type Login struct {
 
 // SecurityReport answers `esa-helper security`.
 type SecurityReport struct {
-	Listening          []Listener `json:"listening"`
-	Firewall           string     `json:"firewall"` // "ufw active", "nftables rules", "none"
-	CrowdSec           string     `json:"crowdsec"` // active | inactive | not installed
-	Fail2ban           string     `json:"fail2ban"`
-	UnattendedUpgrades bool       `json:"unattendedUpgrades"`
+	Revision      int        `json:"revision"`
+	Listening     []Listener `json:"listening"`
+	Firewall      string     `json:"firewall"` // "ufw active", "nftables rules", "none"
+	FirewallRules []string   `json:"firewallRules"`
+	// FirewallDefaultIncoming is ufw's default incoming policy: deny,
+	// reject, or allow. Empty when ufw is not active or the policy was not
+	// read. With allow, a port no rule mentions is open.
+	FirewallDefaultIncoming string    `json:"firewallDefaultIncoming,omitempty"`
+	CrowdSec                string    `json:"crowdsec"` // active | inactive | not installed
+	CrowdSecBans            int       `json:"crowdSecBans"`
+	Fail2ban                string    `json:"fail2ban"`
+	Fail2banJails           []BanJail `json:"fail2banJails"`
+	UnattendedUpgrades      bool      `json:"unattendedUpgrades"`
+	// Gaps names checks that did not run. An empty listener list is not a
+	// clean result when "listening sockets" is listed here.
+	Gaps []string `json:"gaps"`
+}
+
+// BanJail is one fail2ban jail and how many addresses it currently bans.
+// The addresses themselves are not collected.
+type BanJail struct {
+	Name   string `json:"name"`
+	Banned int    `json:"banned"`
 }
 
 // Listener is one listening socket.
+// Exposure is all (every interface), local (loopback), or other (one address).
+// Container is set when the process is docker-proxy and a container publishes the port.
 type Listener struct {
-	Proto   string `json:"proto"`
-	Address string `json:"address"`
-	Port    int    `json:"port"`
-	Process string `json:"process"`
+	Proto     string `json:"proto"`
+	Address   string `json:"address"`
+	Port      int    `json:"port"`
+	Process   string `json:"process"`
+	User      string `json:"user"`
+	Exposure  string `json:"exposure"`
+	Container string `json:"container,omitempty"`
+	// UFW is allow, deny, or unmentioned when ufw is active. Empty otherwise.
+	// It is unknown for a port Docker publishes, because Docker forwards it
+	// past ufw's input rules, whether or not ufw is active.
+	UFW string `json:"ufw"`
 }
 
 // JobsReport answers `esa-helper jobs`.
@@ -216,4 +295,68 @@ type Timer struct {
 	Last      time.Time `json:"last,omitzero"`
 	Result    string    `json:"result"`
 	Failed    bool      `json:"failed"`
+}
+
+// RecoveryReport is what an operator wrote under /var/lib/esa/recovery.
+// It is not a restore test run by esa.
+type RecoveryReport struct {
+	Revision  int              `json:"revision"`
+	Statement string           `json:"statement"`
+	Sources   []RecoverySource `json:"sources"`
+	Gaps      []string         `json:"gaps"`
+}
+
+// RecoverySource is one restic, Borg, or generic result file.
+type RecoverySource struct {
+	Tool         string     `json:"tool"`
+	ToolVersion  string     `json:"toolVersion"`
+	Dataset      string     `json:"dataset"`
+	Snapshot     string     `json:"snapshot"`
+	BackupState  string     `json:"backupState"`
+	BackupAt     *time.Time `json:"backupAt,omitempty"`
+	CheckKind    string     `json:"checkKind"`
+	CheckState   string     `json:"checkState"`
+	CheckAt      *time.Time `json:"checkAt,omitempty"`
+	RestoreState string     `json:"restoreState"`
+	SmokeState   string     `json:"smokeState"`
+	// Freshness is current, stale, unknown, or future. Stale means the
+	// backup time is more than 7 days ago. Unknown is not a current success.
+	Freshness string `json:"freshness"`
+	Note      string `json:"note"`
+	// Policy is within, older, or none. none means this account has no
+	// policy for the dataset. That is not a current backup.
+	Policy string `json:"policy"`
+}
+
+// PackageInventory is the deb packages dpkg reports. It is not a vulnerability scan.
+type PackageInventory struct {
+	Distro   string             `json:"distro"`
+	Release  string             `json:"release"`
+	Packages []InstalledPackage `json:"packages"`
+	Gaps     []string           `json:"gaps"`
+	// ImagesRead is true when the local Docker image list was read. False
+	// is not an empty image list: image findings cannot be closed from it.
+	ImagesRead bool         `json:"imagesRead"`
+	Images     []LocalImage `json:"images,omitempty"`
+}
+
+// LocalImage is one image on the server. ID is the local image id. Digests
+// are registry digests already stored on the image. Reading this list does
+// not contact a registry. A tag without a digest is not a verified identity.
+type LocalImage struct {
+	ID      string   `json:"id"`
+	Tags    []string `json:"tags,omitempty"`
+	Digests []string `json:"digests,omitempty"`
+}
+
+// InstalledPackage is one installed deb.
+type InstalledPackage struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Arch    string `json:"arch"`
+	// Source and SourceVersion are the source package it was built from.
+	// Debian and Ubuntu advisories are mostly keyed by source package.
+	// Empty from helpers older than this field.
+	Source        string `json:"source,omitempty"`
+	SourceVersion string `json:"sourceVersion,omitempty"`
 }

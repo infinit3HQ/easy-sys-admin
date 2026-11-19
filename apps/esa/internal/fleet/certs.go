@@ -100,6 +100,9 @@ func (s *Service) DeleteCert(ctx context.Context, a Actor, id int64) error {
 
 // CheckCerts checks every certificate target and updates expiry alerts.
 func (s *Service) CheckCerts(ctx context.Context) {
+	if !s.claimJob(ctx, "certs", time.Hour) {
+		return
+	}
 	var rows []store.CertTarget
 	if err := s.db.WithContext(ctx).Order("account_id").Find(&rows).Error; err != nil {
 		s.log.Error("load cert targets", "err", err)

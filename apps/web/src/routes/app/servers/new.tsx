@@ -28,6 +28,7 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '#/components/ui/radio-group'
 import { Textarea } from '#/components/ui/textarea'
+import { AgentSecret } from '#/components/server/agent-setup'
 import { useRole } from '../route'
 
 export const Route = createFileRoute('/app/servers/new')({
@@ -35,9 +36,15 @@ export const Route = createFileRoute('/app/servers/new')({
   component: AddServer,
 })
 
-type Method = 'login' | 'command'
+type Method = 'login' | 'command' | 'outbound'
 
 const methods = [
+  {
+    value: 'outbound',
+    title: 'Outbound agent',
+    body: 'For servers behind NAT or without incoming SSH. The server connects to esa over HTTPS.',
+    icon: ArrowRightIcon,
+  },
   {
     value: 'login',
     title: 'One-time sudo login',
@@ -68,7 +75,7 @@ function AddServer() {
         value={method}
         onValueChange={(v) => setMethod(v as Method)}
         aria-label="How to add it"
-        className="mb-6 sm:grid-cols-2"
+        className="mb-6 sm:grid-cols-3"
       >
         {methods.map((m) => {
           const on = method === m.value
@@ -105,7 +112,13 @@ function AddServer() {
           )
         })}
       </RadioGroup>
-      {method === 'login' ? <LoginFlow /> : <CommandFlow />}
+      {method === 'login' ? (
+        <LoginFlow />
+      ) : method === 'outbound' ? (
+        <OutboundFlow />
+      ) : (
+        <CommandFlow />
+      )}
     </div>
   )
 }
@@ -458,6 +471,82 @@ function CommandFlow() {
         <TerminalIcon /> Get the command
       </Button>
       <ErrorBanner error={m.error} className="mt-3" />
+    </Panel>
+  )
+}
+
+function OutboundFlow() {
+  const groups = useGroups()
+  const { canAct } = useRole()
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [name, setName] = useState('')
+  const [groupId, setGroupId] = useState('none')
+  const create = useMutation({
+    mutationFn: () =>
+      call(
+        api().POST('/agent-servers', {
+          body: { name, groupId: groupId === 'none' ? null : Number(groupId) },
+        }),
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['overview'] }),
+  })
+  if (create.data)
+    return (
+      <AgentSecret
+        serverId={create.data.serverId}
+        token={create.data.token}
+        onClose={() => {
+          navigate({
+            to: '/app/servers/$serverId',
+            params: { serverId: create.data.serverId },
+          })
+        }}
+      />
+    )
+  return (
+    <Panel title="Add an outbound server">
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          create.mutate()
+        }}
+      >
+        <p className="text-sm">
+          Needs a recent sign-in and a one-time root installation on the server.
+          No SSH login is sent to esa.
+        </p>
+        <Field label="Name">
+          <Input
+            required
+            maxLength={100}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="private-worker-01"
+            disabled={!canAct}
+          />
+        </Field>
+        <Field label="Group">
+          <Choice
+            value={groupId}
+            onChange={setGroupId}
+            disabled={!canAct}
+            options={[
+              { value: 'none', label: 'No group' },
+              ...groups.map((g) => ({ value: String(g.id), label: g.name })),
+            ]}
+          />
+        </Field>
+        <Button
+          type="submit"
+          disabled={!canAct || !name.trim()}
+          busy={create.isPending}
+        >
+          Create connection credential
+        </Button>
+        <ErrorBanner error={create.error} />
+      </form>
     </Panel>
   )
 }

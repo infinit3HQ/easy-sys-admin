@@ -16,8 +16,8 @@ import (
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
-// aptEnv makes apt and dpkg never wait for input and keep existing config
-// files, and makes needrestart list services instead of restarting them.
+// aptEnv keeps apt noninteractive and disables the needrestart APT hook.
+// UpgradeExec runs a separate list-only scan after the transaction.
 var aptEnv = []string{
 	"DEBIAN_FRONTEND=noninteractive",
 	"NEEDRESTART_MODE=l",
@@ -34,11 +34,14 @@ var aptDpkgOpts = []string{
 // "Inst base-files [13ubuntu10.4] (13ubuntu10.5 Ubuntu:24.04/noble-updates [arm64])"
 var instRe = regexp.MustCompile(`^Inst (\S+) (?:\[([^\]]+)\] )?\((\S+) (.+?) \[[^\]]+\]\)`)
 
-var pkgNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]*(:[a-z0-9]+)?$`)
+var pkgNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9+._-]*(:[A-Za-z0-9]+)?$`)
 
 // PendingUpdates lists upgradable packages. With refresh it runs
 // `apt-get update` first; otherwise it uses the lists apt already has.
 func (h *Host) PendingUpdates(ctx context.Context, refresh bool) (proto.PendingUpdates, error) {
+	if h.rocky9() {
+		return h.pendingRPM(ctx, refresh)
+	}
 	if !lookPath("apt-get") {
 		return proto.PendingUpdates{}, &BadRequestError{Reason: "this server does not use apt"}
 	}
@@ -156,11 +159,14 @@ func (h *Host) heldPackages(ctx context.Context) []string {
 func (h *Host) packageManagerBusy() string {
 	for _, args := range h.processArgs() {
 		switch filepath.Base(args[0]) {
-		case "apt", "apt-get", "dpkg", "aptitude", "unattended-upgrade", "unattended-upgrades":
+		case "apt", "apt-get", "dpkg", "aptitude", "unattended-upgrade", "unattended-upgrades", "dnf", "dnf4", "yum", "rpm":
 			return filepath.Base(args[0]) + " is running"
 		}
 		// unattended-upgrade runs as a python script.
 		for _, a := range args[1:] {
+			if strings.Contains(a, "ESA_DNF_TXN") {
+				return "a DNF upgrade is running"
+			}
 			if strings.HasSuffix(a, "/unattended-upgrade") {
 				return "unattended-upgrade is running"
 			}
@@ -190,12 +196,26 @@ func (h *Host) UpgradePrecheck(ctx context.Context) (proto.Precheck, error) {
 			pc.Problems = append(pc.Problems, fmt.Sprintf("%s has %s free, needs %s", mount, humanBytes(avail), humanBytes(need)))
 		}
 	}
-	if out, err := h.output(ctx, time.Minute, "dpkg", "--audit"); err != nil {
+	if h.rocky9() {
+		if result, err := h.Run.Run(ctx, 30*time.Second, "needs-restarting", "--help"); err != nil || result.Exit != 0 {
+			pc.Problems = append(pc.Problems, "dnf-utils needs-restarting is required for reboot detection")
+		}
+		if h.dnfVersionLocks() {
+			pc.Problems = append(pc.Problems, "system DNF versionlocks require manual package management")
+		}
+		if _, err := h.dnfOutput(ctx, time.Minute, "-q", "check"); err != nil {
+			pc.Problems = append(pc.Problems, "dnf check failed")
+		}
+	} else if out, err := h.output(ctx, time.Minute, "dpkg", "--audit"); err != nil {
 		pc.Problems = append(pc.Problems, "dpkg --audit failed: "+err.Error())
 	} else if out != "" {
 		pc.Problems = append(pc.Problems, "dpkg reports broken or half-installed packages: "+firstLine([]byte(out)))
 	}
-	pc.Held = h.heldPackages(ctx)
+	if h.rocky9() {
+		pc.Held = []string{}
+	} else {
+		pc.Held = h.heldPackages(ctx)
+	}
 	sort.Strings(pc.Problems)
 	pc.OK = len(pc.Problems) == 0
 	return pc, nil
@@ -220,6 +240,9 @@ type UpgradeOptions struct {
 	RunID int64
 	Mode  proto.UpdateMode
 	Hold  []string
+	// Allow, when not nil, is the only packages this upgrade may install:
+	// the list a person approved in a plan. An empty list installs nothing.
+	Allow []string
 }
 
 func (o UpgradeOptions) validate() error {
@@ -229,7 +252,7 @@ func (o UpgradeOptions) validate() error {
 	if o.Mode != proto.UpdateSecurity && o.Mode != proto.UpdateAll {
 		return &BadRequestError{Reason: "mode must be security or all"}
 	}
-	for _, p := range o.Hold {
+	for _, p := range append(append([]string{}, o.Hold...), o.Allow...) {
 		if !pkgNameRe.MatchString(p) {
 			return &BadRequestError{Reason: "invalid package name " + strconv.Quote(p)}
 		}
@@ -248,6 +271,23 @@ func (h *Host) resultPath(runID int64) string {
 func (h *Host) UpgradeStart(ctx context.Context, self string, o UpgradeOptions) (proto.UpgradeStarted, error) {
 	if err := o.validate(); err != nil {
 		return proto.UpgradeStarted{}, err
+	}
+	unlock, err := h.upgradeLock(upgradeStartLockName(o.RunID))
+	if err != nil {
+		var busy *BusyError
+		if errors.As(err, &busy) {
+			return proto.UpgradeStarted{Unit: upgradeUnit(o.RunID) + ".service"}, nil
+		}
+		return proto.UpgradeStarted{}, err
+	}
+	defer unlock()
+	if previous, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
+		if previous.RunID != o.RunID {
+			return proto.UpgradeStarted{}, &RefusedError{Reason: "stored upgrade result has a different run id"}
+		}
+		return proto.UpgradeStarted{Unit: upgradeUnit(o.RunID) + ".service"}, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return proto.UpgradeStarted{}, &RefusedError{Reason: "stored upgrade result cannot be read; it will not be overwritten"}
 	}
 	pc, err := h.UpgradePrecheck(ctx)
 	if err != nil {
@@ -279,6 +319,13 @@ func (h *Host) UpgradeStart(ctx context.Context, self string, o UpgradeOptions) 
 	if len(o.Hold) > 0 {
 		args = append(args, "--hold", strings.Join(o.Hold, ","))
 	}
+	if o.Allow != nil {
+		allow := proto.AllowNone
+		if len(o.Allow) > 0 {
+			allow = strings.Join(o.Allow, ",")
+		}
+		args = append(args, "--allow", allow)
+	}
 	if _, err := h.output(ctx, 30*time.Second, "systemd-run", args...); err != nil {
 		return proto.UpgradeStarted{}, err
 	}
@@ -290,6 +337,24 @@ func (h *Host) UpgradeStart(ctx context.Context, self string, o UpgradeOptions) 
 func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	if err := o.validate(); err != nil {
 		return err
+	}
+	unlock, err := h.upgradeLock("upgrade-exec.lock")
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if previous, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
+		if previous.RunID != o.RunID {
+			return &RefusedError{Reason: "stored upgrade result has a different run id"}
+		}
+		if previous.State == "succeeded" {
+			return nil
+		}
+		if previous.State != "running" {
+			return &RefusedError{Reason: "this upgrade already finished unsuccessfully; use a new run id"}
+		}
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return &RefusedError{Reason: "stored upgrade result cannot be read; it will not be overwritten"}
 	}
 	res := proto.UpgradeResult{RunID: o.RunID, State: "running", Mode: o.Mode, StartedAt: time.Now().UTC(), Packages: []string{}}
 	if prev, err := readUpgradeResult(h.resultPath(o.RunID)); err == nil {
@@ -303,12 +368,18 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 		if err != nil {
 			res.State, res.Error = "failed", err.Error()
 		}
-		_, statErr := os.Stat(h.path("/var/run/reboot-required"))
-		res.RebootRequired = statErr == nil
+		if !h.rocky9() {
+			_, statErr := os.Stat(h.path("/var/run/reboot-required"))
+			res.RebootRequired = statErr == nil
+		}
 		if werr := writeJSONAtomic(h.resultPath(o.RunID), res); werr != nil {
 			return werr
 		}
 		return err
+	}
+
+	if h.rocky9() {
+		return h.upgradeRPM(ctx, o, &res, finish)
 	}
 
 	upd, err := h.Run.Run(ctx, 10*time.Minute, "apt-get", "update", "-q", "-o", "Dpkg::Lock::Timeout=120")
@@ -323,22 +394,21 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	if err != nil {
 		return finish(err, -1, nil)
 	}
-	hold := map[string]bool{}
-	for _, p := range o.Hold {
-		hold[p] = true
-	}
-	var install []string
-	for _, p := range pending {
-		switch {
-		case hold[p.Name]:
-			res.Skipped = append(res.Skipped, p.Name)
-		case o.Mode == proto.UpdateSecurity && !p.Security:
-		default:
-			install = append(install, p.Name)
-		}
-	}
+	install, skipped, notApproved := chooseUpgrades(pending, o)
+	res.Skipped, res.NotApproved = skipped, notApproved
 	if len(install) == 0 {
-		return finish(nil, 0, []byte("nothing to upgrade"))
+		return finish(nil, 0, []byte("nothing to upgrade\n"+h.restartReport(ctx)))
+	}
+	if o.Allow != nil {
+		// apt can upgrade a dependency that was not asked for. With an
+		// approved list that would widen consent, so stop instead.
+		out, err := h.output(ctx, 2*time.Minute, "apt-get", append([]string{"-s", "-q", "-o", "Debug::NoLocking=1", "install", "--only-upgrade"}, install...)...)
+		if err != nil {
+			return finish(err, -1, nil)
+		}
+		if extra := unapproved(parseSimulation(out), o); len(extra) > 0 {
+			return finish(fmt.Errorf("apt would also upgrade %s, which the plan did not approve; nothing was installed", strings.Join(extra, ", ")), -1, nil)
+		}
 	}
 
 	args := append([]string{"install", "-y", "-q", "--only-upgrade"}, aptDpkgOpts...)
@@ -350,8 +420,45 @@ func (h *Host) UpgradeExec(ctx context.Context, o UpgradeOptions) error {
 	}
 	if err == nil {
 		res.Packages = install
+		res.Versions = h.installedVersions(ctx, pending, install)
+		log = append(log, ("\n" + h.restartReport(ctx))...)
 	}
 	return finish(err, run.Exit, log)
+}
+
+// restartReport checks systemd services for stale libraries without restarting
+// them. Keep this diagnostic separate from the package result.
+func (h *Host) restartReport(ctx context.Context) string {
+	const tool = "/usr/sbin/needrestart"
+	if _, err := os.Stat(h.path(tool)); errors.Is(err, os.ErrNotExist) {
+		return "Service restart check skipped: needrestart is not installed."
+	} else if err != nil {
+		return "Service restart check could not access needrestart."
+	}
+	// Advanced output keeps service records even if the host uses easy mode.
+	result, err := h.Run.Run(ctx, time.Minute, tool, "-b", "-m", "a", "-r", "l", "-l")
+	if err != nil || result.Exit != 0 {
+		return "Service restart check did not complete."
+	}
+	if !strings.HasPrefix(string(result.Stdout), "NEEDRESTART-VER: ") {
+		return "Service restart check returned no batch report."
+	}
+	var units []string
+	for _, line := range strings.Split(string(result.Stdout), "\n") {
+		name, ok := strings.CutPrefix(line, "NEEDRESTART-SVC: ")
+		if ok && unitNameRe.MatchString(name) {
+			units = append(units, name)
+		}
+	}
+	if len(units) == 0 {
+		return "needrestart reported no systemd services using outdated libraries."
+	}
+	sort.Strings(units)
+	report := "Systemd services using outdated libraries:\n" + strings.Join(units[:min(len(units), 15)], "\n")
+	if len(units) > 15 {
+		report += fmt.Sprintf("\n%d more services reported by needrestart.", len(units)-15)
+	}
+	return report
 }
 
 // UpgradeStatus reads the result file. If the job died without writing a
@@ -383,7 +490,13 @@ func readUpgradeResult(path string) (proto.UpgradeResult, error) {
 	if err != nil {
 		return r, err
 	}
-	return r, json.Unmarshal(raw, &r)
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return r, err
+	}
+	if r.RunID <= 0 || (r.State != "running" && r.State != "succeeded" && r.State != "failed") {
+		return r, errors.New("stored upgrade result is invalid")
+	}
+	return r, nil
 }
 
 func writeJSONAtomic(path string, v any) error {
@@ -427,4 +540,86 @@ func (h *Host) Reboot(ctx context.Context) error {
 		"--on-active=5", "--timer-property=AccuracySec=1s",
 		"systemctl", "reboot")
 	return err
+}
+
+// chooseUpgrades picks what to install from the pending list: not held,
+// security only in security mode, and only approved packages when the
+// run carries an approved list.
+func chooseUpgrades(pending []proto.PendingPackage, o UpgradeOptions) (install, skipped, notApproved []string) {
+	hold := map[string]bool{}
+	for _, p := range o.Hold {
+		hold[p] = true
+	}
+	allowed := map[string]bool{}
+	for _, p := range o.Allow {
+		allowed[p] = true
+	}
+	for _, p := range pending {
+		switch {
+		case hold[p.Name]:
+			skipped = append(skipped, p.Name)
+		case o.Mode == proto.UpdateSecurity && !p.Security:
+		case o.Allow != nil && !allowed[p.Name]:
+			notApproved = append(notApproved, p.Name)
+		default:
+			install = append(install, p.Name)
+		}
+	}
+	return install, skipped, notApproved
+}
+
+// unapproved lists packages a simulated install would change that the
+// approved list does not name, or that are held.
+func unapproved(sim []proto.PendingPackage, o UpgradeOptions) []string {
+	ok := map[string]bool{}
+	for _, p := range o.Allow {
+		ok[p] = true
+	}
+	for _, p := range o.Hold {
+		ok[p] = false
+	}
+	var out []string
+	for _, p := range sim {
+		if !ok[p.Name] {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
+
+// installedVersions pairs each installed package's version before the
+// upgrade with the version dpkg reports now. A package dpkg does not
+// answer for keeps an empty After.
+func (h *Host) installedVersions(ctx context.Context, pending []proto.PendingPackage, install []string) []proto.PackageVersion {
+	before := map[string]string{}
+	for _, p := range pending {
+		before[p.Name] = p.From
+	}
+	after := map[string]string{}
+	out, err := h.output(ctx, time.Minute, "dpkg-query", append([]string{"-W", "-f=${Package}\t${Version}\n"}, install...)...)
+	if err == nil {
+		after = parseDpkgVersions(out)
+	}
+	versions := make([]proto.PackageVersion, 0, len(install))
+	for _, name := range install {
+		versions = append(versions, proto.PackageVersion{Name: name, Before: before[name], After: after[name]})
+	}
+	return versions
+}
+
+// parseDpkgVersions reads "name<TAB>version" lines. Multi-arch packages
+// print "name:arch"; the architecture is dropped.
+func parseDpkgVersions(out string) map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		name, ver, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok || name == "" || ver == "" {
+			continue
+		}
+		if i := strings.IndexByte(name, ':'); i >= 0 {
+			name = name[:i]
+		}
+		m[name] = ver
+	}
+	return m
 }

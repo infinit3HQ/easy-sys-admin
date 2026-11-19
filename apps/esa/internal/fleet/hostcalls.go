@@ -2,10 +2,13 @@ package fleet
 
 import (
 	"context"
+	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -140,6 +143,35 @@ func (s *Service) Access(ctx context.Context, a Actor, serverID int64) (proto.Ac
 	}
 	var out proto.AccessReport
 	_, err := s.call(ctx, a, serverID, time.Minute, &out, "access")
+	if out.Users == nil {
+		out.Users = []proto.LocalUser{}
+	}
+	if out.Logins == nil {
+		out.Logins = []proto.Login{}
+	}
+	if out.Groups == nil {
+		out.Groups = map[string][]string{}
+	}
+	if out.ListenPorts == nil {
+		out.ListenPorts = []int{}
+	}
+	if out.ListenAddresses == nil {
+		out.ListenAddresses = []string{}
+	}
+	if out.SudoRules == nil {
+		out.SudoRules = []proto.SudoRule{}
+	}
+	if out.Gaps == nil {
+		out.Gaps = []string{}
+	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+		out.Gaps = append(out.Gaps, "helper")
+	}
+	for i := range out.Users {
+		if out.Users[i].AuthorizedKeys == nil {
+			out.Users[i].AuthorizedKeys = []proto.AuthorizedKey{}
+		}
+	}
 	return out, err
 }
 
@@ -150,7 +182,43 @@ func (s *Service) Security(ctx context.Context, a Actor, serverID int64) (proto.
 	}
 	var out proto.SecurityReport
 	_, err := s.call(ctx, a, serverID, time.Minute, &out, "security")
+	if out.Listening == nil {
+		out.Listening = []proto.Listener{}
+	}
+	for i := range out.Listening {
+		if out.Listening[i].Exposure == "" {
+			out.Listening[i].Exposure = exposureOf(out.Listening[i].Address)
+		}
+	}
+	if out.FirewallRules == nil {
+		out.FirewallRules = []string{}
+	}
+	if out.Fail2banJails == nil {
+		out.Fail2banJails = []proto.BanJail{}
+	}
+	if out.Gaps == nil {
+		out.Gaps = []string{}
+	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") {
+		out.Gaps = append(out.Gaps, "helper")
+	}
 	return out, err
+}
+
+// exposureOf matches hostops.listenExposure for helpers that omit the field.
+func exposureOf(addr string) string {
+	switch addr {
+	case "", "*", "0.0.0.0", "::":
+		return "all"
+	}
+	ip := net.ParseIP(addr)
+	if ip != nil && ip.IsLoopback() {
+		return "local"
+	}
+	if ip != nil && ip.IsUnspecified() {
+		return "all"
+	}
+	return "other"
 }
 
 // Jobs lists cron entries and timers on a server.
@@ -172,6 +240,33 @@ func (s *Service) Jobs(ctx context.Context, a Actor, serverID int64) (proto.Jobs
 		}
 	}
 	return out, err
+}
+
+// Recovery reads the operator's restic and Borg result files. It does not
+// run a backup or a restore.
+func (s *Service) Recovery(ctx context.Context, a Actor, serverID int64) (proto.RecoveryReport, error) {
+	if err := a.can(RoleViewer, ScopeRead); err != nil {
+		return proto.RecoveryReport{}, err
+	}
+	srv, _, err := s.loadVisibleServer(ctx, a, serverID)
+	if err != nil {
+		return proto.RecoveryReport{}, err
+	}
+	var out proto.RecoveryReport
+	err = s.callServer(ctx, srv, time.Minute, &out, "recovery")
+	if err != nil {
+		out.Gaps = append(out.Gaps, "files unread")
+	}
+	if out.Revision < proto.ReportRevision && !slices.Contains(out.Gaps, "helper") && err == nil {
+		out.Gaps = append(out.Gaps, "helper")
+	}
+	s.attachIngested(ctx, srv.ID, &out)
+	if err != nil && len(out.Sources) == 0 {
+		return out, err
+	}
+	hostops.AnnotateRecovery(&out, time.Now())
+	s.applyDatasetPolicy(ctx, srv.AccountID, &out)
+	return out, nil
 }
 
 // CheckUpdates refreshes the package lists on a server and returns the

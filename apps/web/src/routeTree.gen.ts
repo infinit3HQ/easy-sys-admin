@@ -22,7 +22,9 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as ApiSplatRouteImport } from './routes/api/$'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppActivityRouteImport } from './routes/app/activity'
+import { Route as AppKeysRouteImport } from './routes/app/keys'
 import { Route as AppOrgRouteImport } from './routes/app/org'
+import { Route as AppPlansRouteImport } from './routes/app/plans'
 import { Route as AppSettingsRouteImport } from './routes/app/settings'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
@@ -39,6 +41,7 @@ import { Route as AppRunsIndexRouteImport } from './routes/app/runs/index'
 import { Route as AppRunsRunIdRouteImport } from './routes/app/runs/$runId'
 import { Route as AppServersServerIdRouteImport } from './routes/app/servers/$serverId'
 import { Route as AppServersNewRouteImport } from './routes/app/servers/new'
+import { Route as AppAlertsNoticesIncidentIdRouteImport } from './routes/app/alerts/notices/$incidentId'
 import { Route as AppGroupsGroupIdIndexRouteImport } from './routes/app/groups/$groupId/index'
 import { Route as AppGroupsGroupIdSettingsRouteImport } from './routes/app/groups/$groupId/settings'
 import { Route as AppGroupsGroupIdSharingRouteImport } from './routes/app/groups/$groupId/sharing'
@@ -108,9 +111,19 @@ const AppActivityRoute = AppActivityRouteImport.update({
   path: '/activity',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppKeysRoute = AppKeysRouteImport.update({
+  id: '/keys',
+  path: '/keys',
+  getParentRoute: () => AppRouteRoute,
+} as any)
 const AppOrgRoute = AppOrgRouteImport.update({
   id: '/org',
   path: '/org',
+  getParentRoute: () => AppRouteRoute,
+} as any)
+const AppPlansRoute = AppPlansRouteImport.update({
+  id: '/plans',
+  path: '/plans',
   getParentRoute: () => AppRouteRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -193,6 +206,12 @@ const AppServersNewRoute = AppServersNewRouteImport.update({
   path: '/servers/new',
   getParentRoute: () => AppRouteRoute,
 } as any)
+const AppAlertsNoticesIncidentIdRoute =
+  AppAlertsNoticesIncidentIdRouteImport.update({
+    id: '/alerts/notices/$incidentId',
+    path: '/alerts/notices/$incidentId',
+    getParentRoute: () => AppRouteRoute,
+  } as any)
 const AppGroupsGroupIdIndexRoute = AppGroupsGroupIdIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -223,7 +242,9 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
+  '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -241,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
@@ -257,7 +279,9 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
+  '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -274,6 +298,7 @@ export interface FileRoutesByTo {
   '/app/alerts': typeof AppAlertsIndexRoute
   '/app/groups': typeof AppGroupsIndexRoute
   '/app/runs': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId': typeof AppGroupsGroupIdIndexRoute
@@ -292,7 +317,9 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/api/$': typeof ApiSplatRoute
   '/app/activity': typeof AppActivityRoute
+  '/app/keys': typeof AppKeysRoute
   '/app/org': typeof AppOrgRoute
+  '/app/plans': typeof AppPlansRoute
   '/app/settings': typeof AppSettingsRoute
   '/auth/$': typeof AuthSplatRoute
   '/docs/$page': typeof DocsPageRoute
@@ -310,6 +337,7 @@ export interface FileRoutesById {
   '/app/alerts/': typeof AppAlertsIndexRoute
   '/app/groups/': typeof AppGroupsIndexRoute
   '/app/runs/': typeof AppRunsIndexRoute
+  '/app/alerts/notices/$incidentId': typeof AppAlertsNoticesIncidentIdRoute
   '/app/groups/$groupId/settings': typeof AppGroupsGroupIdSettingsRoute
   '/app/groups/$groupId/sharing': typeof AppGroupsGroupIdSharingRoute
   '/app/groups/$groupId/': typeof AppGroupsGroupIdIndexRoute
@@ -329,7 +357,9 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/$'
     | '/app/activity'
+    | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -347,6 +377,7 @@ export interface FileRouteTypes {
     | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId/'
@@ -363,7 +394,9 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/$'
     | '/app/activity'
+    | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -380,6 +413,7 @@ export interface FileRouteTypes {
     | '/app/alerts'
     | '/app/groups'
     | '/app/runs'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId'
@@ -397,7 +431,9 @@ export interface FileRouteTypes {
     | '/terms'
     | '/api/$'
     | '/app/activity'
+    | '/app/keys'
     | '/app/org'
+    | '/app/plans'
     | '/app/settings'
     | '/auth/$'
     | '/docs/$page'
@@ -415,6 +451,7 @@ export interface FileRouteTypes {
     | '/app/alerts/'
     | '/app/groups/'
     | '/app/runs/'
+    | '/app/alerts/notices/$incidentId'
     | '/app/groups/$groupId/settings'
     | '/app/groups/$groupId/sharing'
     | '/app/groups/$groupId/'
@@ -533,11 +570,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppActivityRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/keys': {
+      id: '/app/keys'
+      path: '/keys'
+      fullPath: '/app/keys'
+      preLoaderRoute: typeof AppKeysRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/org': {
       id: '/app/org'
       path: '/org'
       fullPath: '/app/org'
       preLoaderRoute: typeof AppOrgRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
+    '/app/plans': {
+      id: '/app/plans'
+      path: '/plans'
+      fullPath: '/app/plans'
+      preLoaderRoute: typeof AppPlansRouteImport
       parentRoute: typeof AppRouteRoute
     }
     '/app/settings': {
@@ -652,6 +703,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppServersNewRouteImport
       parentRoute: typeof AppRouteRoute
     }
+    '/app/alerts/notices/$incidentId': {
+      id: '/app/alerts/notices/$incidentId'
+      path: '/alerts/notices/$incidentId'
+      fullPath: '/app/alerts/notices/$incidentId'
+      preLoaderRoute: typeof AppAlertsNoticesIncidentIdRouteImport
+      parentRoute: typeof AppRouteRoute
+    }
     '/app/groups/$groupId/': {
       id: '/app/groups/$groupId/'
       path: '/'
@@ -695,7 +753,9 @@ const AppGroupsGroupIdRouteRouteWithChildren =
 
 interface AppRouteRouteChildren {
   AppActivityRoute: typeof AppActivityRoute
+  AppKeysRoute: typeof AppKeysRoute
   AppOrgRoute: typeof AppOrgRoute
+  AppPlansRoute: typeof AppPlansRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppGroupsGroupIdRouteRoute: typeof AppGroupsGroupIdRouteRouteWithChildren
@@ -707,11 +767,14 @@ interface AppRouteRouteChildren {
   AppAlertsIndexRoute: typeof AppAlertsIndexRoute
   AppGroupsIndexRoute: typeof AppGroupsIndexRoute
   AppRunsIndexRoute: typeof AppRunsIndexRoute
+  AppAlertsNoticesIncidentIdRoute: typeof AppAlertsNoticesIncidentIdRoute
 }
 
 const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppActivityRoute: AppActivityRoute,
+  AppKeysRoute: AppKeysRoute,
   AppOrgRoute: AppOrgRoute,
+  AppPlansRoute: AppPlansRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppGroupsGroupIdRouteRoute: AppGroupsGroupIdRouteRouteWithChildren,
@@ -723,6 +786,7 @@ const AppRouteRouteChildren: AppRouteRouteChildren = {
   AppAlertsIndexRoute: AppAlertsIndexRoute,
   AppGroupsIndexRoute: AppGroupsIndexRoute,
   AppRunsIndexRoute: AppRunsIndexRoute,
+  AppAlertsNoticesIncidentIdRoute: AppAlertsNoticesIncidentIdRoute,
 }
 
 const AppRouteRouteWithChildren = AppRouteRoute._addFileChildren(

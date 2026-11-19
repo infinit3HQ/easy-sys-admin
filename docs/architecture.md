@@ -71,37 +71,41 @@ The CLI stores the URL and token in `~/.config/esa/config.json` with mode 0600. 
 
 All packages are under `apps/esa/internal`.
 
-| Package         | Purpose                                                                                                            |
-| --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `api`           | Serves `/api/v1` through handlers generated from the OpenAPI file, plus the public `/enroll/{token}` endpoints.    |
-| `apiclient`     | Typed API client for the CLI, generated from the OpenAPI file.                                                     |
-| `auth`          | Sign-in (password, OIDC, Google, dev mode), session cookies, bearer tokens, and sign-in rate limits.               |
-| `cli`           | The `esa` command tree, including `serve`.                                                                         |
-| `config`        | Reads and validates `ESA_*` environment variables.                                                                 |
-| `crypto`        | `Box`, which seals secrets at rest with AES-256-GCM under `ESA_MASTER_KEY`.                                        |
-| `fleet`         | The service layer. Every front door goes through it, so permission checks and account isolation live in one place. |
-| `hostops`       | The code that runs on managed servers inside `esa-helper`. Fixed programs with typed arguments, no shell.          |
-| `hostops/proto` | JSON messages between the control plane and the helper. It has no dependencies, so both sides import it.           |
-| `netguard`      | Decides which addresses esa may connect to for SSH, certificate checks, and notifications.                         |
-| `notify`        | Delivers alert messages to ntfy, webhooks, Discord, Slack, and email.                                              |
-| `password`      | Hashes and checks passwords with argon2id.                                                                         |
-| `remote`        | SSH to managed servers with a pinned host key, the connection pool, and the helper install script.                 |
-| `server`        | Wires store, fleet, auth, API, middleware, and background jobs into one HTTP server.                               |
-| `store`         | PostgreSQL through GORM. The models define the schema, applied with AutoMigrate at startup.                        |
-| `version`       | Build version and commit, set with `-ldflags`.                                                                     |
+| Package         | Purpose                                                                                                                              |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `api`           | Serves `/api/v1` through handlers generated from the OpenAPI file, plus the public `/enroll/{token}` endpoints.                      |
+| `apiclient`     | Typed API client for the CLI, generated from the OpenAPI file.                                                                       |
+| `auth`          | Sign-in (password, OIDC, Google, dev mode), session cookies, and bearer tokens. Password sign-in failures are counted in PostgreSQL. |
+| `cli`           | The `esa` command tree, including `serve`.                                                                                           |
+| `config`        | Reads and validates `ESA_*` environment variables.                                                                                   |
+| `crypto`        | `Box`, which seals secrets at rest with AES-256-GCM under `ESA_MASTER_KEY`.                                                          |
+| `fleet`         | The service layer. Every front door goes through it, so permission checks and account isolation live in one place.                   |
+| `hostops`       | The code that runs on managed servers inside `esa-helper`. Fixed programs with typed arguments, no shell.                            |
+| `hostops/proto` | JSON messages between the control plane and the helper. It has no dependencies, so both sides import it.                             |
+| `netguard`      | Decides which addresses esa may connect to for SSH, certificate checks, and notifications.                                           |
+| `notify`        | Delivers alert messages to ntfy, webhooks, Discord, Slack, and email.                                                                |
+| `password`      | Hashes and checks passwords with argon2id.                                                                                           |
+| `remote`        | SSH to managed servers with a pinned host key, the connection pool, and the helper install script.                                   |
+| `server`        | Wires store, fleet, auth, API, middleware, and background jobs into one HTTP server.                                                 |
+| `store`         | PostgreSQL through GORM. The models define the schema, applied with AutoMigrate at startup.                                          |
+| `version`       | Build version and commit, set with `-ldflags`.                                                                                       |
 
 ## Background jobs
 
-`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts five loops. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
+`startJobs` in `apps/esa/internal/server/jobs.go` first calls `ResumeRuns`, then starts the loops below. Each loop waits for its first delay, then runs on its interval. Each run gets a deadline of the interval minus one twelfth, so a stuck run cannot hold up the next one. A panic in a run is logged and the loop goes on.
 
-| Job      | Interval | First run after | What it does                                                                                                                                                                                      |
-| -------- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Resume   | once     | at startup      | `fleet.ResumeRuns`: finishes runs a previous process left `running` (see [How runs work](#how-runs-work)).                                                                                        |
-| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample, then evaluates alerts. |
-| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                      |
-| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).     |
-| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                          |
-| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: connects to each certificate target and updates expiry alerts.                                                                                                                |
+| Job      | Interval | First run after | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| -------- | -------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resume   | 1 minute | 20 seconds      | `fleet.ResumeRuns`: also once at startup. Finishes a run whose worker no longer holds it. An upgrade that was sent is followed. A running server with no upgrade is started. Any other run is marked interrupted. A run that is still held is left alone.                                                                                                                                                                                           |
+| Poll     | 1 minute | 5 seconds       | `fleet.PollAll`: calls `esa-helper status` on every ready server, `ESA_POLL_CONCURRENCY` (default 64) at a time, 45 seconds each. Stores the snapshot and a metric sample. When the exposure summary is older than an hour, it also calls `access` and `security`, at most 8 servers per cycle, then evaluates alerts. One process holds the poll for 70 seconds and renews it each cycle. Another process skips the cycle until that hold expires. |
+| Schedule | 1 minute | 15 seconds      | `fleet.Tick`: starts group clean and update runs whose schedule slot is due.                                                                                                                                                                                                                                                                                                                                                                        |
+| Rollup   | 1 hour   | 2 minutes       | `fleet.Rollup`: one process holds it for 30 minutes. Averages raw samples into hourly rows, deletes samples older than `ESA_METRICS_RAW_RETENTION` (48 hours) and hourly rows older than `ESA_METRICS_HOURLY_RETENTION` (90 days).                                                                                                                                                                                                                  |
+| Sessions | 1 hour   | 1 minute        | `auth.Sessions.CleanupExpired`: deletes expired sessions and sessions idle for 24 hours.                                                                                                                                                                                                                                                                                                                                                            |
+| Deliver  | 1 minute | 10 seconds      | `fleet.DrainDeliveries`: sends notifications stored in the database, retries a delivery left in sending, and returns expired snoozes to the review list. Five failures mark a delivery dead.                                                                                                                                                                                                                                                        |
+| Digest   | 1 hour   | 3 minutes       | `fleet.SendDigests`: on Monday after 08:00 UTC, sends one summary per space to its channels. Unreachable servers, security updates waiting 7 days, and security notices that are still open. A repeated subject is listed once. An empty week sends nothing. A control plane that is down on Monday skips that week. A second run the same Monday does not send again.                                                                              |
+| Certs    | 12 hours | 3 minutes       | `fleet.CheckCerts`: one process holds it for an hour. Connects to each certificate target and updates expiry alerts.                                                                                                                                                                                                                                                                                                                                |
+| Scan     | 1 hour   | 6 minutes       | `fleet.AutoScan`: only when `ESA_SCANNER` is set. One process holds it for 50 minutes, updates the local scanner database, and scans ready servers. Another process does not download or scan in that window.                                                                                                                                                                                                                                       |
+| Audit    | 1 hour   | 4 minutes       | `fleet.PruneAudit`: deletes audit rows older than `ESA_AUDIT_RETENTION`. One process holds the lease for 30 minutes; another skips that prune. Unset does nothing. `ESA_AUDIT_HOLD_UNTIL` stops the delete while that time is in the future. The ledger and the prune entry are written after a delete.                                                                                                                                             |
 
 Polling details from `apps/esa/internal/fleet/poll.go`:
 
@@ -109,10 +113,10 @@ Polling details from `apps/esa/internal/fleet/poll.go`:
 - A cycle may run for 55 seconds. One status call takes about 1.25 seconds on a real server, most of it a 1 second CPU sample, so the cycle reaches about 44 servers per worker. When the deadline arrives before every server has started, the cycle logs `poll cycle ran out of time` at warning level with the number skipped, the number of ready servers, and the concurrency. The skipped servers go first in the next cycle.
 - A server is marked `unreachable` after 3 failed polls in a row. From then on it is polled once every 5 cycles (5 minutes) until it answers. A successful poll, accepting a new host key, reinstalling the helper, or deleting the server ends this back-off. The unreachable alert (3 minutes by default) still fires and resolves on the first poll after its duration. With the 5 minute spacing it fires about 5 minutes after the server is marked unreachable instead of 3, and resolves up to 5 minutes after the server answers again.
 - Each SSH dial allows `ESA_SSH_CONNECT_TIMEOUT` (5 seconds) for the TCP connect and 15 seconds for the SSH handshake. The poll's context bounds both, so a cycle deadline also ends them.
-- The pending update list is refreshed from apt's existing lists when it is older than 6 hours. It does not run `apt-get update`.
+- The pending update list is refreshed from apt's existing lists when it is older than 6 hours. It does not run `apt-get update`. A list with no successful check for 12 hours is marked stale, as is a server that has never been checked. Key and access facts use the exposure summary, which is stale after 2 hours.
 - Servers that keep refusing esa's SSH login are polled less often: no delay for the first two failures, then 2, 4, 8, and 16 minutes, capped at 30. Such a server also counts as unreachable after 3 failures, and the longer of the two delays applies.
 - A server whose host key changed is not contacted until a person accepts the new key.
-- Back-off state is kept in memory. After a restart every server is tried once, and servers that still do not answer go back to every 5 minutes.
+- Back-off state is stored on the server row. A restarted control plane does not immediately retry a login that just failed. Rate limits stay in memory.
 - The control plane serves `GET /metrics` with the last cycle's duration, server count, and skipped count, poll results and durations, pool size, running runs, and the notification queue. See [deployment.md](deployment.md#monitoring).
 
 The schedule tick claims each slot with a conditional update, so two ticks or two control plane processes never start the same slot twice. A slot more than one hour late, for example after the control plane was down, is recorded as a `missed` run instead of running late.
@@ -134,20 +138,20 @@ A session works in one account at a time. An account can share a group, and the 
 
 Identity and access:
 
-| Table         | Holds                                                                                              |
-| ------------- | -------------------------------------------------------------------------------------------------- |
-| `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels. |
+| Table         | Holds                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `accounts`    | Personal spaces and organizations. `admin_team_name` and `viewer_team_name` are the role labels.                                                     |
 | `users`       | People. The first sign-in stores its issuer and subject. `user_identities` records later providers. The same verified email joins the existing user. |
-| `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                          |
-| `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                   |
-| `api_tokens`  | CLI and MCP tokens. Stores the SHA-256 of the token, its scopes, and its expiry.                   |
-| `audit_log`   | Who did what, in which account, from which source (`web`, `api`, `mcp`, `system`).                 |
+| `memberships` | A user's role (`owner`, `admin`, `viewer`) in an account.                                                                                            |
+| `sessions`    | Signed-in browsers. Stores the SHA-256 of the cookie token only.                                                                                     |
+| `api_tokens`  | CLI and MCP tokens. Stores the SHA-256 of the token, its scopes, and its expiry.                                                                     |
+| `audit_log`   | Who did what, in which account, from which source (`web`, `api`, `mcp`, `system`).                                                                   |
 
 Teams and sharing:
 
-| Table          | Holds                                                                         |
-| -------------- | ----------------------------------------------------------------------------- |
-| `invites`      | One-time links that add a user to an organization. Token stored as SHA-256.            |
+| Table          | Holds                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------- |
+| `invites`      | One-time links that add a user to an organization. Token stored as SHA-256.           |
 | `share_links`  | One-time links that share a group with another organization. Token stored as SHA-256. |
 | `group_shares` | A group shared with a receiving account, with `view` or `operate` access.             |
 | `teams`        | Extra teams of an organization. They own no servers.                                  |
@@ -163,7 +167,7 @@ Fleet:
 | `servers`            | Managed machines: address, pinned host key, enrollment state (`pending` or `ready`), helper version, protected containers. |
 | `server_credentials` | A sudo login kept for helper reinstalls, only when the owner chose to keep it. Sealed.                                     |
 | `enroll_tokens`      | One-time enroll commands for path A, valid 15 minutes. Token stored as SHA-256.                                            |
-| `server_states`      | One row per server: status, reasons, latest snapshot, pending updates, missed polls, host key mismatch.                    |
+| `server_states`      | One row per server: status, reasons, latest snapshot, pending updates, exposure summary, missed polls, host key mismatch.  |
 | `metric_samples`     | One row per poll, kept 48 hours.                                                                                           |
 | `metric_hourly`      | Hourly averages (disk is the hourly maximum), kept 90 days.                                                                |
 
@@ -215,16 +219,18 @@ The runner takes the run's servers in name order and cuts them into batches of t
 
 `StartRun` needs the admin role and the `actions` scope. A run targets a group or a list of servers. All its servers must belong to one owning account, which owns the run; a run that mixes own and shared servers is refused. Options come from the group (cleanups, journal size, update mode, held packages, reboot if required, batch size, failure limit) or from the request. Options in a request replace the group's, except that a batch size or failure limit left out keeps the group's. Without a group the defaults are build cache and VS Code cleanup on, journal off, journal size `200M`, update mode `security`, batch size 1, and failure limit 1. The trigger is `schedule`, `manual`, `api`, or `mcp`.
 
-The run executes in the background. Each server is locked while it is worked on. A server another run already holds is marked `skipped`; in an update run that does not count as a failure.
+The run executes in the background. Each server is locked while it is worked on, both in this process and with a PostgreSQL advisory lock held on one connection. A server another run or another control plane process already holds is marked `skipped`; in an update run that does not count as a failure.
 
 ### Updates
 
 For each server, in parallel with the rest of its batch, the runner:
 
 1. Calls `upgrade-precheck` (3 minute timeout). Problems fail the server.
-2. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
-3. Polls `upgrade-status` every 10 seconds for up to 2 hours. Connection errors are retried, because the upgrade does not depend on SSH. A host key mismatch fails the server at once.
-4. If the upgrade succeeded, the server needs a reboot, and the group has "reboot if required" on, it reboots and waits. A server marked as hosting the control plane is not rebooted here.
+2. Reads `status` and stores the failed units and unhealthy containers. A failed read fails the server before the upgrade starts. The group's checks run here too. A blocking failure stops that server before apt starts. A check dials the enrolled address, or asks the helper about one service or container. It does not follow an HTTP redirect.
+3. Calls `upgrade-start --run-id <id> --mode security|all [--hold ...]`. The helper starts the upgrade as a transient systemd unit named `esa-upgrade-<run id>`, so it keeps running when the SSH session drops.
+4. Polls `upgrade-status` every 10 seconds for up to 2 hours. Connection errors are retried, because the upgrade does not depend on SSH. A host key mismatch fails the server at once.
+5. If the upgrade succeeded, the server needs a reboot, and the group has "reboot if required" on, it reboots and waits. A server marked as hosting the control plane is not rebooted here.
+6. Reads `status` again. A failed unit that was not already failed, or a rise in unhealthy or restarting containers, fails that server. A status read that fails also fails that server. A problem that was already there does not. The same checks run again. A blocking failure fails that server. The failure limit can then stop the rest of the batch. Servers named as canaries run first, and one failed canary skips the rest even when the failure limit is higher. If the run asks for a watch, the canary checks repeat for that many seconds, up to 10 minutes, before the other servers start. A failure during the watch skips the rest. `GET /runs/{id}/report` lists each server's packages, checks, and skip reason.
 
 ### Reboots
 
@@ -234,28 +240,32 @@ For each server, in parallel with the rest of its batch, the runner:
 
 When all servers are done, the run gets a summary such as "2 ok, 1 failed, 0 skipped" (plus bytes freed for `clean`) and a status: `succeeded`, `partial` (some servers failed and some succeeded), `failed` (some failed and none succeeded), or `skipped` (nothing failed and nothing succeeded). Any failure fires a `run_failed` alert.
 
-At startup `ResumeRuns` looks for runs still marked `running`. Upgrades keep running on the servers while the control plane is down, so for an `update` run it follows the upgrade of every server still marked `running` (the batch that was in flight, which can be several servers) until all of them finish. Failures from before the restart count toward the failure limit. Then it carries on with the queued servers in new batches, or skips them if the limit is reached. Any other kind is finished at once, with its unfinished servers marked failed with "interrupted: the control plane restarted". At shutdown the control plane waits up to 20 seconds for background work.
+At startup, and every minute after that, `ResumeRuns` looks for runs still marked `running`. A run whose worker still holds the lock is left alone. Upgrades keep running on the servers while the worker is gone, so for an `update` run it asks each server still marked `running` whether that run has an upgrade. If it does, it follows that upgrade until it finishes. If the server says there is no upgrade, the install was never sent, and it starts one. A connection error is not treated as "no upgrade". Failures from before the restart count toward the failure limit. Then it carries on with the queued servers in new batches, or skips them if the limit is reached. Any other kind is finished at once, with its unfinished servers marked failed with "interrupted: the worker that started this run is gone". At shutdown the control plane waits up to 20 seconds for background work.
 
 ## Alerts and notifications
 
 Alert logic lives in `apps/esa/internal/fleet/alerts.go` and `alerts_manage.go`. Every account gets one rule per kind on first use:
 
-| Kind              | Condition                                                       | Default threshold | Default duration | Severity                         |
-| ----------------- | --------------------------------------------------------------- | ----------------- | ---------------- | -------------------------------- |
-| `disk`            | A filesystem is at or over the threshold                        | 85%               | 0                | critical at 95%, else warning    |
-| `inode`           | Inode use on a filesystem                                       | 85%               | 0                | critical at 95%, else warning    |
-| `memory`          | Memory use                                                      | 90%               | 10 minutes       | critical at 97%, else warning    |
-| `unreachable`     | The server is `unreachable`                                     |                   | 3 minutes        | critical                         |
-| `failed_unit`     | A systemd unit failed                                           |                   | 0                | warning                          |
-| `container`       | Containers are unhealthy or restarting                          |                   | 5 minutes        | warning                          |
-| `reboot_required` | The server needs a reboot                                       |                   | 7 days           | info                             |
-| `cert_expiry`     | A certificate expires within the threshold, or its check failed | 14 days           | 0                | critical at 3 days, else warning |
-| `run_failed`      | A run had a failed server                                       |                   | 0                | warning                          |
-| `host_key`        | The server presented a different host key                       |                   | 0                | critical                         |
+| Kind              | Condition                                                                                                                                              | Default threshold | Default duration | Severity                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | ---------------- | -------------------------------------------------------- |
+| `disk`            | A filesystem is at or over the threshold                                                                                                               | 85%               | 0                | critical at 95%, else warning                            |
+| `inode`           | Inode use on a filesystem                                                                                                                              | 85%               | 0                | critical at 95%, else warning                            |
+| `memory`          | Memory use                                                                                                                                             | 90%               | 10 minutes       | critical at 97%, else warning                            |
+| `unreachable`     | The server is `unreachable`                                                                                                                            |                   | 3 minutes        | critical                                                 |
+| `failed_unit`     | A systemd unit failed                                                                                                                                  |                   | 0                | warning                                                  |
+| `container`       | Containers are unhealthy or restarting                                                                                                                 |                   | 5 minutes        | warning                                                  |
+| `reboot_required` | The server needs a reboot                                                                                                                              |                   | 7 days           | info                                                     |
+| `cert_expiry`     | A certificate expires within the threshold, or its check failed                                                                                        | 14 days           | 0                | critical at 3 days, else warning                         |
+| `run_failed`      | A run had a failed server                                                                                                                              |                   | 0                | warning                                                  |
+| `host_key`        | The server presented a different host key                                                                                                              |                   | 0                | critical                                                 |
+| `exposure`        | Password login, empty passwords, root password login, no firewall, an extra uid 0 account, or `NOPASSWD ALL`. Off until an admin enables it.           |                   | 0                | warning, or critical for empty passwords and extra uid 0 |
+| `new_port`        | A socket bound to every interface that was not in the previous exposure report. Reachability is not verified. The first report only sets the baseline. |                   | 0                | warning, one notice                                      |
+| `new_key`         | An SSH key fingerprint that was not in the previous access report. The first report only sets the baseline.                                            |                   | 0                | warning, one notice                                      |
+| `security_update` | A security package has been pending for at least the threshold                                                                                         | 7 days            | 0                | warning, critical at 30 days                             |
 
 After each poll, `evaluateAlerts` compares the server's current conditions with its open alerts. A new condition opens a pending alert. A pending alert fires once its condition has lasted the rule's duration; a duration of 0 fires at once. An alert whose condition is gone resolves. A host key mismatch or an unreachable server suppresses the other server alerts. Certificate alerts are evaluated by the certificate job and belong to the account rather than a server. A `run_failed` alert is a one-off: it is stored already resolved and only sends a notification.
 
-Firing and resolving (of an alert that had fired) both send a message to every enabled channel of the account. `enqueueNotify` puts each delivery on an in-memory queue of 1000 jobs served by 4 workers, so a slow channel never holds up polling. Each delivery has 20 seconds. When the queue is full the message is dropped with a warning in the log. The "test" button sends right away instead.
+Firing and resolving (of an alert that had fired) both send a message to every enabled channel of the account. `enqueueNotify` writes a delivery row first, then asks a worker to send it. A full worker queue leaves the row queued. `DrainDeliveries` sends queued rows, retries one left in sending, and marks a delivery dead after five failures. The claim is the row's state: a second process that finds it already sending or sent does not send it again. A maintenance window skips ordinary notices for that server, its group, or the whole space. Host key changes, new SSH keys, known-exploited advisories, and changes from an approved access baseline are still sent. The "test" button sends right away instead.
 
 `apps/esa/internal/notify` supports these channel kinds:
 
@@ -268,3 +278,7 @@ Firing and resolving (of an alert that had fired) both send a message to every e
 | `email`   | SMTP to one or more recipients.                                                                                                           |
 
 All channel connections go through `netguard`, the same address policy as SSH. A failed delivery stores only an error category on the channel, because every member can see it; the detail goes to the log. Only owners can create channels, since the configuration holds credentials.
+
+## Outbound transport
+
+SSH remains the default. An outbound-only server instead gets a server-bound credential and polls `/api/v1/agent/poll` over HTTPS. PostgreSQL stores the encrypted, expiring command queue, so any control plane can receive a poll or result. `remote.Pool.Call` decodes the same helper envelope for either transport. The fleet service still checks user permissions before queueing work; a machine credential grants no user API access. Claimed tasks are never redelivered automatically. See [outbound-agent.md](outbound-agent.md).

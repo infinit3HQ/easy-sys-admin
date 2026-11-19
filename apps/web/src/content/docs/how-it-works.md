@@ -71,6 +71,7 @@ These rules are enforced in the helper, not only hidden in the board:
 - `ssh`, `sshd`, Docker, containerd, and a short list of other system units can be started or restarted, and cannot be stopped.
 - Network and firewall units are never started, stopped, or restarted from here.
 - A reboot started by a schedule skips the server that hosts the control plane.
+- There is no shell, and the board does not open one. The `esa` key cannot allocate a terminal. Work that needs a shell uses your own SSH client.
 
 The full list of actions is on the [Features](/features) page. Removing the user, the sudo rule, and the helper is in [Remove a server](/remove-a-server).
 
@@ -91,5 +92,5 @@ Passwords are hashed. Server logins you choose to keep, the space's SSH private 
 - The helper's protocol version is reported and not checked. A new helper action needs a reinstall on older servers.
 - There is no step that re-encrypts old secrets when you rotate `ESA_MASTER_KEY`. Keep old keys in the list.
 - The audit log is not pruned.
-- There is no agent for servers that cannot accept inbound SSH.
+- Servers without inbound SSH can use the [outbound agent](/outbound-agent).
 - Logs are not followed live. The poll interval is fixed at one minute.

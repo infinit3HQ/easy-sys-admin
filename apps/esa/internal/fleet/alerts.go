@@ -26,6 +26,10 @@ const (
 	AlertCertExpiry     AlertKind = "cert_expiry"
 	AlertRunFailed      AlertKind = "run_failed"
 	AlertHostKey        AlertKind = "host_key"
+	AlertExposure       AlertKind = "exposure"
+	AlertNewPort        AlertKind = "new_port"
+	AlertNewKey         AlertKind = "new_key"
+	AlertSecurityUpdate AlertKind = "security_update"
 )
 
 // defaultRules are created for every account on first use.
@@ -40,6 +44,10 @@ var defaultRules = []store.AlertRule{
 	{Kind: string(AlertCertExpiry), Threshold: 14},
 	{Kind: string(AlertRunFailed)},
 	{Kind: string(AlertHostKey)},
+	{Kind: string(AlertExposure)},
+	{Kind: string(AlertNewPort)},
+	{Kind: string(AlertNewKey)},
+	{Kind: string(AlertSecurityUpdate), Threshold: 7},
 }
 
 func (s *Service) rules(ctx context.Context, accountID int64) (map[AlertKind]store.AlertRule, error) {
@@ -50,7 +58,10 @@ func (s *Service) rules(ctx context.Context, accountID int64) (map[AlertKind]sto
 	if len(rows) < len(defaultRules) {
 		now := s.now()
 		for _, d := range defaultRules {
-			d.AccountID, d.Enabled, d.CreatedAt, d.UpdatedAt = accountID, true, now, now
+			// Password login and a missing firewall are common. The rule
+			// stays off until an admin turns it on.
+			enabled := d.Kind != string(AlertExposure)
+			d.AccountID, d.Enabled, d.CreatedAt, d.UpdatedAt = accountID, enabled, now, now
 			s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Omit(clause.Associations).Create(&d)
 		}
 		if err := s.db.WithContext(ctx).Where("account_id = ?", accountID).Find(&rows).Error; err != nil {
@@ -89,7 +100,35 @@ func (s *Service) evaluateAlerts(ctx context.Context, srv store.Server, state *s
 		state = &st
 	}
 	conds := serverConditions(srv, state, rules)
-	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool { return k != AlertCertExpiry && k != AlertRunFailed })
+	if !state.HostKeyMismatch && state.Status != string(StatusUnreachable) {
+		var seen map[string]time.Time
+		if state.SecuritySeen.Decode(&seen) == nil && rules[AlertSecurityUpdate].Enabled {
+			if c, ok := securityUpdateCondition(srv.Name, seen, s.now(), rules[AlertSecurityUpdate].Threshold); ok {
+				conds = append(conds, c)
+			}
+		}
+	}
+	blind := blindKinds(state)
+	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind) bool {
+		return k != AlertCertExpiry && k != AlertRunFailed && !blind[k]
+	})
+}
+
+// blindKinds are the security alert kinds this check could not judge: the
+// server did not answer, its host key changed, there is no snapshot yet,
+// or the exposure report is not ready. Their alerts are left as they are,
+// because missing data must never resolve a finding.
+func blindKinds(st *store.ServerState) map[AlertKind]bool {
+	blind := map[AlertKind]bool{}
+	if st.HostKeyMismatch || st.Status == string(StatusUnreachable) || len(st.Snapshot) == 0 {
+		blind[AlertSecurityUpdate], blind[AlertExposure] = true, true
+		return blind
+	}
+	var ex Exposure
+	if st.Exposure.Decode(&ex) != nil || !ex.Ready {
+		blind[AlertExposure] = true
+	}
+	return blind
 }
 
 func serverConditions(srv store.Server, st *store.ServerState, rules map[AlertKind]store.AlertRule) []condition {
@@ -134,7 +173,44 @@ func serverConditions(srv store.Server, st *store.ServerState, rules map[AlertKi
 	if snap.RebootRequired {
 		add(AlertRebootRequired, "", "info", "a reboot is required")
 	}
+	var ex Exposure
+	if st.Exposure.Decode(&ex) == nil {
+		for _, c := range exposureConditions(ex) {
+			add(c.kind, c.subject, c.severity, c.message)
+		}
+	}
 	return out
+}
+
+// securityUpdateCondition reports security packages that have been pending
+// for at least days. days 0 means any pending security update.
+func securityUpdateCondition(server string, seen map[string]time.Time, now time.Time, days float64) (condition, bool) {
+	limit := time.Duration(days * float64(24*time.Hour))
+	var oldestName string
+	var oldest time.Time
+	n := 0
+	for name, at := range seen {
+		if at.IsZero() || now.Sub(at) < limit {
+			continue
+		}
+		n++
+		if oldest.IsZero() || at.Before(oldest) {
+			oldest, oldestName = at, name
+		}
+	}
+	if n == 0 {
+		return condition{}, false
+	}
+	age := int(now.Sub(oldest).Hours() / 24)
+	sev := "warning"
+	if age >= 30 {
+		sev = "critical"
+	}
+	msg := fmt.Sprintf("%s: security update %s has been waiting %d days", server, oldestName, age)
+	if n > 1 {
+		msg = fmt.Sprintf("%s: %d security updates have been waiting, the oldest is %s for %d days", server, n, oldestName, age)
+	}
+	return condition{kind: AlertSecurityUpdate, subject: "", severity: sev, message: msg}, true
 }
 
 func severityFor(p, critical float64) string {
@@ -175,8 +251,9 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 		if !still {
 			al.ResolvedAt = &now
 			s.db.WithContext(ctx).Model(al).Update("resolved_at", now)
+			s.resolveSecurityIncident(ctx, accountID, al)
 			if al.FiredAt != nil {
-				s.notify(ctx, accountID, Message{Title: "Resolved: " + al.Message, Body: al.Message, Severity: al.Severity, Resolved: true, URL: s.alertURL(al)})
+				s.notify(ctx, accountID, s.alertMessage(al, "Resolved: "+al.Message, true))
 			}
 			continue
 		}
@@ -186,7 +263,8 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 			updates["fired_at"] = now
 			updates["notified"] = true
 			al.Message, al.Severity = c.message, c.severity
-			s.notify(ctx, accountID, Message{Title: c.message, Body: c.message, Severity: c.severity, URL: s.alertURL(al)})
+			s.noteSecurityIncident(ctx, accountID, al)
+			s.notify(ctx, accountID, s.alertMessage(al, c.message, false))
 		}
 		s.db.WithContext(ctx).Model(al).Updates(updates)
 	}
@@ -206,8 +284,39 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 			continue
 		}
 		if al.FiredAt != nil {
-			s.notify(ctx, accountID, Message{Title: c.message, Body: c.message, Severity: c.severity, URL: s.alertURL(&al)})
+			s.noteSecurityIncident(ctx, accountID, &al)
+			s.notify(ctx, accountID, s.alertMessage(&al, c.message, false))
 		}
+	}
+}
+
+func (s *Service) alertMessage(al *store.Alert, title string, resolved bool) Message {
+	msg := Message{Title: title, Body: al.Message, Severity: al.Severity, Resolved: resolved, Kind: al.Kind, URL: s.alertURL(al)}
+	if al.ServerID != nil {
+		msg.ServerID = *al.ServerID
+	}
+	return msg
+}
+
+func (s *Service) noteSecurityIncident(ctx context.Context, accountID int64, al *store.Alert) {
+	if al.ServerID == nil {
+		return
+	}
+	switch AlertKind(al.Kind) {
+	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
+		s.openIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject, al.Message, true)
+	}
+}
+
+// resolveSecurityIncident resolves the notice of a security alert whose
+// condition a fresh check no longer sees.
+func (s *Service) resolveSecurityIncident(ctx context.Context, accountID int64, al *store.Alert) {
+	if al.ServerID == nil {
+		return
+	}
+	switch AlertKind(al.Kind) {
+	case AlertHostKey, AlertSecurityUpdate, AlertExposure:
+		s.resolveIncident(ctx, accountID, *al.ServerID, al.Kind, al.Subject)
 	}
 }
 
@@ -238,5 +347,5 @@ func (s *Service) alertRunFailed(ctx context.Context, run store.Run) {
 	}
 	s.db.WithContext(ctx).Omit(clause.Associations).Create(&al)
 	s.notify(ctx, run.AccountID, Message{Title: al.Message, Body: al.Message, Severity: "warning",
-		URL: s.publicURL.JoinPath("/app/runs", strconv.FormatInt(run.ID, 10)).String()})
+		Kind: al.Kind, URL: s.publicURL.JoinPath("/app/runs", strconv.FormatInt(run.ID, 10)).String()})
 }

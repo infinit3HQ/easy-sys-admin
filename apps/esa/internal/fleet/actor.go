@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"slices"
+	"time"
 )
 
 // Role is a user's permission level inside one account.
@@ -64,6 +65,9 @@ type Actor struct {
 	Scopes []Scope
 	// TokenID is set for API tokens, for the audit log.
 	TokenID int64
+	// SignedInAt is when this browser session was created. Nil for tokens,
+	// tests, and scheduled work. Plan approval requires it to be recent.
+	SignedInAt *time.Time
 }
 
 // System is the actor for scheduled work.
@@ -94,4 +98,10 @@ func WithActor(ctx context.Context, a Actor) context.Context {
 func ActorFrom(ctx context.Context) (Actor, bool) {
 	a, ok := ctx.Value(actorKey{}).(Actor)
 	return a, ok
+}
+
+// isPerson is true for a person signed in to the web app. API and MCP
+// tokens and scheduled work are not people, even with admin scope.
+func (a Actor) isPerson() bool {
+	return a.TokenID == 0 && a.UserID != 0 && a.Source == SourceWeb
 }

@@ -8,6 +8,7 @@ import (
 	"net/mail"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -56,6 +57,19 @@ type Config struct {
 	MetricsHourlyRetention time.Duration
 	// Metrics serves GET /metrics in the Prometheus text format.
 	Metrics bool
+	// AdvisoryFeed is ESA_ADVISORY_FEED, a local file. Empty leaves matching off.
+	AdvisoryFeed string
+	// Scanner is ESA_SCANNER, the absolute path of a Grype binary on this
+	// host. When set, esa updates its database daily and scans each
+	// server's SBOM locally. Empty leaves scanning to manual imports.
+	Scanner string
+	// AuditRetention is ESA_AUDIT_RETENTION. Zero keeps the audit log until
+	// the account is deleted. Hosted installs leave it zero.
+	AuditRetention  time.Duration
+	ReportRetention time.Duration
+	// AuditHoldUntil is ESA_AUDIT_HOLD_UNTIL. While it is in the future,
+	// pruning deletes nothing. Zero means no hold.
+	AuditHoldUntil time.Time
 
 	Auth AuthConfig
 	// SMTP sends confirmation and password-reset mail. Zero value means
@@ -250,6 +264,32 @@ func parseLimits(cfg *Config, get func(string, string) string) error {
 	}
 	if cfg.Metrics, err = parseBool(get("ESA_METRICS", "true")); err != nil {
 		return fmt.Errorf("ESA_METRICS: %w", err)
+	}
+	cfg.AdvisoryFeed = get("ESA_ADVISORY_FEED", "")
+	if cfg.Scanner = get("ESA_SCANNER", ""); cfg.Scanner != "" {
+		if !filepath.IsAbs(cfg.Scanner) {
+			return fmt.Errorf("ESA_SCANNER: must be an absolute path")
+		}
+		if fi, err := os.Stat(cfg.Scanner); err != nil || fi.IsDir() || fi.Mode()&0o111 == 0 {
+			return fmt.Errorf("ESA_SCANNER: %s is not an executable file", cfg.Scanner)
+		}
+	}
+	if s := get("ESA_AUDIT_RETENTION", ""); s != "" {
+		if cfg.AuditRetention, err = parseDuration(s, 24*time.Hour, 0); err != nil {
+			return fmt.Errorf("ESA_AUDIT_RETENTION: %w", err)
+		}
+	}
+	if value := get("ESA_REPORT_RETENTION", ""); value != "" {
+		if cfg.ReportRetention, err = parseDuration(value, 24*time.Hour, 0); err != nil {
+			return fmt.Errorf("ESA_REPORT_RETENTION: %w", err)
+		}
+	}
+	if s := get("ESA_AUDIT_HOLD_UNTIL", ""); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			return fmt.Errorf("ESA_AUDIT_HOLD_UNTIL: want a UTC time like 2026-12-01T00:00:00Z, got %q", s)
+		}
+		cfg.AuditHoldUntil = t.UTC()
 	}
 	return nil
 }

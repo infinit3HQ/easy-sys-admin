@@ -12,19 +12,42 @@ func Models() []any {
 		&Membership{},
 		&Session{},
 		&AuditEntry{},
+		&RetentionRun{},
 		&AccountKey{},
 		&Group{},
 		&Server{},
 		&ServerCredential{},
 		&EnrollToken{},
 		&ServerState{},
+		&ProbeObservation{},
+		&AgentCredential{}, &AgentTask{},
 		&MetricSample{},
 		&MetricHourly{},
 		&Run{},
 		&RunServer{},
+		&FixPlan{},
 		&AlertRule{},
 		&Alert{},
+		&SecurityIncident{},
+		&IncidentEvent{},
+		&HeldWarning{},
+		&AccessIdentity{},
+		&KeyBaselineVersion{},
+		&ScanImport{},
+		&KeyOccurrence{},
+		&KeyLabel{},
+		&KeyBaseline{},
+		&AccessBaseline{},
+		&MaintenanceWindow{},
 		&NotifyChannel{},
+		&NotifyDelivery{},
+		&RateWindow{},
+		&SignInHit{},
+		&JobLease{},
+		&DatasetPolicy{},
+		&IngestedRecovery{},
+		&KeyException{},
+		&VulnException{},
 		&CertTarget{},
 		&APIToken{},
 		&Invite{},
@@ -37,8 +60,100 @@ func Models() []any {
 	}
 }
 
-// Account is a space that owns a fleet: a user's personal space or an
-// organization.
+// RateWindow counts one action for one account during the current minute.
+// Two control plane processes share the row, so each does not get its own quota.
+type RateWindow struct {
+	Key         string    `gorm:"primaryKey;size:80"`
+	WindowStart time.Time `gorm:"not null"`
+	N           int       `gorm:"not null"`
+}
+
+// JobLease is the right to run one background job. Until is when another
+// process may take it. The holder renews it by claiming again.
+type JobLease struct {
+	Name   string    `gorm:"primaryKey;size:40"`
+	Holder string    `gorm:"not null;size:40"`
+	Until  time.Time `gorm:"not null"`
+}
+
+func (JobLease) TableName() string { return "job_leases" }
+
+// SignInHit is one counted auth attempt: a failed password sign-in, a sign-up,
+// or a mail send. Rows older than an hour are deleted. Every control plane
+// process counts the same rows.
+type SignInHit struct {
+	ID  int64     `gorm:"primaryKey"`
+	Key string    `gorm:"not null;size:300;index"`
+	At  time.Time `gorm:"not null;index"`
+}
+
+// DatasetPolicy is how old a named backup dataset may be. It does not run
+// a backup. A dataset with no policy is not current.
+type DatasetPolicy struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;uniqueIndex:dataset_policies_account_name,priority:1"`
+	Name        string    `gorm:"not null;size:80;uniqueIndex:dataset_policies_account_name,priority:2"`
+	MaxAgeHours int       `gorm:"not null"`
+	CreatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// IngestedRecovery is one backup result sent to the API. A row is not
+// updated. The same idempotency key returns the first row.
+type IngestedRecovery struct {
+	ID             int64  `gorm:"primaryKey"`
+	AccountID      int64  `gorm:"not null;uniqueIndex:ingested_recovery_key,priority:1"`
+	ServerID       int64  `gorm:"not null;index"`
+	IdempotencyKey string `gorm:"not null;size:80;uniqueIndex:ingested_recovery_key,priority:2"`
+	Dataset        string `gorm:"not null;size:80"`
+	Tool           string `gorm:"not null;size:20"`
+	Snapshot       string `gorm:"not null;default:'';size:80"`
+	BackupState    string `gorm:"not null;size:20"`
+	BackupAt       *time.Time
+	CheckKind      string `gorm:"not null;default:'none';size:20"`
+	CheckState     string `gorm:"not null;default:'unknown';size:20"`
+	CheckAt        *time.Time
+	RestoreState   string    `gorm:"not null;default:'not run';size:20"`
+	SmokeState     string    `gorm:"not null;default:'not run';size:20"`
+	ReceivedAt     time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// KeyException says one fingerprint on one login is expected until Until.
+// It does not remove the key and does not mean access was revoked.
+type KeyException struct {
+	ID          int64     `gorm:"primaryKey"`
+	AccountID   int64     `gorm:"not null;index"`
+	ServerID    int64     `gorm:"not null;uniqueIndex:key_exceptions_server_user_fp,priority:1"`
+	User        string    `gorm:"not null;size:64;uniqueIndex:key_exceptions_server_user_fp,priority:2"`
+	Fingerprint string    `gorm:"not null;size:120;uniqueIndex:key_exceptions_server_user_fp,priority:3"`
+	Until       time.Time `gorm:"not null"`
+	Reason      string    `gorm:"not null;size:200"`
+	CreatedAt   time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
+// VulnException sets one advisory for one package aside until Until.
+// The match stays in the scan. An exception is not a fix.
+type VulnException struct {
+	ID         int64     `gorm:"primaryKey"`
+	AccountID  int64     `gorm:"not null;index"`
+	ServerID   int64     `gorm:"not null;uniqueIndex:vuln_exceptions_key,priority:1"`
+	AdvisoryID string    `gorm:"not null;size:40;uniqueIndex:vuln_exceptions_key,priority:2"`
+	Package    string    `gorm:"not null;size:80;uniqueIndex:vuln_exceptions_key,priority:3"`
+	Until      time.Time `gorm:"not null"`
+	Reason     string    `gorm:"not null;size:200"`
+	CreatedAt  time.Time `gorm:"not null"`
+
+	Account Account `gorm:"constraint:OnDelete:CASCADE"`
+	Server  Server  `gorm:"constraint:OnDelete:CASCADE"`
+}
+
 // Every server, group, and run belongs to one account.
 type Account struct {
 	ID   int64  `gorm:"primaryKey"`
@@ -52,6 +167,16 @@ type Account struct {
 	// members with the admin role and those with the viewer role.
 	AdminTeamName  string `gorm:"not null;size:100;default:'Admins'"`
 	ViewerTeamName string `gorm:"not null;size:100;default:'Viewers'"`
+	// DigestAt is when the Monday summary was last sent for this space.
+	DigestAt *time.Time
+	// WarningDelivery is "immediate" (each warning is sent on its own) or
+	// "daily" (warnings wait for one summary at WarningHour in
+	// WarningTimezone). Critical notices are always sent at once.
+	WarningDelivery string `gorm:"not null;default:'immediate';check:accounts_warning_delivery_check,warning_delivery IN ('immediate','daily')"`
+	WarningHour     int    `gorm:"not null;default:8"`
+	WarningTimezone string `gorm:"not null;default:'UTC'"`
+	// WarningDigestAt is when the last daily warning summary was claimed.
+	WarningDigestAt *time.Time
 
 	PersonalUser *User `gorm:"foreignKey:PersonalOf;constraint:OnDelete:CASCADE"`
 }
@@ -135,14 +260,15 @@ type Session struct {
 
 // AuditEntry records who did what, from which front door.
 type AuditEntry struct {
-	ID        int64     `gorm:"primaryKey"`
-	AccountID *int64    `gorm:"index:audit_log_account_time,priority:1"`
-	UserID    *int64    `gorm:"index"`
-	Action    string    `gorm:"not null"`
-	Target    string    `gorm:"not null;default:''"`
-	Detail    string    `gorm:"type:jsonb;not null;default:'{}'"`
-	Source    string    `gorm:"not null;check:audit_log_source_check,source IN ('web','api','mcp','system')"`
-	CreatedAt time.Time `gorm:"not null;index:audit_log_account_time,priority:2,sort:desc"`
+	ID        int64  `gorm:"primaryKey"`
+	AccountID *int64 `gorm:"index:audit_log_account_time,priority:1"`
+	UserID    *int64 `gorm:"index"`
+	Action    string `gorm:"not null"`
+	Target    string `gorm:"not null;default:''"`
+	Detail    string `gorm:"type:jsonb;not null;default:'{}'"`
+	Source    string `gorm:"not null;check:audit_log_source_check,source IN ('web','api','mcp','system')"`
+	// audit_log_created_at lets the prune find old rows without a full scan.
+	CreatedAt time.Time `gorm:"not null;index:audit_log_account_time,priority:2,sort:desc;index:audit_log_created_at"`
 
 	Account *Account `gorm:"constraint:OnDelete:CASCADE"`
 	User    *User    `gorm:"constraint:OnDelete:SET NULL"`
@@ -150,6 +276,17 @@ type AuditEntry struct {
 
 // TableName keeps the table name singular, as "audit_log" reads better than "audit_entries".
 func (AuditEntry) TableName() string { return "audit_log" }
+
+// RetentionRun records one install-wide prune. It is not an audit row, so the
+// same run cannot delete its own ledger entry.
+type RetentionRun struct {
+	ID        int64     `gorm:"primaryKey"`
+	Kind      string    `gorm:"not null"`
+	Cutoff    time.Time `gorm:"not null"`
+	Eligible  int64     `gorm:"not null"`
+	Deleted   int64     `gorm:"not null"`
+	CreatedAt time.Time `gorm:"not null"`
+}
 
 // OptionalID turns 0 into NULL for optional foreign keys.
 func OptionalID(id int64) *int64 {

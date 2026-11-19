@@ -47,6 +47,9 @@ func (s *Store) postMigrate(ctx context.Context) error {
 	if err := s.db.WithContext(ctx).Exec(`DROP TABLE IF EXISTS schema_flags`).Error; err != nil {
 		return err
 	}
+	if err := s.installPlanApprovalGuard(ctx); err != nil {
+		return err
+	}
 	// One row per existing user, so a provider sign-in still finds them
 	// after identities became their own table.
 	return s.db.WithContext(ctx).Exec(`
@@ -58,4 +61,61 @@ func (s *Store) postMigrate(ctx context.Context) error {
 			WHERE i.issuer = u.issuer AND i.subject = u.subject
 		)
 	`).Error
+}
+
+// Keep two-person approvals enforced while an older control plane shares
+// the database. Older binaries do not know the new approval columns.
+func (s *Store) installPlanApprovalGuard(ctx context.Context) error {
+	return s.db.WithContext(ctx).Exec(`
+ CREATE OR REPLACE FUNCTION esa_plan_approval_guard() RETURNS trigger AS $$
+ BEGIN
+  IF EXISTS (
+   SELECT 1 FROM groups g WHERE g.account_id = NEW.account_id AND g.two_approvers AND (
+    g.id::text = NEW.body->>'groupId' OR EXISTS (
+     SELECT 1 FROM servers srv WHERE srv.account_id = NEW.account_id AND srv.group_id = g.id
+      AND ((NEW.body->'serverIds') @> jsonb_build_array(srv.id) OR (NEW.body->'pinnedServerIds') @> jsonb_build_array(srv.id))
+    )
+   )
+  ) THEN NEW.approvals_required := GREATEST(NEW.approvals_required, 2); END IF;
+  IF NEW.status IN ('approved','executing') AND NEW.approvals_required >= 2 THEN
+   IF NEW.approved_by IS NULL OR NEW.second_approved_by IS NULL OR NEW.approved_by = NEW.second_approved_by THEN
+    RAISE EXCEPTION 'two distinct admin approvals are required' USING ERRCODE = '23514';
+   END IF;
+   IF (SELECT count(*) FROM memberships WHERE account_id = NEW.account_id AND user_id IN (NEW.approved_by,NEW.second_approved_by) AND role IN ('owner','admin')) <> 2 THEN
+    RAISE EXCEPTION 'both approvers must remain admins' USING ERRCODE = '23514';
+   END IF;
+  END IF;
+  RETURN NEW;
+ END;
+ $$ LANGUAGE plpgsql;
+ CREATE OR REPLACE TRIGGER esa_plan_approval_guard
+ BEFORE INSERT OR UPDATE ON fix_plans
+ FOR EACH ROW EXECUTE FUNCTION esa_plan_approval_guard();
+
+ -- An older binary cannot identify two-admin policies. Refuse its move or
+ -- delete rather than allowing it to weaken a policy it does not understand.
+ -- Current browser writes set a transaction-local marker after permission checks.
+ CREATE OR REPLACE FUNCTION esa_two_approver_membership_guard() RETURNS trigger AS $$
+ DECLARE from_two boolean; to_two boolean;
+ BEGIN
+  IF current_setting('esa.person_write',true) = 'true' THEN
+   IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+   IF NOT EXISTS (SELECT 1 FROM accounts WHERE id = OLD.account_id) THEN RETURN OLD; END IF;
+   IF OLD.two_approvers THEN RAISE EXCEPTION 'a person must delete a two-admin group' USING ERRCODE = '23514'; END IF;
+   RETURN OLD;
+  END IF;
+  IF OLD.group_id IS NOT DISTINCT FROM NEW.group_id THEN RETURN NEW; END IF;
+  SELECT two_approvers INTO from_two FROM groups WHERE id = OLD.group_id FOR SHARE;
+  IF COALESCE(from_two,false) THEN
+   SELECT two_approvers AND plan_required INTO to_two FROM groups WHERE id = NEW.group_id AND account_id = NEW.account_id FOR SHARE;
+   IF NOT COALESCE(to_two,false) THEN RAISE EXCEPTION 'a person must lower the required approvals when moving a server' USING ERRCODE = '23514'; END IF;
+  END IF;
+  RETURN NEW;
+ END;
+ $$ LANGUAGE plpgsql;
+ CREATE OR REPLACE TRIGGER esa_two_approver_server_move_guard BEFORE UPDATE OF group_id ON servers FOR EACH ROW EXECUTE FUNCTION esa_two_approver_membership_guard();
+ CREATE OR REPLACE TRIGGER esa_two_approver_group_delete_guard BEFORE DELETE ON groups FOR EACH ROW EXECUTE FUNCTION esa_two_approver_membership_guard();
+ `).Error
 }

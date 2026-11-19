@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
+import { orNotFound } from '#/lib/api'
 import { q } from '#/lib/queries'
 import { GroupSharing } from '#/components/group-sharing'
 import { Notice } from '#/components/kit'
@@ -8,7 +9,7 @@ import { Route as GroupRoute } from './route'
 
 export const Route = createFileRoute('/app/groups/$groupId/sharing')({
   loader: ({ context, params }) =>
-    context.queryClient.ensureQueryData(q.group(params.groupId)),
+    orNotFound(context.queryClient.ensureQueryData(q.group(params.groupId))),
   head: ({ loaderData }) => ({
     meta: [
       {

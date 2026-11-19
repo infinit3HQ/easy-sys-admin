@@ -2,6 +2,8 @@ package fleet
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"sync"
 	"time"
@@ -16,6 +18,9 @@ import (
 const (
 	pollTimeout  = 45 * time.Second
 	updatesEvery = 6 * time.Hour
+	// updatesStaleAfter is two missed update checks. A list older than this,
+	// or one that has never been collected, is not the current set.
+	updatesStaleAfter = 2 * updatesEvery
 	// Defaults of ESA_POLL_CONCURRENCY, ESA_METRICS_RAW_RETENTION, and
 	// ESA_METRICS_HOURLY_RETENTION. The Service holds the settings.
 	defaultPollConcurrency = 64
@@ -29,6 +34,9 @@ const (
 // time. Servers that keep rejecting esa's login, and servers that stopped
 // answering, are polled less often (see pollBackoff).
 func (s *Service) PollAll(ctx context.Context) {
+	if !s.claimJob(ctx, "poll", 70*time.Second) {
+		return
+	}
 	start := s.startCycle()
 	var ids []int64
 	err := s.db.WithContext(ctx).Model(&store.Server{}).
@@ -40,6 +48,7 @@ func (s *Service) PollAll(ctx context.Context) {
 		s.log.Error("list servers to poll", "err", err)
 		return
 	}
+	s.exposureBudget.Store(exposurePerCycle)
 	sem := make(chan struct{}, s.pollConcurrency)
 	var wg sync.WaitGroup
 	skipped, deferred := 0, 0
@@ -74,7 +83,7 @@ loop:
 			defer wg.Done()
 			defer func() { <-sem }()
 			began := time.Now()
-			ok := s.pollServer(ctx, id)
+			ok := s.pollServer(ctx, id, true)
 			s.recordPoll(ok, time.Since(began))
 		}(id)
 	}
@@ -87,13 +96,50 @@ loop:
 	}
 }
 
+// claimJob takes or renews a background job. A second process gets false
+// until the current holder's time has passed. A nil database always claims,
+// so a test with no database still runs.
+func (s *Service) claimJob(ctx context.Context, name string, ttl time.Duration) bool {
+	if s.db == nil {
+		return true
+	}
+	now := s.now()
+	res := s.db.WithContext(ctx).Exec(`
+		INSERT INTO job_leases (name, holder, until) VALUES (?, ?, ?)
+		ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, until = EXCLUDED.until
+		WHERE job_leases.until < ? OR job_leases.holder = EXCLUDED.holder`,
+		name, s.holder(), now.Add(ttl), now)
+	if res.Error != nil {
+		s.log.Error("claim job", "job", name, "err", res.Error)
+		return false
+	}
+	return res.RowsAffected == 1
+}
+
+// UpdatesAreStale reports whether a package list is too old to show as current.
+// The list is collected every 6 hours, so two missed checks is 12 hours.
+// A list that was never collected is stale.
+func UpdatesAreStale(at *time.Time, now time.Time) bool {
+	return at == nil || at.IsZero() || now.Sub(*at) > updatesStaleAfter
+}
+
+func (s *Service) holder() string {
+	s.holderOnce.Do(func() {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		s.holderID = hex.EncodeToString(b[:])
+	})
+	return s.holderID
+}
+
 // PollServer collects one status snapshot, stores it, and evaluates alerts.
 func (s *Service) PollServer(ctx context.Context, serverID int64) {
-	s.pollServer(ctx, serverID)
+	s.pollServer(ctx, serverID, false)
 }
 
 // pollServer is PollServer. It reports whether the server answered.
-func (s *Service) pollServer(ctx context.Context, serverID int64) bool {
+// budgeted limits exposure collection to this poll cycle's cap.
+func (s *Service) pollServer(ctx context.Context, serverID int64, budgeted bool) bool {
 	var srv store.Server
 	if err := s.db.WithContext(ctx).Where("id = ?", serverID).Take(&srv).Error; err != nil {
 		return false
@@ -177,11 +223,16 @@ func (s *Service) pollServer(ctx context.Context, serverID int64) bool {
 	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Omit(clause.Associations).Create(&sample).Error; err != nil {
 		s.log.Warn("store metric sample", "server_id", serverID, "err", err)
 	}
-	s.evaluateAlerts(ctx, srv, &state)
-
+	s.maybeExposure(ctx, srv, &state, budgeted)
 	if state.UpdatesAt == nil || now.Sub(*state.UpdatesAt) > updatesEvery {
-		s.RefreshUpdates(ctx, serverID, false)
+		if s.RefreshUpdates(ctx, serverID, false) == nil {
+			var fresh store.ServerState
+			if s.db.WithContext(ctx).Select("updates", "security_seen").Where("server_id = ?", serverID).Take(&fresh).Error == nil {
+				state.Updates, state.SecuritySeen = fresh.Updates, fresh.SecuritySeen
+			}
+		}
 	}
+	s.evaluateAlerts(ctx, srv, &state)
 	return true
 }
 
@@ -247,8 +298,32 @@ func (s *Service) RefreshUpdates(ctx context.Context, serverID int64, refresh bo
 		return s.hostErr(ctx, srv, err)
 	}
 	now := s.now()
+	var state store.ServerState
+	_ = s.db.WithContext(ctx).Select("security_seen").Where("server_id = ?", serverID).Take(&state).Error
+	var prev map[string]time.Time
+	_ = state.SecuritySeen.Decode(&prev)
 	return s.db.WithContext(ctx).Model(&store.ServerState{}).Where("server_id = ?", serverID).
-		Updates(map[string]any{"updates": store.MustJSON(upd), "updates_at": now}).Error
+		Updates(map[string]any{
+			"updates": store.MustJSON(upd), "updates_at": now,
+			"security_seen": store.MustJSON(mergeSecuritySeen(prev, upd, now)),
+		}).Error
+}
+
+// mergeSecuritySeen keeps the first time each pending security package was
+// seen and drops packages that are no longer pending security updates.
+func mergeSecuritySeen(prev map[string]time.Time, upd proto.PendingUpdates, now time.Time) map[string]time.Time {
+	next := map[string]time.Time{}
+	for _, p := range upd.Packages {
+		if !p.Security {
+			continue
+		}
+		if t, ok := prev[p.Name]; ok && !t.IsZero() {
+			next[p.Name] = t
+			continue
+		}
+		next[p.Name] = now
+	}
+	return next
 }
 
 // hostErr records a host key mismatch and converts helper errors into
@@ -266,6 +341,8 @@ func (s *Service) hostErr(ctx context.Context, srv store.Server, err error) erro
 			return invalid("request", "%s", he.Message)
 		case proto.CodeRefused, proto.CodeBusy:
 			return &ConflictError{Message: srv.Name + ": " + he.Message}
+		case proto.CodeIncompatible:
+			return &ConflictError{Code: proto.CodeIncompatible, Message: srv.Name + ": " + he.Message}
 		}
 	}
 	return &UnavailableError{Message: srv.Name + ": " + err.Error()}
@@ -273,6 +350,9 @@ func (s *Service) hostErr(ctx context.Context, srv store.Server, err error) erro
 
 // Rollup averages raw samples into hourly rows and applies retention.
 func (s *Service) Rollup(ctx context.Context) {
+	if !s.claimJob(ctx, "rollup", 30*time.Minute) {
+		return
+	}
 	db := s.db.WithContext(ctx)
 	err := db.Exec(`
 		INSERT INTO metric_hourly (server_id, hour, cpu_percent, mem_percent, disk_percent, load1, samples)

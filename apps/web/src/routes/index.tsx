@@ -302,7 +302,7 @@ const watches = [
   ],
   [
     'Security',
-    'Listening ports and their processes, firewall, CrowdSec and fail2ban, unattended-upgrades.',
+    'Listening ports and their processes, the firewall, and unattended-upgrades. CrowdSec and fail2ban appear only if that server has them.',
   ],
   [
     'Alerts',
