@@ -1,0 +1,3 @@
+# Maps other addresses to one identity, so the sign-off check in
+# scripts/check-dco.sh accepts commits GitHub writes with a noreply address.
+INFINITY <nirajnimantha@gmail.com> <61787989+Niraj-Dilshan@users.noreply.github.com>
