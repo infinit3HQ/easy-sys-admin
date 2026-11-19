@@ -129,7 +129,7 @@ A token works in the space where it was created. Demoting or removing a member l
 
 ## Audit log
 
-The activity page is the audit log. Each change is recorded with the actor and a short detail. Calls are marked web, API, MCP, or system. The log is not pruned. It does not contain passwords, private keys, or token secrets.
+The activity page is the audit log. Each change is recorded with the actor and a short detail. Calls are marked web, API, MCP, or system. The log is kept until the account is deleted, unless the install sets `ESA_AUDIT_RETENTION`. It does not contain passwords, private keys, or token secrets.
 
 ## Responsibility and two-admin approvals
 

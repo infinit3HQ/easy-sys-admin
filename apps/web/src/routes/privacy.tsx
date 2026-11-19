@@ -5,7 +5,7 @@ import { siteOrigin } from '#/lib/origin'
 import { loadSeo } from '#/lib/seo'
 
 const description =
-  'Privacy Policy for the hosted Easy Sys Admin beta at easysysadmin.app. Draft, pending lawyer review.'
+  'Privacy Policy for the hosted Easy Sys Admin beta at easysysadmin.app.'
 
 export const Route = createFileRoute('/privacy')({
   loader: () => loadSeo(),

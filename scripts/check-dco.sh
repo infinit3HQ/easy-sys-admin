@@ -1,6 +1,6 @@
 #!/bin/sh
 # Fail unless every non-merge commit in BASE..HEAD has a Signed-off-by trailer
-# for its author. Merge commits are skipped: a merge of the base branch does
+# for its author, or for the author's entry in .mailmap. Merge commits are skipped: a merge of the base branch does
 # not certify new work, and GitHub adds its own merge commit while testing a
 # pull request. That commit has no Signed-off-by line.
 # BASE defaults to the GitHub pull request base. Locally, pass the base sha as $1.
@@ -17,8 +17,11 @@ missing=0
 commits=$(git rev-list --no-merges --reverse "$base"..HEAD)
 for sha in $commits; do
   author=$(git log -1 --format='%an <%ae>' "$sha")
-  body=$(git log -1 --format='%B' "$sha")
-  if printf '%s\n' "$body" | git interpret-trailers --parse | grep -Fqx "Signed-off-by: $author"; then
+  # The same author after .mailmap, which lists other addresses of one person,
+  # such as the noreply address GitHub uses for web merges.
+  mapped=$(git log -1 --format='%aN <%aE>' "$sha")
+  trailers=$(git log -1 --format='%B' "$sha" | git interpret-trailers --parse)
+  if printf '%s\n' "$trailers" | grep -Fqx -e "Signed-off-by: $author" -e "Signed-off-by: $mapped"; then
     continue
   fi
   echo "Commit $sha by $author has no Signed-off-by trailer for that author." >&2
