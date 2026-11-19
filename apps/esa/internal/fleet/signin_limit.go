@@ -35,8 +35,10 @@ func (s *Service) AuthHit(key string) {
 	}
 }
 
-// signInLockID serializes sign-in accounting across control planes.
-const signInLockID int64 = 7340011
+// signInGate bounds how many sign-in attempts in this process wait on the
+// database at once, so a flood of attempts cannot take every pooled
+// connection away from the rest of the API.
+var signInGate = make(chan struct{}, 4)
 
 // SignInTicket is one password attempt that has been counted. It is counted
 // before the password is checked, so parallel guesses cannot all pass a
@@ -47,25 +49,37 @@ type SignInTicket struct {
 }
 
 // SignInReserve counts this attempt and reports why it must stop, or "" when
-// it may go ahead. Counting and checking happen under one database lock, so
-// a burst of parallel requests is held to the same limits as a slow one. A
-// database error stops the attempt, so a second process cannot guess while
-// the shared count is unreadable. Call SignInRelease or SignInSucceed when
-// the attempt turns out not to be a wrong guess.
+// it may go ahead. Attempts at one address are counted and checked under a
+// lock on that address, so a burst of parallel guesses at it is held to the
+// same limits as a slow one. The per-client and install-wide counts are not
+// locked across addresses and can run slightly over in a burst. A database
+// error stops the attempt, so a second process cannot guess while the shared
+// count is unreadable. Call SignInRelease or SignInSucceed when the attempt
+// turns out not to be a wrong guess.
 func (s *Service) SignInReserve(ctx context.Context, email, ip string) (SignInTicket, string) {
 	email, ip = signInKeyPart(email), signInKeyPart(ip)
 	ticket := SignInTicket{email: email, ip: ip}
+	wait := time.NewTimer(2 * time.Second)
+	defer wait.Stop()
+	select {
+	case signInGate <- struct{}{}:
+		defer func() { <-signInGate }()
+	case <-wait.C:
+		return SignInTicket{}, "rate_limited"
+	case <-ctx.Done():
+		return SignInTicket{}, "rate_limited"
+	}
 	reason := ""
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// A queue behind the lock must not hold connections without end: a
-		// flood of attempts would otherwise starve every other query.
+		// A queue behind the lock must not hold a connection for long.
 		if err := tx.Exec("SET LOCAL lock_timeout = '2s'").Error; err != nil {
 			return err
 		}
-		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", signInLockID).Error; err != nil {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "esa-signin:"+email).Error; err != nil {
 			return err
 		}
-		n, err := signInCounts(tx, s.now(), email, ip)
+		now := s.now()
+		n, err := signInCounts(tx, now, email, ip)
 		if err != nil {
 			return err
 		}
@@ -77,7 +91,6 @@ func (s *Service) SignInReserve(ctx context.Context, email, ip string) (SignInTi
 			reason = "rate_limited"
 			return nil
 		}
-		now := s.now()
 		if err := tx.Where("at < ?", now.Add(-authKeep)).Delete(&store.SignInHit{}).Error; err != nil {
 			return err
 		}

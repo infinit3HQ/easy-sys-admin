@@ -123,7 +123,7 @@ func TestSudoVerifiedScriptRunsOnlyUnchangedScript(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, err = run()
-	if err == nil || strings.Contains(out, "pwned") || strings.Contains(out, "ran:") {
-		t.Fatalf("a changed script ran: %q %v", out, err)
+	if err == nil || strings.Contains(out, "pwned") || strings.Contains(out, "ran:") || !strings.Contains(out, "ESA_INSTALL_ERROR") {
+		t.Fatalf("a changed script ran or failed without saying why: %q %v", out, err)
 	}
 }

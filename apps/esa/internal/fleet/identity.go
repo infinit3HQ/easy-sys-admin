@@ -49,7 +49,7 @@ func (s *Service) SignIn(ctx context.Context, id Identity, source Source) (SignI
 	err := s.store.InTx(ctx, func(q *store.Queries) error {
 		now := s.now()
 		db := q.Raw().WithContext(ctx)
-		u, linked, err := s.upsertIdentity(db, id.Issuer, id.Subject, email, name, now)
+		u, link, err := s.upsertIdentity(db, id.Issuer, id.Subject, email, name, now)
 		if err != nil {
 			return fmt.Errorf("save user: %w", err)
 		}
@@ -62,8 +62,12 @@ func (s *Service) SignIn(ctx context.Context, id Identity, source Source) (SignI
 		res.AccountID = m.Account.ID
 
 		detail := map[string]any{"issuer": id.Issuer}
-		if linked {
+		if link.linked {
 			detail["linked"] = true
+		}
+		if link.clearedPassword {
+			// The record of why a password and its tokens went away.
+			detail["unconfirmed_password_cleared"] = true
 		}
 		s.audit(ctx, q, Actor{UserID: u.ID, AccountID: res.AccountID, Source: source},
 			"auth.sign_in", u.Email, detail)
@@ -75,32 +79,41 @@ func (s *Service) SignIn(ctx context.Context, id Identity, source Source) (SignI
 // upsertIdentity finds the person behind a provider sign-in. A verified
 // email that already belongs to someone joins that account. An empty email
 // never matches another user, because the provider did not prove it.
-func (s *Service) upsertIdentity(db *gorm.DB, issuer, subject, email, name string, now time.Time) (store.User, bool, error) {
+// identityLink says how a provider sign-in found its user.
+type identityLink struct {
+	linked          bool // joined an existing user by email
+	clearedPassword bool // that user's unconfirmed password was removed
+}
+
+func (s *Service) upsertIdentity(db *gorm.DB, issuer, subject, email, name string, now time.Time) (store.User, identityLink, error) {
 	var ident store.UserIdentity
 	err := db.Where("issuer = ? AND subject = ?", issuer, subject).Take(&ident).Error
 	var u store.User
-	linked := false
+	var link identityLink
 	switch {
 	case err == nil:
 		if err := db.Where("id = ?", ident.UserID).Take(&u).Error; err != nil {
-			return store.User{}, false, err
+			return store.User{}, identityLink{}, err
 		}
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		if email != "" {
 			found, ferr := userByEmail(db, email)
 			if ferr == nil {
 				u = found
-				linked = true
+				link.linked = true
 				// The provider proved this address. A password set on an
-				// account that never confirmed it was chosen by someone
-				// who did not, so it goes, with everything it opened.
+				// account that never confirmed it may have been chosen by
+				// someone who did not, so it goes, with the sessions and
+				// tokens it could have opened. Other settings in the
+				// account stay; see docs/security.md.
 				if found.PasswordHash != "" && !found.EmailConfirmed && s.passwordsCanBePlanted() {
 					if err := dropUnprovenPassword(db, found.ID, now); err != nil {
-						return store.User{}, false, err
+						return store.User{}, identityLink{}, err
 					}
+					link.clearedPassword = true
 				}
 			} else if !errors.Is(ferr, gorm.ErrRecordNotFound) {
-				return store.User{}, false, ferr
+				return store.User{}, identityLink{}, ferr
 			}
 		}
 		if u.ID == 0 {
@@ -109,15 +122,15 @@ func (s *Service) upsertIdentity(db *gorm.DB, issuer, subject, email, name strin
 				EmailConfirmed: email != "", CreatedAt: now, LastLoginAt: now,
 			}
 			if err := db.Create(&u).Error; err != nil {
-				return store.User{}, false, err
+				return store.User{}, identityLink{}, err
 			}
 		}
 		row := store.UserIdentity{UserID: u.ID, Issuer: issuer, Subject: subject, CreatedAt: now}
 		if err := db.Create(&row).Error; err != nil {
-			return store.User{}, false, err
+			return store.User{}, identityLink{}, err
 		}
 	default:
-		return store.User{}, false, err
+		return store.User{}, identityLink{}, err
 	}
 
 	updates := map[string]any{"last_login_at": now}
@@ -129,12 +142,12 @@ func (s *Service) upsertIdentity(db *gorm.DB, issuer, subject, email, name strin
 		updates["email_confirmed"] = true
 	}
 	if err := db.Model(&store.User{}).Where("id = ?", u.ID).Updates(updates).Error; err != nil {
-		return store.User{}, false, err
+		return store.User{}, identityLink{}, err
 	}
 	if err := db.Where("id = ?", u.ID).Take(&u).Error; err != nil {
-		return store.User{}, false, err
+		return store.User{}, identityLink{}, err
 	}
-	return u, linked, nil
+	return u, link, nil
 }
 
 // userByEmail returns the person who already uses this address. A password

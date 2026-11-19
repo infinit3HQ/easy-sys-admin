@@ -53,6 +53,21 @@ function withoutKeyComments<
   }
 }
 
+/** The same rule for the key uses in an offboarding report. */
+function withoutUseComments<
+  T extends {
+    items?: ReadonlyArray<{ uses?: ReadonlyArray<{ comment?: string }> }>
+  },
+>(report: T): T {
+  return {
+    ...report,
+    items: report.items?.map((k) => ({
+      ...k,
+      uses: k.uses?.map((u) => ({ ...u, comment: '' })),
+    })),
+  }
+}
+
 function failure(e: unknown) {
   const message = e instanceof Error ? e.message : String(e)
   return {
@@ -353,8 +368,12 @@ function buildServer(token: string, me: Me): McpServer {
     'get_offboarding_report',
     'Where the known keys of one owner (a key label) were last seen, which servers could not be checked, and a Markdown copy. It never proves access was removed, and it cannot change a server.',
     { owner: z.string().min(1).max(80) },
-    async ({ owner }) =>
-      call(api.GET('/offboarding', { params: { query: { label: owner } } })),
+    async ({ owner }) => {
+      const report = await call(
+        api.GET('/offboarding', { params: { query: { label: owner } } }),
+      )
+      return canStartRuns ? withoutUseComments(report) : report
+    },
   )
 
   tool(

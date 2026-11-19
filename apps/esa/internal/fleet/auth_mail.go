@@ -147,7 +147,7 @@ func (s *Service) sendAuthMail(ctx context.Context, userID int64, email, purpose
 		if addPassword {
 			letter = authmail.Letter{
 				Heading:   "Add a password",
-				Paragraph: "Choose a password for the account for this address. Google sign-in keeps working.",
+				Paragraph: "Choose a password for the account for this address. Your current sign-in keeps working.",
 				Button:    "Choose a password",
 				Fine:      "The link works for 1 hour and only once. If you did not ask for this, you can ignore this message.",
 			}
@@ -210,8 +210,14 @@ func (s *Service) consumeAuthToken(ctx context.Context, token, purpose string) (
 			_ = q.Raw().WithContext(ctx).Delete(&row).Error
 			return ErrAuthToken
 		}
-		if err := q.Raw().WithContext(ctx).Delete(&row).Error; err != nil {
-			return err
+		// Only the request that deletes the row may use it, so two
+		// requests racing with one link cannot both succeed.
+		del := q.Raw().WithContext(ctx).Where("id = ?", row.ID).Delete(&store.AuthEmailToken{})
+		if del.Error != nil {
+			return del.Error
+		}
+		if del.RowsAffected != 1 {
+			return ErrAuthToken
 		}
 		return q.Raw().WithContext(ctx).First(&row.User, row.UserID).Error
 	})

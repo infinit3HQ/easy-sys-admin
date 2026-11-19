@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -253,5 +254,78 @@ func TestProviderSignInKeepsPasswordWhenNobodyCanPlantOne(t *testing.T) {
 	}
 	if n := countRows(t, s, &store.APIToken{}, "user_id = ? AND revoked_at IS NULL", boot.User.ID); n != 1 {
 		t.Fatalf("%d live API tokens, want 1", n)
+	}
+}
+
+// After esa clears a planted password, the real owner can still add one of
+// their own through the mailed link.
+func TestOwnerCanAddPasswordAfterPlantedOneIsCleared(t *testing.T) {
+	s := newTestService(t)
+	s.signup = true
+	box := &mailBox{}
+	s.authMail = box
+	ctx := context.Background()
+
+	if _, err := s.SignUpPassword(ctx, "Attacker", "victim@example.com", attackerSecret); err != nil {
+		t.Fatal(err)
+	}
+	victim, err := s.SignIn(ctx, Identity{Issuer: googleIssuer, Subject: "g-7", Email: "victim@example.com", Name: "Victim"}, SourceWeb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cleared int64
+	s.db.Table("audit_log").Where("action = ? AND detail->>'unconfirmed_password_cleared' = 'true'", "auth.sign_in").Count(&cleared)
+	if cleared != 1 {
+		t.Fatalf("%d audit entries record the cleared password, want 1", cleared)
+	}
+
+	box.last = ""
+	res, err := s.SignUpPassword(ctx, "Victim", "victim@example.com", "typed on the form")
+	if err != nil || !res.AddPassword || box.last == "" {
+		t.Fatalf("owner asks to add a password: %+v %v, mail %q", res, err, box.last)
+	}
+	if err := s.ResetPassword(ctx, mailToken(t, box.last), "the owner picks this"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.SignInPassword(ctx, "victim@example.com", "the owner picks this")
+	if err != nil || got.User.ID != victim.User.ID {
+		t.Fatalf("owner password: %+v %v", got, err)
+	}
+}
+
+// A link can be used once, even when two requests race to use it.
+func TestAuthLinkIsUsedOnceUnderRace(t *testing.T) {
+	s := newTestService(t)
+	s.signup = true
+	box := &mailBox{}
+	s.authMail = box
+	ctx := context.Background()
+	if _, err := s.SignUpPassword(ctx, "Ana", "ana@example.com", "correct horse battery"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConfirmEmail(ctx, mailToken(t, box.last)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequestPasswordReset(ctx, "ana@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	token := mailToken(t, box.last)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	ok := 0
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if s.ResetPassword(ctx, token, "a different long password") == nil {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if ok != 1 {
+		t.Fatalf("a reset link worked %d times, want once", ok)
 	}
 }

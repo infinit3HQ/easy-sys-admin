@@ -49,14 +49,14 @@ export function AgentSecret({
         again. It expires after one year. Keep it in a protected file on the
         server.
       </p>
-      <CopyBlock value={token} />
+      <CopyBlock value={token} label="the credential" />
       <p className="my-3 text-sm">
-        And this signing pin. The agent checks every command against it, so
-        something that starts rewriting traffic in front of esa after setup
-        cannot give the agent commands. Enter it when the installer asks, or set
-        ESA_AGENT_PIN.
+        Copy the signing pin too. The agent runs only commands signed for this
+        server, so a proxy that starts changing traffic after setup cannot give
+        it work. The installer asks for the pin. It is also{' '}
+        <code className="font-mono">ESA_AGENT_PIN</code> in the file below.
       </p>
-      <CopyBlock value={signingPin} />
+      <CopyBlock value={signingPin} label="the signing pin" />
       <p className="my-3 text-sm">
         Install esa-agent and the helper using the{' '}
         <Link
@@ -70,7 +70,8 @@ export function AgentSecret({
         only.
       </p>
       <CopyBlock
-        value={`ESA_AGENT_URL=${typeof window === 'undefined' ? 'https://your-esa-origin' : window.location.origin}\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token`}
+        label="the agent settings"
+        value={`ESA_AGENT_URL=${typeof window === 'undefined' ? 'https://your-esa-origin' : window.location.origin}\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token\nESA_AGENT_PIN=${signingPin}`}
       />
       <Notice className="my-3">
         Server ID {serverId}. Commands wait for the agent to connect. A missing

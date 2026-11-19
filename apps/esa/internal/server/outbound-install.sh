@@ -26,8 +26,10 @@ curl --proto '=https' --tlsv1.2 -fsS "$origin/enroll/outbound/binaries/agent/$ar
 helper_sum=$(sha256sum "$tmp/helper" | cut -d' ' -f1)
 agent_sum=$(sha256sum "$tmp/agent" | cut -d' ' -f1)
 printf 'helper sha256 %s\nagent  sha256 %s\n' "$helper_sum" "$agent_sum"
-if [ -n "${ESA_HELPER_SHA256:-}" ] && [ "$ESA_HELPER_SHA256" != "$helper_sum" ]; then echo 'The helper does not match ESA_HELPER_SHA256. Nothing was installed.' >&2; exit 1; fi
-if [ -n "${ESA_AGENT_SHA256:-}" ] && [ "$ESA_AGENT_SHA256" != "$agent_sum" ]; then echo 'The agent does not match ESA_AGENT_SHA256. Nothing was installed.' >&2; exit 1; fi
+want_helper=$(printf '%s' "${ESA_HELPER_SHA256:-}" | tr 'A-F' 'a-f')
+want_agent=$(printf '%s' "${ESA_AGENT_SHA256:-}" | tr 'A-F' 'a-f')
+if [ -n "$want_helper" ] && [ "$want_helper" != "$helper_sum" ]; then echo 'The helper does not match ESA_HELPER_SHA256. Nothing was installed.' >&2; exit 1; fi
+if [ -n "$want_agent" ] && [ "$want_agent" != "$agent_sum" ]; then echo 'The agent does not match ESA_AGENT_SHA256. Nothing was installed.' >&2; exit 1; fi
 if id esa >/dev/null 2>&1; then
  [ "$(getent passwd esa | cut -d: -f5,6)" = 'easy-sys-admin control plane:/var/lib/esa-home' ] || { echo 'A user named esa exists and was not created by easy-sys-admin. Refusing to reuse it.' >&2; exit 1; }
 else
@@ -50,9 +52,14 @@ case "$token" in *[!a-zA-Z0-9_-]* ) echo 'Invalid agent credential.' >&2; exit 1
 [ "${#token}" -le 200 ] || exit 1
 printf 'Paste the signing pin shown with it: ' >/dev/tty
 IFS= read -r pin </dev/tty
-case "$pin" in esa_pin_[0-9]*_*) ;; *) echo 'Invalid signing pin.' >&2; exit 1;; esac
+case "$pin" in esa_pin_*) ;; *) echo 'Invalid signing pin.' >&2; exit 1;; esac
 case "$pin" in *[!a-zA-Z0-9_-]* ) echo 'Invalid signing pin.' >&2; exit 1;; esac
-[ "${#pin}" -le 200 ] || exit 1
+# esa_pin_<server id>_<43 characters of key>, as esa-agent reads it.
+pin_rest=${pin#esa_pin_}
+pin_id=${pin_rest%%_*}
+pin_key=${pin_rest#*_}
+case "$pin_id" in ''|0*|*[!0-9]*) echo 'Invalid signing pin.' >&2; exit 1;; esac
+[ "${#pin_key}" -eq 43 ] || { echo 'Invalid signing pin. Copy all of it.' >&2; exit 1; }
 printf '%s\n' "$token" > "$tmp/token"
 unset token
 install -o root -g esa -m 0640 "$tmp/token" /etc/esa/agent.token
@@ -76,6 +83,9 @@ ExecStart=/usr/local/lib/esa/esa-agent
 Restart=on-failure
 RestartSec=10
 UMask=0077
+# Keeps the highest command id run, so a replay is refused after a restart.
+StateDirectory=esa-agent
+StateDirectoryMode=0700
 [Install]
 WantedBy=multi-user.target
 UNIT

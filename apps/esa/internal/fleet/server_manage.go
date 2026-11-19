@@ -54,7 +54,7 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 	if in.HostsControlPlane != nil {
 		// Clearing the flag removes the protection that keeps a reboot of
 		// the control plane's own host out of a run.
-		if !*in.HostsControlPlane {
+		if !*in.HostsControlPlane && srv.HostsControlPlane {
 			if err := requirePerson(a, "stop protecting the control plane's host"); err != nil {
 				return ServerView{}, err
 			}
@@ -109,6 +109,12 @@ func (s *Service) keepPlanGroup(ctx context.Context, srv store.Server, in Update
 	if !in.ClearGroup && in.GroupID != nil {
 		var to store.Group
 		if err := s.db.WithContext(ctx).Where("id = ?", *in.GroupID).Take(&to).Error; err == nil && to.PlanRequired && (!from.TwoApprovers || to.TwoApprovers) {
+			// The target must not run the server with weaker checks or
+			// limits than the plan group it leaves.
+			if !keepsBlockingChecks(storedChecks(from.HealthChecks), storedChecks(to.HealthChecks)) ||
+				to.UpdateBatchSize > from.UpdateBatchSize || to.UpdateMaxFailures > from.UpdateMaxFailures {
+				return errPersonOnly("move a server into a group with weaker health checks or limits")
+			}
 			return nil
 		}
 	}
@@ -131,6 +137,10 @@ func cleanNote(s string) (string, error) {
 // must match the presented key, so the person confirms what they saw.
 func (s *Service) AcceptHostKey(ctx context.Context, a Actor, id int64, fp string) (ServerView, error) {
 	if err := a.can(RoleAdmin, ScopeAdmin); err != nil {
+		return ServerView{}, err
+	}
+	// A changed key is how someone in the middle shows up. A person looks.
+	if err := requirePerson(a, "accept a changed host key"); err != nil {
 		return ServerView{}, err
 	}
 	srv, err := s.loadServer(ctx, a, id)
@@ -197,8 +207,8 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 		// The owner chose to keep this login for this server. An admin who
 		// is not an owner enters their own, so they cannot send the owner's
 		// login to whatever now answers at the address.
-		if err := a.can(RoleOwner, ScopeAdmin); err != nil {
-			return ServerView{}, invalid("login", "enter a sudo login; only an owner can use the one kept for this server")
+		if err := a.can(RoleOwner, ScopeAdmin); err != nil || !a.isPerson() {
+			return ServerView{}, invalid("login", "enter a sudo login; only an owner signed in to the web app can use the one kept for this server")
 		}
 		stored, ok, err := s.storedLogin(ctx, srv.ID)
 		if err != nil {
@@ -225,7 +235,7 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 		if errors.As(err, &mismatch) {
 			s.recordMismatch(ctx, srv.ID, mismatch)
 		}
-		return ServerView{}, &UnavailableError{Message: "install failed: " + err.Error()}
+		return ServerView{}, &UnavailableError{Message: "install failed: " + installErrorText(err)}
 	}
 	if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ?", srv.ID).
 		Updates(map[string]any{"enrollment": "ready", "arch": res.Arch, "updated_at": s.now()}).Error; err != nil {
@@ -258,7 +268,7 @@ func (s *Service) DeleteServer(ctx context.Context, a Actor, id int64, uninstall
 			err = s.pool.Call(cctx, ep, nil, "uninstall")
 			cancel()
 			if err != nil {
-				return &UnavailableError{Message: "could not remove esa from the server: " + err.Error() + ". Delete without removing, or fix the connection first."}
+				return &UnavailableError{Message: "could not remove esa from the server: " + installErrorText(err) + ". Delete without removing, or fix the connection first."}
 			}
 			uninstalled = true
 		}

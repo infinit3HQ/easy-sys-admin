@@ -2,6 +2,7 @@ package netguard
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/netip"
 	"strings"
@@ -96,7 +97,15 @@ func TestDialerRefuses(t *testing.T) {
 // services from the inside. It is refused unless private networks are allowed.
 func TestCheckRefusesOwnAddress(t *testing.T) {
 	old := interfaceAddrs
-	t.Cleanup(func() { interfaceAddrs = old })
+	t.Cleanup(func() {
+		interfaceAddrs = old
+		localCache.Lock()
+		localCache.addrs = nil
+		localCache.Unlock()
+	})
+	localCache.Lock()
+	localCache.addrs = nil
+	localCache.Unlock()
 	interfaceAddrs = func() ([]net.Addr, error) {
 		return []net.Addr{&net.IPNet{IP: net.ParseIP("203.0.113.7"), Mask: net.CIDRMask(24, 32)}}, nil
 	}
@@ -109,6 +118,10 @@ func TestCheckRefusesOwnAddress(t *testing.T) {
 	}
 	if err := Check(netip.MustParseAddr("203.0.113.8"), false); err != nil {
 		t.Fatalf("another public address: %v", err)
+	}
+	var be *BlockedError
+	if err := Check(own, false); !errors.As(err, &be) || !be.Local || !strings.Contains(be.Error(), "machine it runs on") {
+		t.Fatalf("own address error: %v", err)
 	}
 	if msg := (&BlockedError{IP: own, Private: true}).Error(); strings.Contains(msg, "203.0.113.7") {
 		t.Fatalf("the message names the address: %q", msg)

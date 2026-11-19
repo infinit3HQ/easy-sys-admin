@@ -245,15 +245,11 @@ func (s *Service) RejectPlan(ctx context.Context, a Actor, id int64, reason stri
 	if row.Status != "submitted" {
 		return PlanView{}, invalid("status", "only a submitted plan can be rejected")
 	}
-	now := s.now()
-	// Only a plan that is still submitted can be rejected. An approval that
-	// landed since the read must not be overwritten.
-	res := s.db.WithContext(ctx).Model(&store.FixPlan{}).Where("id = ? AND status = ?", row.ID, "submitted").
-		Updates(map[string]any{"status": "rejected", "reason": reason, "updated_at": now})
-	if res.Error != nil {
-		return PlanView{}, res.Error
+	changed, err := s.rejectSubmitted(ctx, row.ID, reason)
+	if err != nil {
+		return PlanView{}, err
 	}
-	if res.RowsAffected != 1 {
+	if !changed {
 		return PlanView{}, invalid("status", "only a submitted plan can be rejected")
 	}
 	s.audit(ctx, nil, a, "plan.reject", row.Fingerprint, map[string]any{"id": row.ID})
@@ -642,4 +638,12 @@ func (s *Service) planApprovalRequirement(ctx context.Context, db *gorm.DB, acco
 		}
 	}
 	return 1, nil
+}
+
+// rejectSubmitted rejects the plan only while it is still submitted, so an
+// approval that landed after the plan was read is not overwritten.
+func (s *Service) rejectSubmitted(ctx context.Context, id int64, reason string) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.FixPlan{}).Where("id = ? AND status = ?", id, "submitted").
+		Updates(map[string]any{"status": "rejected", "reason": reason, "updated_at": s.now()})
+	return res.RowsAffected == 1, res.Error
 }

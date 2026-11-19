@@ -549,8 +549,11 @@ func (h *Host) authorizedKeys(home, rel string) (keys []proto.AuthorizedKey, gap
 	switch {
 	case os.IsNotExist(err):
 		return nil, nil
-	case err != nil:
+	case err != nil && strings.Contains(err.Error(), "escapes"):
+		// ~/.ssh is a link that leads outside the home.
 		return nil, []string{"authorized_keys symlink"}
+	case err != nil:
+		return nil, []string{"authorized_keys unreadable"}
 	case !fi.Mode().IsRegular():
 		return nil, []string{"authorized_keys symlink"}
 	}

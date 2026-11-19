@@ -302,6 +302,6 @@ func goArch(uname string) (string, error) {
 // check and the run. The script then checks the helper the same way. stdin
 // carries only the sudo password, and the script reads /dev/null.
 func sudoVerifiedScriptCommand(scriptFile, helperFile, scriptSum, helperSum string) string {
-	const body = `d=$(mktemp -d) || exit 1; cp "$1" "$d/s" && printf "%s  %s\n" "$3" "$d/s" | sha256sum -c - >/dev/null 2>&1 && sh "$d/s" "$2" "$4" </dev/null; r=$?; rm -rf "$d"; exit $r`
+	const body = `d=$(mktemp -d) || exit 1; cp "$1" "$d/s" && printf "%s  %s\n" "$3" "$d/s" | sha256sum -c - >/dev/null 2>&1 || { echo "ESA_INSTALL_ERROR the install script changed after it was uploaded" >&2; rm -rf "$d"; exit 1; }; sh "$d/s" "$2" "$4" </dev/null; r=$?; rm -rf "$d"; exit $r`
 	return "sudo -S -p '' sh -c '" + body + "' sh " + scriptFile + " " + helperFile + " " + scriptSum + " " + helperSum
 }

@@ -104,8 +104,10 @@ func bodyLimit(p string) int64 {
 
 // Large bodies are read before the request is authenticated, so without a
 // bound a handful of slow uploads would hold most of the memory of a small
-// host. The bound is per client as well as overall, so one client cannot take
-// every slot, and a read that takes too long is cut off.
+// host. Only bodies over the normal 1 MiB cap take a slot. The bound is per
+// client as well as overall, so one client cannot take every slot, and a read
+// that takes too long is cut off. Many clients can still fill the slots; the
+// request is not authenticated until its body is read.
 const (
 	maxLargeBodies          = 8
 	maxLargeBodiesPerClient = 2
@@ -139,8 +141,21 @@ func acquireLargeBody(client string) func() {
 }
 
 // bodyClient names the sender for the slot bound: the address the reverse
-// proxy appended, as for the sign-in limits, or the peer.
+// proxy appended, as for the sign-in limits, or the peer. An IPv6 sender is
+// its /64, because one host usually has a whole /64 to pick addresses from.
 func bodyClient(r *http.Request) string {
+	return clientNetwork(rawClient(r))
+}
+
+func clientNetwork(addr string) string {
+	ip := net.ParseIP(addr)
+	if ip == nil || ip.To4() != nil {
+		return addr
+	}
+	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
+}
+
+func rawClient(r *http.Request) string {
 	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
 		last := xff[len(xff)-1]
 		if i := strings.LastIndexByte(last, ','); i >= 0 {
@@ -177,21 +192,34 @@ func limitBodies(next http.Handler) http.Handler {
 			return
 		}
 		limit := bodyLimit(p)
-		release := func() {}
-		if limit > maxBodyBytes {
-			if !hasCredentials(r) {
-				writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Send credentials with this request.")
-				return
-			}
-			if release = acquireLargeBody(bodyClient(r)); release == nil {
+		if limit > maxBodyBytes && !hasCredentials(r) {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Send credentials with this request.")
+			return
+		}
+		var body []byte
+		var err error
+		if limit <= maxBodyBytes {
+			body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+		} else {
+			// The first 1 MiB is read without a slot, so the usual small
+			// agent result never waits behind large uploads.
+			body, err = io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
+		}
+		if err == nil && limit > maxBodyBytes && int64(len(body)) > maxBodyBytes {
+			// A large body holds a slot until the request is done, because
+			// its buffer stays in memory until then.
+			release := acquireLargeBody(bodyClient(r))
+			if release == nil {
 				w.Header().Set("Retry-After", "5")
 				writeJSONError(w, http.StatusServiceUnavailable, "busy", "Too many large uploads are in progress. Try again shortly.")
 				return
 			}
+			defer release()
 			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(largeBodyReadTimeout))
+			var rest []byte
+			rest, err = io.ReadAll(http.MaxBytesReader(w, r.Body, limit-int64(len(body))))
+			body = append(body, rest...)
 		}
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
-		release()
 		var tooLarge *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooLarge):

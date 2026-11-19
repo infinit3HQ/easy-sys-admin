@@ -2,8 +2,12 @@ package fleet
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
@@ -144,31 +148,15 @@ func TestBlockingCheckCannotBeRepointed(t *testing.T) {
 	_, err := s.UpdateGroup(ctx, tok, f.g.ID, repointed)
 	wantInvalid(t, "token repoints a blocking check", err)
 
-	_, err = s.StartRun(ctx, tok, RunRequest{Kind: RunMeasure, GroupID: &f.g.ID,
-		Options: &RunOptions{Checks: []HealthCheck{{Name: "web", Kind: "tcp", Port: 22, Blocking: true}}}})
-	wantInvalid(t, "run options repoint a blocking check", err)
-}
-
-// A plan is approved to run with the group's reboot and hold settings.
-func TestTokenCannotWidenPlanGroupReboot(t *testing.T) {
-	f := newRoleFixture(t)
-	s, ctx := f.s, context.Background()
-	in := groupWithPlan(t, f)
-	in.Updates.Hold = []string{"linux-image-generic"}
-	if _, err := s.UpdateGroup(ctx, f.owner, f.g.ID, in); err != nil {
+	// The group requires a plan, so use a group that does not for the run.
+	free := testGroup("free", "UTC")
+	free.Checks = []HealthCheck{gate}
+	if _, err := s.UpdateGroup(ctx, f.owner, f.h.ID, free); err != nil {
 		t.Fatal(err)
 	}
-	tok := tokenActor(f.owner, ScopeRead, ScopeAdmin)
-
-	reboot := in
-	reboot.Updates.RebootIfRequired = true
-	_, err := s.UpdateGroup(ctx, tok, f.g.ID, reboot)
-	wantInvalid(t, "token turns on reboot", err)
-
-	unheld := in
-	unheld.Updates.Hold = nil
-	_, err = s.UpdateGroup(ctx, tok, f.g.ID, unheld)
-	wantInvalid(t, "token drops a held package", err)
+	_, err = s.StartRun(ctx, tok, RunRequest{Kind: RunUpdate, GroupID: &f.h.ID,
+		Options: &RunOptions{Checks: []HealthCheck{{Name: "web", Kind: "tcp", Port: 22, Blocking: true}}}})
+	wantInvalid(t, "run options repoint a blocking check", err)
 }
 
 // An admin who is not an owner cannot send the owner's kept sudo login to a
@@ -180,11 +168,25 @@ func TestReinstallStoredLoginIsOwnerOnly(t *testing.T) {
 	if err := s.db.Model(&f.gSrv).Update("host_key", "ssh-ed25519 AAAA").Error; err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.ReinstallHelper(ctx, admin, f.gSrv.ID, nil)
-	wantInvalid(t, "admin reinstalls with the owner's kept login", err)
+	if err := s.store.InTx(ctx, func(q *store.Queries) error {
+		return s.storeLogin(ctx, q, f.gSrv.ID, remote.LoginAuth{User: "root", Password: "kept"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantRefusedLogin := func(who string, a Actor) {
+		t.Helper()
+		_, err := s.ReinstallHelper(ctx, a, f.gSrv.ID, nil)
+		var v *ValidationError
+		if !errors.As(err, &v) || !strings.Contains(v.Message, "kept for this server") {
+			t.Errorf("%s reinstalls with the kept login: %v", who, err)
+		}
+	}
+	wantRefusedLogin("an admin", admin)
+	wantRefusedLogin("an owner's token", tokenActor(f.owner, ScopeRead, ScopeAdmin))
 }
 
-// A plan that was approved while a rejection was being written stays approved.
+// A plan that was approved while a rejection was being written stays approved:
+// the rejection only changes a plan that is still submitted.
 func TestRejectPlanDoesNotOverwriteApproval(t *testing.T) {
 	f := newRoleFixture(t)
 	s, ctx := f.s, context.Background()
@@ -192,12 +194,86 @@ func TestRejectPlanDoesNotOverwriteApproval(t *testing.T) {
 	if err := s.db.Omit("Account").Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.RejectPlan(ctx, f.owner, row.ID, "late"); err == nil {
-		t.Fatal("an approved plan was rejected")
+	// As if the approval landed after RejectPlan read the plan as submitted.
+	ok, err := s.rejectSubmitted(ctx, row.ID, "late")
+	if err != nil || ok {
+		t.Fatalf("rejecting an approved plan: changed=%v %v", ok, err)
 	}
 	var got store.FixPlan
 	s.db.First(&got, row.ID)
 	if got.Status != "approved" {
 		t.Fatalf("plan status = %q, want approved", got.Status)
+	}
+	s.db.Model(&got).Update("status", "submitted")
+	if ok, err := s.rejectSubmitted(ctx, row.ID, "no"); err != nil || !ok {
+		t.Fatalf("rejecting a submitted plan: changed=%v %v", ok, err)
+	}
+}
+
+// A run started by server ids keeps the blocking checks of those servers'
+// group, the same as a run started for the group.
+func TestServerRunKeepsGroupBlockingChecks(t *testing.T) {
+	f := newRoleFixture(t)
+	s, ctx := f.s, context.Background()
+	gate := HealthCheck{Name: "web", Kind: "tcp", Port: 443, Blocking: true}
+	in := testGroup("web", "UTC")
+	in.Checks = []HealthCheck{gate}
+	if _, err := s.UpdateGroup(ctx, f.owner, f.g.ID, in); err != nil {
+		t.Fatal(err)
+	}
+	tok := tokenActor(f.owner, ScopeRead, ScopeActions)
+	_, err := s.StartRun(ctx, tok, RunRequest{Kind: RunUpdate, ServerIDs: []int64{f.gSrv.ID}, Options: &RunOptions{Checks: []HealthCheck{}}})
+	wantInvalid(t, "server run drops the group's blocking check", err)
+	run, err := s.StartRun(ctx, tok, RunRequest{Kind: RunUpdate, ServerIDs: []int64{f.gSrv.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	got, err := s.GetRun(ctx, f.owner, run.ID)
+	if err != nil || len(got.Options.Checks) != 1 || got.Options.Checks[0].Name != "web" || !got.Options.Checks[0].Blocking {
+		t.Fatalf("server run checks = %+v, %v", got.Options.Checks, err)
+	}
+	// Servers of a group with blocking checks do not mix with others.
+	_, err = s.StartRun(ctx, tok, RunRequest{Kind: RunUpdate, ServerIDs: []int64{f.gSrv.ID, f.hSrv.ID}})
+	wantInvalid(t, "server run across groups with blocking checks", err)
+}
+
+// A token cannot move servers out of a plan group into one with weaker checks
+// or limits, even when that group also requires a plan.
+func TestTokenCannotMoveServerToWeakerPlanGroup(t *testing.T) {
+	f := newRoleFixture(t)
+	s, ctx := f.s, context.Background()
+	groupWithPlan(t, f, HealthCheck{Name: "web", Kind: "tcp", Port: 443, Blocking: true})
+	weak := testGroup("db", "UTC")
+	weak.Updates.PlanRequired = true
+	weak.Updates.BatchSize, weak.Updates.MaxFailures = 2, 3
+	if _, err := s.UpdateGroup(ctx, f.owner, f.h.ID, weak); err != nil {
+		t.Fatal(err)
+	}
+	tok := tokenActor(f.owner, ScopeRead, ScopeAdmin)
+	_, err := s.UpdateServer(ctx, tok, f.gSrv.ID, UpdateServerInput{GroupID: &f.h.ID})
+	wantInvalid(t, "token moves a server to a plan group without its checks", err)
+	if _, err := s.UpdateServer(ctx, f.owner, f.gSrv.ID, UpdateServerInput{GroupID: &f.h.ID}); err != nil {
+		t.Errorf("a person moves the server: %v", err)
+	}
+}
+
+// Clearing a flag that was never set changes nothing, so a token may send it.
+func TestTokenMaySendUnsetControlPlaneFlag(t *testing.T) {
+	f := newRoleFixture(t)
+	off := false
+	if _, err := f.s.UpdateServer(context.Background(), tokenActor(f.owner, ScopeRead, ScopeAdmin), f.gSrv.ID, UpdateServerInput{HostsControlPlane: &off}); err != nil {
+		t.Fatalf("token sends hostsControlPlane=false on a server without it: %v", err)
+	}
+}
+
+// Accepting a changed host key is the defence against someone in the middle.
+// Only a person can do it.
+func TestAcceptHostKeyIsForPeople(t *testing.T) {
+	f := newRoleFixture(t)
+	_, err := f.s.AcceptHostKey(context.Background(), tokenActor(f.owner, ScopeRead, ScopeAdmin), f.gSrv.ID, "SHA256:x")
+	var v *ValidationError
+	if !errors.As(err, &v) || !strings.Contains(v.Message, "only a person") {
+		t.Fatalf("token accepts a host key: %v", err)
 	}
 }

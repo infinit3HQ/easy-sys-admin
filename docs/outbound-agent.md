@@ -14,7 +14,9 @@ less esa-agent-install.sh
 sudo sh esa-agent-install.sh https://esa.example.com
 ```
 
-The installer prompts for the credential with terminal echo off, then for the signing pin. It prints the SHA-256 of the helper and agent it downloaded. Compare them with the hashes in the release notes, or pin them in advance with `sudo ESA_HELPER_SHA256=<hash> ESA_AGENT_SHA256=<hash> sh esa-agent-install.sh https://esa.example.com`. The server that sends the binaries cannot vouch for them, so the pinned hashes must come from the release notes, not from your esa. It never passes it as a process argument or puts it in a URL. Run it from a terminal, not a pipe. The host must already have `curl`, `sudo`, `visudo`, `useradd`, and systemd. The script refuses unsupported architectures and symlinks at its installation paths.
+The installer prompts for the credential with terminal echo off, then for the signing pin. It never passes the credential as a process argument or puts it in a URL. Run it from a terminal, not a pipe. The host must already have `curl`, `sudo`, `visudo`, `useradd`, and systemd. The script refuses unsupported architectures and symlinks at its installation paths.
+
+The installer prints the SHA-256 of the helper and agent it downloaded. Compare them with the hashes in the release notes, or pin them in advance with `sudo ESA_HELPER_SHA256=<hash> ESA_AGENT_SHA256=<hash> sh esa-agent-install.sh https://esa.example.com`. The server that sends the binaries cannot vouch for them, so the pinned hashes must come from the release notes, not from your esa.
 
 The agent runs as `esa`. Its only sudo permission is the existing fixed helper executable. The helper and agent binaries are owned by root. `/etc/esa/agent.token` is root:esa, mode 0640. `/etc/esa/agent.env` is root-only and contains:
 
@@ -24,7 +26,11 @@ ESA_AGENT_TOKEN_FILE=/etc/esa/agent.token
 ESA_AGENT_PIN=esa_pin_...
 ```
 
-The pin names the server and the key that signs its commands. esa signs every command with the account key, and the agent runs only commands whose signature matches its pin and its server. A proxy, TLS terminator or CDN in front of esa that starts rewriting traffic after setup can read it but cannot give the agent work, and a command that is replayed or delivered late is refused because ids only rise (the mark lives in memory, so a restart forgets it and the command expiry, at most ten minutes, bounds what could be replayed). Something that is already rewriting traffic while you set up can change the installer and the pin shown to you, so check the installer against the hash in the release notes (`sha256sum esa-agent-install.sh`). An agent installed before this check has no pin and logs that commands are not verified; reinstall it with a pin. The agent sends no data anywhere else. It verifies HTTPS normally and refuses redirects. Numeric loopback HTTP is allowed for isolated development tests. There is no TLS verification bypass.
+The pin names the server and the key that signs its commands. esa signs every command with the account key. The agent runs a command only when its signature matches the pin and the server, and only when its id is higher than the last one the agent ran. The agent keeps that id in its systemd state directory (`/var/lib/esa-agent`), so a replayed command is refused after a restart too. If you restore esa's database from a backup, delete `/var/lib/esa-agent/last-command-id` on each outbound server, or the agent refuses new commands until their ids pass the saved one.
+
+This protects against a proxy, TLS terminator or CDN in front of esa that starts rewriting traffic after setup. It does not protect setup itself: the pin and the installer reach you through esa, so something already rewriting traffic then could change both. Check the installer against the hash in the release notes (`sha256sum esa-agent-install.sh`). Results the agent sends back are not signed, so such a proxy could still change what the board shows. An agent installed before this check has no pin and logs that commands are not verified; reinstall it with a pin.
+
+The agent sends no data anywhere else. It verifies HTTPS normally and refuses redirects. Numeric loopback HTTP is allowed for isolated development tests. There is no TLS verification bypass.
 
 ## Use and rotate
 

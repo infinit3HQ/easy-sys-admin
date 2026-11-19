@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/agent"
@@ -32,6 +33,14 @@ func main() {
 			os.Exit(1)
 		}
 		client.WithPin(pin)
+		// systemd sets STATE_DIRECTORY from StateDirectory=; it can list
+		// several directories separated by colons.
+		if dirs := os.Getenv("STATE_DIRECTORY"); dirs != "" {
+			if err := client.WithStateDir(strings.SplitN(dirs, ":", 2)[0]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
 	} else {
 		fmt.Fprintln(os.Stderr, "esa-agent: ESA_AGENT_PIN is not set, so commands are not verified; reinstall with a signing pin")
 	}

@@ -1046,7 +1046,7 @@ type AgentCommand struct {
 type AgentCredential struct {
 	ServerId int64 `json:"serverId"`
 
-	// SigningPin Shown once with the token. The agent checks every command against it, so a proxy in front of esa cannot give the agent commands. Give it to the agent out of band, the same way as the token.
+	// SigningPin The server id and the public key that signs this server's commands. It stays the same when the credential is replaced. The agent runs only commands that match it, so a proxy that starts changing traffic after setup cannot give the agent commands.
 	SigningPin string `json:"signingPin"`
 
 	// Token Shown once. Save in a protected file, never in a URL or command argument.

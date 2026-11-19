@@ -101,6 +101,9 @@ func TestApprovalsAreForPeopleOnly(t *testing.T) {
 	wantPerson("key exception", err)
 	_, err = s.CreateVulnException(ctx, tok, f.gSrv.ID, "CVE-2026-0001", "openssl", "ok", s.now().Add(24*3600e9))
 	wantPerson("vulnerability exception", err)
+	if err := s.db.Model(&store.Server{}).Where("id = ?", f.gSrv.ID).Update("hosts_control_plane", true).Error; err != nil {
+		t.Fatal(err)
+	}
 	off := false
 	_, err = s.UpdateServer(ctx, tok, f.gSrv.ID, UpdateServerInput{HostsControlPlane: &off})
 	wantPerson("control plane host flag", err)
@@ -138,5 +141,42 @@ func TestReceiverDoesNotSeeNoticeNotes(t *testing.T) {
 	own, err := s.GetIncident(ctx, f.alice, inc.ID)
 	if err != nil || own.Note != "call Dana" {
 		t.Errorf("owner view = %+v, %v", own, err)
+	}
+}
+
+// A run's messages can name the server that failed. A receiving team that
+// cannot see that server does not get its name, and does not see the owner's
+// notes on shared servers.
+func TestReceiverDoesNotSeeUnsharedServerNames(t *testing.T) {
+	f := newShareFixture(t)
+	s, ctx := f.s, context.Background()
+	f.accept(t, "view")
+	run, err := s.StartRun(ctx, f.alice, RunRequest{Kind: RunMeasure, ServerIDs: []int64{f.shared.ID, f.unshared.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Wait()
+	if err := s.db.Model(&store.RunServer{}).Where("run_id = ? AND server_id = ?", run.ID, f.shared.ID).
+		Update("error", "stopped after canary secret-1 failed").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&store.Server{}).Where("id = ?", f.shared.ID).Update("note", "root password is in the vault").Error; err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRun(ctx, f.bob, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, rs := range got.Servers {
+		if strings.Contains(rs.Error, "secret-1") {
+			t.Errorf("receiver sees an unshared server name: %q", rs.Error)
+		}
+	}
+	v, err := s.GetServer(ctx, f.bob, f.shared.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Note != "" {
+		t.Errorf("receiver sees the owner's server note: %q", v.Note)
 	}
 }

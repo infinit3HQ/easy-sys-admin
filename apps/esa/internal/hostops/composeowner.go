@@ -113,17 +113,22 @@ func (h *Host) trustedIDs() (uids, gids map[uint32]bool) {
 	}
 	// A group is trusted when nobody outside the trusted users is in it,
 	// as a listed member or through it being their primary group.
+	// A group nobody visible belongs to may have members that only a
+	// directory service knows, so it is not trusted.
 	for _, g := range groups {
-		ok := true
+		ok, seen := true, false
 		for _, m := range g.members {
-			ok = ok && trustedName[m]
+			ok, seen = ok && trustedName[m], true
 		}
 		for _, u := range users {
-			if u.gid == g.gid && !trustedName[u.name] && u.uid != 0 {
-				ok = false
+			if u.gid == g.gid {
+				seen = true
+				if !trustedName[u.name] && u.uid != 0 {
+					ok = false
+				}
 			}
 		}
-		if ok {
+		if ok && seen {
 			gids[g.gid] = true
 		}
 	}
@@ -132,8 +137,8 @@ func (h *Host) trustedIDs() (uids, gids map[uint32]bool) {
 
 // checkComposeEntry refuses an entry that someone who cannot act as root
 // could change. For a directory above the project, world write is fine when
-// the sticky bit is set: there, nobody can rename or remove an entry that is
-// not theirs, as in /tmp.
+// the sticky bit is set and a trusted user owns it: there, nobody else can
+// rename or remove an entry that is not theirs, as in /tmp.
 func (h *Host) checkComposeEntry(t composeTrust, path string, fi os.FileInfo, ancestor bool) error {
 	st, ok := fi.Sys().(*syscall.Stat_t)
 	if !ok {
@@ -147,24 +152,30 @@ func (h *Host) checkComposeEntry(t composeTrust, path string, fi os.FileInfo, an
 	if perm&0o020 != 0 && !t.gid(st.Gid) {
 		return &RefusedError{Reason: path + " can be written by a group with members who cannot act as root; esa will not run compose from it"}
 	}
-	if !t.uid(st.Uid) && !(ancestor && sticky) {
+	if !t.uid(st.Uid) {
 		return &RefusedError{Reason: path + " is owned by a user who cannot act as root (root, docker, sudo, wheel and admin members can); esa will not run compose from it"}
 	}
 	return nil
 }
 
 // checkComposeTree checks the project directory, each compose file, a .env
-// file beside them, and every directory above the project. It is run before
-// compose pulls and again before it recreates the service, because a pull can
-// take minutes and a path is checked by name.
+// file beside them, every directory above the project, and the directories
+// between the project and each file. The project directory is resolved to
+// its real path first, so a symlink cannot hide the directories that really
+// hold it. It is run before compose pulls and again before it recreates the
+// service, because a pull can take minutes and paths are checked by name.
 func (h *Host) checkComposeTree(dir string, files []string) error {
 	t := h.composeTrust()
-	for p := dir; ; p = filepath.Dir(p) {
-		fi, err := os.Stat(h.path(p))
+	real, err := h.realPath(dir)
+	if err != nil {
+		return &RefusedError{Reason: "compose directory " + dir + " cannot be resolved"}
+	}
+	for p := real; ; p = filepath.Dir(p) {
+		fi, err := os.Lstat(h.path(p))
 		if err != nil || !fi.IsDir() {
 			return &RefusedError{Reason: "compose directory " + p + " is not a directory"}
 		}
-		if err := h.checkComposeEntry(t, p, fi, p != dir); err != nil {
+		if err := h.checkComposeEntry(t, p, fi, p != real); err != nil {
 			return err
 		}
 		if p == "/" || p == filepath.Dir(p) {
@@ -176,15 +187,51 @@ func (h *Host) checkComposeTree(dir string, files []string) error {
 		extra = append(extra, env)
 	}
 	for _, f := range extra {
-		fi, err := os.Lstat(h.path(f))
-		if err != nil || !fi.Mode().IsRegular() {
-			return &RefusedError{Reason: "compose file " + f + " no longer exists or is not a regular file"}
+		rel, err := filepath.Rel(dir, f)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			return &RefusedError{Reason: "compose file " + f + " is outside " + dir}
 		}
-		if err := h.checkComposeEntry(t, f, fi, false); err != nil {
-			return err
+		// Each directory between the project and the file, then the file.
+		p := real
+		parts := strings.Split(rel, string(filepath.Separator))
+		for i, part := range parts {
+			p = filepath.Join(p, part)
+			fi, err := os.Lstat(h.path(p))
+			last := i == len(parts)-1
+			switch {
+			case err != nil:
+				return &RefusedError{Reason: "compose file " + f + " no longer exists"}
+			case last && !fi.Mode().IsRegular():
+				return &RefusedError{Reason: "compose file " + f + " is not a regular file"}
+			case !last && !fi.IsDir():
+				return &RefusedError{Reason: "compose directory " + filepath.Dir(f) + " is not a directory"}
+			}
+			if err := h.checkComposeEntry(t, p, fi, false); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// realPath resolves symlinks in p, inside the host root.
+func (h *Host) realPath(p string) (string, error) {
+	resolved, err := filepath.EvalSymlinks(h.path(p))
+	if err != nil {
+		return "", err
+	}
+	if h.Root != "" {
+		root, err := filepath.EvalSymlinks(h.Root)
+		if err != nil {
+			return "", err
+		}
+		rel, err := filepath.Rel(root, resolved)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			return "", os.ErrNotExist
+		}
+		return filepath.Join("/", rel), nil
+	}
+	return resolved, nil
 }
 
 func fileExists(path string) bool {

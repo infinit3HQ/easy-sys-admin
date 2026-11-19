@@ -13,7 +13,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,10 +45,44 @@ type Client struct {
 	// plane for this server. Without one, the agent trusts whatever answers
 	// at its origin, which includes any proxy in front of the control plane.
 	pin *proto.AgentPin
-	// lastID is the highest command id this process has accepted. Ids rise
-	// with every command the control plane queues, so a signed command that
-	// something replays or holds back and delivers late is refused.
-	lastID int64
+	// lastID is the highest command id accepted. Ids rise with every command
+	// the control plane queues, so a signed command that something replays or
+	// holds back and delivers late is refused. stateFile keeps it across
+	// restarts when the agent has a state directory.
+	lastID    int64
+	stateFile string
+}
+
+// WithStateDir keeps the highest accepted command id in dir, and starts from
+// the one saved there.
+func (c *Client) WithStateDir(dir string) error {
+	path := filepath.Join(dir, "last-command-id")
+	raw, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		id, perr := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+		if perr != nil || id < 0 {
+			return errors.New("the saved command id is not a number")
+		}
+		c.lastID = id
+	case !errors.Is(err, os.ErrNotExist):
+		return errors.New("cannot read the saved command id")
+	}
+	c.stateFile = path
+	return nil
+}
+
+// saveLastID writes the mark before the command runs. If it cannot be written
+// the command still runs: the mark in memory still refuses replays until the
+// next restart.
+func (c *Client) saveLastID() {
+	if c.stateFile == "" {
+		return
+	}
+	tmp := c.stateFile + ".tmp"
+	if os.WriteFile(tmp, []byte(strconv.FormatInt(c.lastID, 10)+"\n"), 0o600) == nil {
+		_ = os.Rename(tmp, c.stateFile)
+	}
 }
 
 // WithPin makes the client check every command against pin and returns it.
@@ -57,9 +93,7 @@ func (c *Client) WithPin(pin proto.AgentPin) *Client {
 
 // commandTrusted reports whether cmd may run. Without a pin every command
 // passes this check, as before. With one, the command must carry a valid
-// signature for this server and a higher id than any accepted before. The
-// mark lives in memory: a restart forgets it, and the signature's expiry (at
-// most ten minutes) bounds what could be replayed after one.
+// signature for this server and a higher id than any accepted before.
 func (c *Client) commandTrusted(cmd Command) bool {
 	if c.pin == nil {
 		return true
@@ -71,6 +105,7 @@ func (c *Client) commandTrusted(cmd Command) bool {
 		return false
 	}
 	c.lastID = cmd.ID
+	c.saveLastID()
 	return true
 }
 

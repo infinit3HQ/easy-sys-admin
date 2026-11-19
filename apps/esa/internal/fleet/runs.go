@@ -233,7 +233,14 @@ func (s *Service) prepareRun(ctx context.Context, a Actor, req RunRequest, q *st
 			BatchSize: group.UpdateBatchSize, MaxFailures: group.UpdateMaxFailures,
 		}
 		_ = group.HoldPackages.Decode(&opts.Hold)
-		_ = group.HealthChecks.Decode(&opts.Checks)
+		opts.Checks = storedChecks(group.HealthChecks)
+	} else if req.Kind == RunUpdate {
+		// A run by server ids keeps the checks of those servers' group.
+		checks, err := s.serverGroupChecks(ctx, servers)
+		if err != nil {
+			return store.Run{}, err
+		}
+		opts.Checks = checks
 	}
 	if req.Options != nil {
 		// An override replaces the settings, except that a batch size,
@@ -255,7 +262,8 @@ func (s *Service) prepareRun(ctx context.Context, a Actor, req RunRequest, q *st
 		}
 		if opts.Checks == nil {
 			opts.Checks = checks
-		} else {
+		} else if req.Kind == RunUpdate {
+			// Only updates run checks; other kinds drop them below.
 			norm, err := validChecks(opts.Checks)
 			if err != nil {
 				return store.Run{}, err
@@ -502,10 +510,20 @@ func (s *Service) hideUnsharedRunServers(ctx context.Context, a Actor, runs []st
 		// Rebuild the summary only when the runner wrote it (other summaries,
 		// like a missed schedule, name no servers).
 		_, _, _, fullSummary := runTally(RunKind(runs[i].Kind), runs[i].Servers)
+		total := len(runs[i].Servers)
 		kept := runs[i].Servers[:0]
 		for _, rs := range runs[i].Servers {
 			if shared[rs.ServerID] {
 				kept = append(kept, rs)
+			}
+		}
+		if len(kept) < total {
+			// Stop messages name the server that failed, which may be one
+			// this team cannot see.
+			for j := range kept {
+				if strings.HasPrefix(kept[j].Error, "stopped after") {
+					kept[j].Error = "stopped after another server in this run failed"
+				}
 			}
 		}
 		runs[i].Servers = kept
@@ -634,4 +652,40 @@ func receiverOptions(raw store.JSON, shared map[int64]bool) store.JSON {
 		o.Override = &kept
 	}
 	return store.MustJSON(o)
+}
+
+// serverGroupChecks returns the health checks for an update run started by
+// server ids. Servers of a group with blocking checks run with that group's
+// checks, and only with servers of the same group: one group's checks may not
+// fit another group's servers, and dropping them would skip a blocking check.
+func (s *Service) serverGroupChecks(ctx context.Context, servers []store.Server) ([]HealthCheck, error) {
+	groups := map[int64]bool{}
+	ungrouped := false
+	for _, srv := range servers {
+		if srv.GroupID == nil {
+			ungrouped = true
+			continue
+		}
+		groups[*srv.GroupID] = true
+	}
+	var withBlocking []store.Group
+	for id := range groups {
+		var g store.Group
+		if err := s.db.WithContext(ctx).Where("id = ?", id).Take(&g).Error; err != nil {
+			return nil, mapStore(err)
+		}
+		for _, c := range storedChecks(g.HealthChecks) {
+			if c.Blocking {
+				withBlocking = append(withBlocking, g)
+				break
+			}
+		}
+	}
+	if len(withBlocking) == 0 {
+		return nil, nil
+	}
+	if len(groups) > 1 || ungrouped {
+		return nil, invalid("serverIds", "servers in a group with blocking health checks run only with that group's servers; start one run per group")
+	}
+	return storedChecks(withBlocking[0].HealthChecks), nil
 }

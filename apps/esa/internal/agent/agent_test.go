@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -130,5 +131,43 @@ func TestAgentWithPinRunsOnlySignedCommands(t *testing.T) {
 		if res, ok := results[id]; !ok || res.Exit == 0 {
 			t.Errorf("command %d: refusal was not reported: %+v", id, res)
 		}
+	}
+}
+
+// The mark survives a restart, so a command run before it is not run again.
+func TestAgentKeepsReplayMarkAcrossRestarts(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "last-command-id"), []byte("5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := New("https://example.com", "esa_agent_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.WithPin(proto.AgentPin{ServerID: 7, Key: pub})
+	if err := c.WithStateDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Minute)
+	cmd := func(id int64) Command {
+		sig := base64.StdEncoding.EncodeToString(ed25519.Sign(priv, proto.AgentCommandMessage(7, id, "status", []string{}, expires.Unix())))
+		return Command{ID: id, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: 7, Signature: sig}
+	}
+	if c.commandTrusted(cmd(4)) {
+		t.Fatal("a command older than the saved mark was accepted after a restart")
+	}
+	if !c.commandTrusted(cmd(6)) {
+		t.Fatal("a newer signed command was refused")
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, "last-command-id"))
+	if strings.TrimSpace(string(raw)) != "6" {
+		t.Fatalf("saved mark = %q, want 6", raw)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "last-command-id"), []byte("junk"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.WithStateDir(dir); err == nil {
+		t.Fatal("a damaged mark was accepted")
 	}
 }

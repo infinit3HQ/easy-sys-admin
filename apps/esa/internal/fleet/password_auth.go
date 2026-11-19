@@ -103,7 +103,10 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 	}
 
 	existing, findErr := userByEmail(s.db.WithContext(ctx), email)
-	if findErr == nil && (existing.PasswordHash != "" || existing.Issuer == LocalIssuer) {
+	// An account without a password, including one whose unconfirmed
+	// password esa cleared when a provider proved the address, can still
+	// add one through the mailed link below.
+	if findErr == nil && existing.PasswordHash != "" {
 		return SignInResult{}, ErrEmailTaken
 	}
 	if findErr == nil {
@@ -120,6 +123,7 @@ func (s *Service) SignUpPassword(ctx context.Context, name, email, pw string) (S
 		if mailErr := s.sendAuthMail(ctx, existing.ID, existing.Email, "reset", true); mailErr != nil {
 			return SignInResult{User: existing}, fmt.Errorf("%w: %w", ErrMailFailed, mailErr)
 		}
+		s.audit(ctx, nil, Actor{UserID: existing.ID, Source: SourceWeb}, "auth.add_password_request", existing.Email, nil)
 		return SignInResult{User: existing, NeedsConfirm: true, AddPassword: true}, nil
 	}
 	if !errors.Is(findErr, gorm.ErrRecordNotFound) {

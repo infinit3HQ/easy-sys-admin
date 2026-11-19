@@ -207,6 +207,31 @@ func TestContainerUpdateChecksParentDirectories(t *testing.T) {
 	}
 }
 
+// A symlink must not hide the directories that really hold the project.
+func TestContainerUpdateResolvesSymlinkedProject(t *testing.T) {
+	realParent := t.TempDir()
+	if err := os.Chmod(realParent, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	app := filepath.Join(realParent, "app")
+	if err := os.Mkdir(app, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, "compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "app")
+	if err := os.Symlink(app, link); err != nil {
+		t.Fatal(err)
+	}
+	run := &recordingRunner{}
+	h := &Host{Run: run, Docker: startComposeDocker(t, "app", composeLabels("myapp", "web", link, "compose.yml")),
+		TrustedComposeOwner: anyOwner, TrustedComposeGroup: anyOwner}
+	if _, err := h.ContainerUpdate(context.Background(), "app", "", ContainerFilter{}); err == nil || len(run.cmds) != 0 {
+		t.Fatalf("a project reached through a symlink under a world-writable directory was accepted: %v %v", err, run.cmds)
+	}
+}
+
 func TestDockerGroupOwners(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "etc"), 0o755); err != nil {
@@ -217,7 +242,7 @@ func TestDockerGroupOwners(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("group", "root:x:0:\ndocker:x:998:ana\nstaff:x:50:bob\nsudo:x:27:dee\nana:x:1000:\n")
+	write("group", "root:x:0:\ndocker:x:998:ana\nstaff:x:50:bob\nsudo:x:27:dee\nana:x:1000:\nldap:x:5000:\n")
 	write("passwd", "root:x:0:0::/root:/bin/sh\nana:x:1000:1000::/home/ana:/bin/sh\nbob:x:1001:50::/home/bob:/bin/sh\ncarl:x:1002:998::/home/carl:/bin/sh\ndee:x:1003:1003::/home/dee:/bin/sh\n")
 	h := &Host{Root: root}
 	trust := h.composeTrust()
@@ -226,7 +251,9 @@ func TestDockerGroupOwners(t *testing.T) {
 			t.Errorf("uid %d trusted = %v, want %v", uid, got, want)
 		}
 	}
-	for gid, want := range map[uint32]bool{0: true, 998: true, 27: true, 50: false, 1000: true} {
+	// A group nobody visible is in (5000) may have members only a directory
+	// service knows, so it is not trusted.
+	for gid, want := range map[uint32]bool{0: true, 998: true, 27: true, 50: false, 1000: true, 5000: false} {
 		if got := trust.gid(gid); got != want {
 			t.Errorf("gid %d trusted = %v, want %v", gid, got, want)
 		}

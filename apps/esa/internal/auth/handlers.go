@@ -137,10 +137,8 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				signupError(w, r, "failed")
 				return
 			}
-			if res.AddPassword {
-				http.Redirect(w, r, "/login?mode=verify&sent=password&email="+url.QueryEscape(res.User.Email), http.StatusSeeOther)
-				return
-			}
+			// A new account and an address that already signs in another
+			// way get the same page, so the response does not say which.
 			if res.NeedsConfirm {
 				http.Redirect(w, r, "/login?mode=verify&sent=confirm&email="+url.QueryEscape(res.User.Email), http.StatusSeeOther)
 				return

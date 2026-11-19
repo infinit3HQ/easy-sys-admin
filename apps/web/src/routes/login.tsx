@@ -49,7 +49,7 @@ export const Route = createFileRoute('/login')({
       .optional(),
     email: z.string().max(320).optional(),
     token: z.string().max(200).optional(),
-    sent: z.enum(['confirm', 'reset', 'password']).optional(),
+    sent: z.enum(['confirm', 'reset']).optional(),
     confirmed: z.coerce.string().optional(),
     reset: z.coerce.string().optional(),
   }),
@@ -131,10 +131,8 @@ function Login() {
                 ? 'This confirms the address on your account.'
                 : verify
                   ? sent === 'confirm'
-                    ? 'We sent a confirmation link. Open it, then sign in. It works for 24 hours.'
-                    : sent === 'password'
-                      ? 'This address already signs in another way. If it can add a password, we emailed a link to choose one.'
-                      : 'This address is not confirmed yet. We can send the link again.'
+                    ? 'We emailed a link to this address. Open it to finish.'
+                    : 'This address is not confirmed yet. We can send the link again.'
                   : resetting
                     ? 'Choose a password of at least 10 characters.'
                     : forgot
@@ -156,13 +154,11 @@ function Login() {
             )}
             {sent === 'confirm' && !error && (
               <Notice className="mt-4">
-                Check your email for a confirmation link. It works for 24 hours.
-              </Notice>
-            )}
-            {sent === 'password' && !error && (
-              <Notice className="mt-4">
-                Open the link in your email and choose your password there. The
-                password you typed here is not used. The link works for 1 hour.
+                Check your email. A new account gets a confirmation link that
+                works for 24 hours. If this address already signs in another
+                way, the link lets you choose a password there instead, and
+                works for 1 hour. The password you typed here is not used in
+                that case.
               </Notice>
             )}
             {sent === 'reset' && !error && (
@@ -232,7 +228,7 @@ function Login() {
               </form>
             )}
 
-            {verify && sent !== 'password' && (
+            {verify && (
               <form
                 method="post"
                 action="/auth/email/resend"
