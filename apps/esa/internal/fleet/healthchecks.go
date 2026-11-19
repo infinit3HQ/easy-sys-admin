@@ -270,6 +270,7 @@ func (s *Service) runHealthChecks(ctx context.Context, srv store.Server, ep remo
 	}
 	var units []proto.Service
 	var boxes []proto.Container
+	var unitsErr, boxesErr error
 	needUnits, needBoxes := false, false
 	for _, c := range checks {
 		if c.Kind == "unit" {
@@ -281,19 +282,13 @@ func (s *Service) runHealthChecks(ctx context.Context, srv store.Server, ep remo
 	}
 	if needUnits {
 		cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		err := s.pool.Call(cctx, ep, &units, "services")
+		unitsErr = s.pool.Call(cctx, ep, &units, "services")
 		cancel()
-		if err != nil {
-			return nil, "could not list services: " + err.Error()
-		}
 	}
 	if needBoxes {
 		cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		err := s.pool.Call(cctx, ep, &boxes, "containers")
+		boxesErr = s.pool.Call(cctx, ep, &boxes, "containers")
 		cancel()
-		if err != nil {
-			return nil, "could not list containers: " + err.Error()
-		}
 	}
 	out := make([]CheckResult, 0, len(checks))
 	var block string
@@ -305,12 +300,22 @@ func (s *Service) runHealthChecks(ctx context.Context, srv store.Server, ep remo
 		case "http":
 			res.Detail = s.checkHTTP(ctx, srv.Host, c)
 		case "unit":
-			res.Detail = unitState(units, c.Unit)
+			if unitsErr != nil {
+				res.State, res.Detail = "unknown", "could not list services: "+unitsErr.Error()
+			} else {
+				res.Detail = unitState(units, c.Unit)
+			}
 		case "container":
-			res.Detail = containerState(boxes, c.Container)
+			if boxesErr != nil {
+				res.State, res.Detail = "unknown", "could not list containers: "+boxesErr.Error()
+			} else {
+				res.Detail = containerState(boxes, c.Container)
+			}
 		}
 		if res.Detail != "" {
-			res.State = checkState(res.Detail)
+			if res.State == "pass" {
+				res.State = checkState(res.Detail)
+			}
 			if c.Blocking && block == "" {
 				block = c.Name + ": " + res.Detail
 			}

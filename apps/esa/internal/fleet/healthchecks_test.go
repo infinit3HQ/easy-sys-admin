@@ -2,6 +2,7 @@ package fleet
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/remote"
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
@@ -171,4 +173,35 @@ func splitTestHost(t *testing.T, raw string) (string, int) {
 		t.Fatal(err)
 	}
 	return host, port
+}
+
+func TestInventoryErrorsRespectBlockingAndOverrides(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer httpServer.Close()
+	host, port := splitTestHost(t, httpServer.URL)
+	s := &Service{pool: remote.NewPool(), allowPrivate: true}
+	defer s.pool.Close()
+	ep := remote.Endpoint{Capabilities: []string{"services", "containers"},
+		Transport: func(context.Context, string, ...string) (remote.ExecResult, error) {
+			return remote.ExecResult{}, errors.New("inventory unavailable")
+		}}
+	checks := []HealthCheck{
+		{Name: "unit", Kind: "unit", Unit: "ssh.service", Blocking: true},
+		{Name: "container", Kind: "container", Container: "web"},
+		{Name: "http", Kind: "http", Method: "GET", Port: port, Path: "/", Blocking: true},
+	}
+	srv := store.Server{Host: host}
+	override := &CheckOverride{Checks: []string{"unit"}}
+	got, block := s.runHealthChecks(context.Background(), srv, ep, beforeChecks(checks, override), "before")
+	markOverridden(got, override)
+	if block != "" || len(got) != 3 || !got[0].Overridden || got[0].State != "unknown" ||
+		got[1].Blocking || got[1].State != "unknown" || got[2].State != "pass" {
+		t.Fatalf("before: %+v, block=%q", got, block)
+	}
+	got, block = s.runHealthChecks(context.Background(), srv, ep, checks, "watch")
+	if len(got) != 3 || !strings.HasPrefix(block, "unit:") || got[2].State != "pass" {
+		t.Fatalf("watch: %+v, block=%q", got, block)
+	}
 }

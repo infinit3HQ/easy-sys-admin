@@ -87,6 +87,7 @@ type grypeReport struct {
 		Artifact struct {
 			Name     string `json:"name"`
 			Version  string `json:"version"`
+			Arch     string `json:"arch"`
 			Type     string `json:"type"`
 			Metadata struct {
 				ImageID   string `json:"imageID"`
@@ -126,7 +127,10 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 			break
 		}
 	}
-	byKey := map[string]int{}
+	type matchKey struct {
+		name, version, arch, packageType, image, advisory string
+	}
+	byKey := map[matchKey]int{}
 	for _, m := range r.Matches {
 		v := m.Vulnerability
 		if v.ID == "" || m.Artifact.Name == "" {
@@ -138,11 +142,22 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 				aliases = append(aliases, rel.ID)
 			}
 		}
-		key := m.Artifact.Name + "\x00" + v.ID
-		for _, al := range aliases {
-			if i, ok := byKey[m.Artifact.Name+"\x00"+al]; ok {
-				byKey[key] = i
+		image := m.Artifact.Metadata.ImageID
+		if image == "" {
+			image = m.Artifact.Metadata.UserInput
+		}
+		key := matchKey{name: m.Artifact.Name, version: m.Artifact.Version, arch: m.Artifact.Arch, packageType: m.Artifact.Type, image: image}
+		keyFor := func(id string) matchKey {
+			key := key
+			key.advisory = id
+			return key
+		}
+		index, found := byKey[keyFor(v.ID)]
+		for _, alias := range aliases {
+			if found {
+				break
 			}
+			index, found = byKey[keyFor(alias)]
 		}
 		vm := VulnMatch{
 			ID: v.ID, Aliases: aliases, Package: m.Artifact.Name, Version: m.Artifact.Version,
@@ -154,7 +169,12 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 		for _, e := range v.EPSS {
 			vm.EPSS = max(vm.EPSS, e.EPSS)
 		}
-		if i, ok := byKey[key]; ok {
+		if found {
+			i := index
+			byKey[keyFor(v.ID)] = i
+			for _, alias := range aliases {
+				byKey[keyFor(alias)] = i
+			}
 			matches[i].Aliases = slices.DeleteFunc(mergeNames(matches[i].Aliases, append(aliases, v.ID)), func(n string) bool { return n == matches[i].ID })
 			matches[i].KnownExploited = matches[i].KnownExploited || vm.KnownExploited
 			matches[i].EPSS = max(matches[i].EPSS, vm.EPSS)
@@ -163,9 +183,9 @@ func parseGrype(raw []byte) (scanner, version string, built *time.Time, matches 
 		if len(matches) == maxScanMatches {
 			return "", "", nil, nil, invalid("scan", "more than %d matches; import a smaller report", maxScanMatches)
 		}
-		byKey[key] = len(matches)
+		byKey[keyFor(v.ID)] = len(matches)
 		for _, al := range aliases {
-			byKey[m.Artifact.Name+"\x00"+al] = len(matches)
+			byKey[keyFor(al)] = len(matches)
 		}
 		matches = append(matches, vm)
 	}

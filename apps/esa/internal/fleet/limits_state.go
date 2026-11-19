@@ -161,7 +161,7 @@ const (
 func (s *Service) enqueueNotify(ch store.NotifyChannel, msg Message) {
 	row := store.NotifyDelivery{
 		AccountID: ch.AccountID, ChannelID: ch.ID, Title: msg.Title, Body: msg.Body,
-		Severity: msg.Severity, URL: msg.URL, State: "queued", CreatedAt: s.now(),
+		Severity: msg.Severity, URL: msg.URL, Resolved: msg.Resolved, State: "queued", CreatedAt: s.now(),
 	}
 	if err := s.db.WithContext(context.WithoutCancel(s.baseCtx)).Omit("Account", "Channel").Create(&row).Error; err != nil {
 		s.log.Error("store notification", "account_id", ch.AccountID, "channel", ch.Name, "err", err)
@@ -240,7 +240,7 @@ func (s *Service) deliver(ctx context.Context, id int64) {
 		s.finishDelivery(ctx, id, row.Attempts, "channel is gone or disabled", true)
 		return
 	}
-	err := s.sendOne(ctx, ch, Message{Title: row.Title, Body: row.Body, Severity: row.Severity, URL: row.URL})
+	err := s.sendOne(ctx, ch, Message{Title: row.Title, Body: row.Body, Severity: row.Severity, URL: row.URL, Resolved: row.Resolved})
 	if err == nil {
 		now := s.now()
 		s.db.WithContext(ctx).Model(&store.NotifyDelivery{}).Where("id = ?", id).

@@ -98,3 +98,5 @@ Both hosted deployment environments use Free Beta limits: 10 servers per space a
 APT upgrade logs now report systemd services that need a restart when needrestart is installed. The check runs in list-only mode and its result is separate from the package outcome and reboot marker.
 
 Stable GitHub releases use a version tag on a verified `main` revision. The release workflow publishes matching versioned GHCR tags and records both digests in the release notes.
+
+Scan imports preserve each installed version and image when merging advisory aliases. Automatic scans record attempts separately from coverage and scan the least recently attempted eligible servers first. An inventory error records an unknown check and only stops maintenance if that check is blocking. Queued notifications preserve whether an alert resolved.
