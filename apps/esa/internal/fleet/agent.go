@@ -34,7 +34,7 @@ func (s *Service) agentAdmin(ctx context.Context, a Actor) error {
 		return err
 	}
 	if !a.isPerson() || a.SignedInAt == nil || s.now().Sub(*a.SignedInAt) > 15*time.Minute || a.SignedInAt.After(s.now().Add(time.Minute)) {
-		return &ConflictError{Message: "sign in again before managing an outbound connection"}
+		return &ConflictError{Code: "reauth_required", Message: "Sign in again before managing an outbound connection."}
 	}
 	return s.member(ctx, a)
 }

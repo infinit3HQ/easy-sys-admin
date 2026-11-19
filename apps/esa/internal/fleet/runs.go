@@ -139,16 +139,26 @@ type RunServerView struct {
 
 // StartRun creates a run and executes it in the background.
 func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunView, error) {
+	run, err := s.prepareRun(ctx, a, req, nil)
+	if err != nil {
+		return RunView{}, err
+	}
+	s.background(func(ctx context.Context) { s.execute(s.netCtx(ctx), run.ID) })
+	return s.GetRun(ctx, a, run.ID)
+}
+
+// prepareRun validates the run request and records it without dispatching work.
+func (s *Service) prepareRun(ctx context.Context, a Actor, req RunRequest, q *store.Queries) (store.Run, error) {
 	scope := ScopeActions
 	// The role is checked per group below: the effective role on the
 	// target group, or on every server's group, must be admin.
 	if !a.hasScope(scope) {
-		return RunView{}, ErrForbidden
+		return store.Run{}, ErrForbidden
 	}
 	switch req.Kind {
 	case RunMeasure, RunClean, RunUpdate, RunReboot:
 	default:
-		return RunView{}, invalid("kind", "must be measure, clean, update, or reboot")
+		return store.Run{}, invalid("kind", "must be measure, clean, update, or reboot")
 	}
 
 	// Servers may be the actor's own or shared with operate access, but a
@@ -160,59 +170,59 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if req.GroupID != nil {
 		g, acc, _, err := s.loadVisibleGroup(ctx, a, *req.GroupID)
 		if err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		if err := rc.canOperate(ctx, acc, &g.ID, RoleAdmin, scope); err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		group, ownerID = &g, g.AccountID
 		if err := s.db.WithContext(ctx).Where("account_id = ? AND group_id = ?", g.AccountID, g.ID).Order("name").Find(&servers).Error; err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		if req.FromPlan && len(req.ServerIDs) > 0 {
 			servers = onlyServers(servers, req.ServerIDs)
 			if len(servers) != len(uniqueIDs(req.ServerIDs)) {
-				return RunView{}, invalid("serverIds", "the group's servers changed since the plan was approved")
+				return store.Run{}, invalid("serverIds", "the group's servers changed since the plan was approved")
 			}
 		}
 	} else {
 		if len(req.ServerIDs) == 0 {
-			return RunView{}, invalid("serverIds", "pick a group or at least one server")
+			return store.Run{}, invalid("serverIds", "pick a group or at least one server")
 		}
 		if err := s.visibleServers(ctx, a).Where("servers.id IN ?", req.ServerIDs).Order("name").Find(&servers).Error; err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		if len(servers) != len(uniqueIDs(req.ServerIDs)) {
-			return RunView{}, ErrNotFound
+			return store.Run{}, ErrNotFound
 		}
 		ownerID = servers[0].AccountID
 		for _, srv := range servers {
 			if srv.AccountID != ownerID {
-				return RunView{}, invalid("serverIds", "pick servers of one team; a run cannot mix your servers with shared ones or servers of different teams")
+				return store.Run{}, invalid("serverIds", "pick servers of one team; a run cannot mix your servers with shared ones or servers of different teams")
 			}
 		}
 		for _, srv := range servers {
 			acc, err := s.serverAccess(ctx, a, srv)
 			if err != nil {
-				return RunView{}, err
+				return store.Run{}, err
 			}
 			if err := rc.canOperate(ctx, acc, srv.GroupID, RoleAdmin, scope); err != nil {
-				return RunView{}, err
+				return store.Run{}, err
 			}
 		}
 	}
 	if len(servers) == 0 {
-		return RunView{}, invalid("groupId", "the group has no servers")
+		return store.Run{}, invalid("groupId", "the group has no servers")
 	}
 	actions := runActions(req.Kind)
 	if req.FromPlan && req.Kind == RunUpdate {
 		actions = append(actions, proto.FeatureUpgradeAllow)
 	}
 	if gaps := helperGaps(actions, servers); len(gaps) > 0 {
-		return RunView{}, &ConflictError{Code: proto.CodeIncompatible, Message: "reinstall the helper on these servers first, or leave them out: " + joinComma(gaps)}
+		return store.Run{}, &ConflictError{Code: proto.CodeIncompatible, Message: "reinstall the helper on these servers first, or leave them out: " + joinComma(gaps)}
 	}
 	if (req.Kind == RunUpdate || req.Kind == RunClean) && !req.FromPlan && s.needsPlan(ctx, group, servers) {
-		return RunView{}, invalid("kind", "this group requires an approved plan")
+		return store.Run{}, invalid("kind", "this group requires an approved plan")
 	}
 
 	opts := RunOptions{BuildCache: true, VSCode: true, JournalSize: "200M", UpdateMode: proto.UpdateSecurity, BatchSize: 1, MaxFailures: 1}
@@ -256,62 +266,62 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 		opts.Hold = unionNames(held, opts.Hold)
 	}
 	if err := validBatching(opts.BatchSize, opts.MaxFailures); err != nil {
-		return RunView{}, err
+		return store.Run{}, err
 	}
 	opts.BatchSize, opts.MaxFailures = opts.batching()
 	if req.Kind != RunUpdate && req.Kind != RunReboot {
 		opts.BatchSize, opts.MaxFailures = 0, 0
 	}
 	if req.Kind == RunClean && !opts.BuildCache && !opts.VSCode && !opts.Journal {
-		return RunView{}, invalid("options", "turn on at least one cleanup")
+		return store.Run{}, invalid("options", "turn on at least one cleanup")
 	}
 	if !validJournalSize(opts.JournalSize) {
-		return RunView{}, invalid("journalSize", "use a size like 200M or 1G")
+		return store.Run{}, invalid("journalSize", "use a size like 200M or 1G")
 	}
 	if opts.UpdateMode != proto.UpdateSecurity && opts.UpdateMode != proto.UpdateAll {
-		return RunView{}, invalid("updateMode", "must be security or all")
+		return store.Run{}, invalid("updateMode", "must be security or all")
 	}
 	opts.Hold = cleanList(opts.Hold)
 	for _, p := range opts.Hold {
 		if !pkgNameRe.MatchString(p) {
-			return RunView{}, invalid("hold", "%q is not a valid package name", p)
+			return store.Run{}, invalid("hold", "%q is not a valid package name", p)
 		}
 	}
 	if req.Kind == RunUpdate {
 		checks, err := validChecks(opts.Checks)
 		if err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		opts.Checks = checks
 		if len(req.CanaryServerIDs) > 0 {
 			opts.CanaryServerIDs = req.CanaryServerIDs
 		}
 		if err := validCanaries(opts.CanaryServerIDs, servers); err != nil {
-			return RunView{}, err
+			return store.Run{}, err
 		}
 		if req.ObserveSeconds > 0 {
 			opts.ObserveSeconds = req.ObserveSeconds
 		}
 		if opts.ObserveSeconds < 0 || opts.ObserveSeconds > 600 {
-			return RunView{}, invalid("observeSeconds", "must be from 0 to 600")
+			return store.Run{}, invalid("observeSeconds", "must be from 0 to 600")
 		}
 		if opts.ObserveSeconds > 0 && len(opts.CanaryServerIDs) == 0 {
-			return RunView{}, invalid("observeSeconds", "pick a canary to watch")
+			return store.Run{}, invalid("observeSeconds", "pick a canary to watch")
 		}
 		if opts.ObserveSeconds > 0 && len(opts.Checks) == 0 {
-			return RunView{}, invalid("observeSeconds", "add a check to watch")
+			return store.Run{}, invalid("observeSeconds", "add a check to watch")
 		}
 		if req.WaitAfterCanaries {
 			opts.WaitAfterCanaries = true
 		}
 		if opts.WaitAfterCanaries && len(opts.CanaryServerIDs) == 0 {
-			return RunView{}, invalid("waitAfterCanaries", "pick a canary to wait after")
+			return store.Run{}, invalid("waitAfterCanaries", "pick a canary to wait after")
 		}
 		opts.Override = nil
 		if req.Override != nil {
 			ov, err := validOverride(a, *req.Override, opts.Checks)
 			if err != nil {
-				return RunView{}, err
+				return store.Run{}, err
 			}
 			opts.Override = &ov
 		}
@@ -324,18 +334,26 @@ func (s *Service) StartRun(ctx context.Context, a Actor, req RunRequest) (RunVie
 	if a.Source == SourceSystem {
 		trigger = TriggerSchedule
 	}
-	run, err := s.createRun(ctx, a, ownerID, req.Kind, string(trigger), group, servers, opts, "running")
-	if err != nil {
-		return RunView{}, err
+	if q != nil {
+		return s.recordRun(ctx, q, a, ownerID, req.Kind, string(trigger), group, servers, opts, "running")
 	}
-	s.background(func(ctx context.Context) { s.execute(s.netCtx(ctx), run.ID) })
-	return s.GetRun(ctx, a, run.ID)
+	return s.createRun(ctx, a, ownerID, req.Kind, string(trigger), group, servers, opts, "running")
 }
 
 // createRun records a run owned by ownerID, the account that owns servers.
 // RequestedBy is the actor. When the actor works through a share, the audit
 // entry goes to the owner with via_account_id and a copy stays with the actor.
 func (s *Service) createRun(ctx context.Context, a Actor, ownerID int64, kind RunKind, trigger string, group *store.Group, servers []store.Server, opts RunOptions, status string) (store.Run, error) {
+	var run store.Run
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		var err error
+		run, err = s.recordRun(ctx, q, a, ownerID, kind, trigger, group, servers, opts, status)
+		return err
+	})
+	return run, err
+}
+
+func (s *Service) recordRun(ctx context.Context, q *store.Queries, a Actor, ownerID int64, kind RunKind, trigger string, group *store.Group, servers []store.Server, opts RunOptions, status string) (store.Run, error) {
 	run := store.Run{
 		AccountID: ownerID, Kind: string(kind), Trigger: trigger, Status: status,
 		Options: store.MustJSON(opts), RequestedBy: store.OptionalID(a.UserID), StartedAt: s.now(),
@@ -346,32 +364,30 @@ func (s *Service) createRun(ctx context.Context, a Actor, ownerID int64, kind Ru
 	if a.Source == SourceAPI || a.Source == SourceMCP {
 		run.Trigger = string(a.Source)
 	}
-	err := s.store.InTx(ctx, func(q *store.Queries) error {
-		tx := q.Raw()
-		if err := tx.Omit(clause.Associations).Create(&run).Error; err != nil {
-			return err
+	tx := q.Raw()
+	if err := tx.Omit(clause.Associations).Create(&run).Error; err != nil {
+		return store.Run{}, err
+	}
+	for _, srv := range servers {
+		rs := store.RunServer{RunID: run.ID, ServerID: srv.ID, Status: "queued", Detail: store.JSON("{}")}
+		if status != "running" {
+			rs.Status = "skipped"
 		}
-		for _, srv := range servers {
-			rs := store.RunServer{RunID: run.ID, ServerID: srv.ID, Status: "queued", Detail: store.JSON("{}")}
-			if status != "running" {
-				rs.Status = "skipped"
-			}
-			if err := tx.Omit(clause.Associations).Create(&rs).Error; err != nil {
-				return err
-			}
+		if err := tx.Omit(clause.Associations).Create(&rs).Error; err != nil {
+			return store.Run{}, err
 		}
-		target := "servers"
-		if group != nil {
-			target = group.Name
-		}
-		detail := map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)}
-		if opts.Override != nil {
-			detail["override_checks"], detail["override_reason"] = opts.Override.Checks, opts.Override.Reason
-		}
-		s.auditOn(ctx, q, a, ownerID, "run.start", target, detail)
-		return nil
-	})
-	return run, err
+	}
+	target := "servers"
+	if group != nil {
+		target = group.Name
+	}
+	detail := map[string]any{"run_id": run.ID, "kind": kind, "servers": len(servers)}
+	if opts.Override != nil {
+		detail["override_checks"], detail["override_reason"] = opts.Override.Checks, opts.Override.Reason
+	}
+	s.auditOn(ctx, q, a, ownerID, "run.start", target, detail)
+
+	return run, nil
 }
 
 // RunFilter narrows ListRuns.

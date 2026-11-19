@@ -4,7 +4,7 @@ Use the outbound agent when a server cannot accept incoming SSH from esa. The se
 
 ## Install
 
-1. Sign in again, then choose **Add a server > Outbound agent**. Only a space admin can register a server. Pick its name and group.
+1. Choose **Add a server > Outbound agent**. Only a space admin who signed in within the last 15 minutes can register a server. If esa asks you to sign in again, use the link to return to the enrollment form. Check your active space, then choose the server name and group.
 2. Copy the one-time credential. esa stores its hash, not the credential. It expires after 365 days.
 3. Download and inspect the installer on the server. Replace the example origin with your own. The installer installs or replaces esa-helper and esa-agent, creates the restricted esa user if needed, installs its helper-only sudo rule, and starts a systemd service. It keeps existing SSH settings and keys.
 

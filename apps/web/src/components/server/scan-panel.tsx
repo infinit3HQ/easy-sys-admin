@@ -111,9 +111,16 @@ export function ScanPanel({
       )}
       {shown.length > 0 && (
         <ul className="space-y-1 font-mono text-xs">
-          {shown.map((m) => (
+          {shown.map((m, index) => (
             <li
-              key={`${m.package}-${m.id}`}
+              key={JSON.stringify([
+                m.package,
+                m.id,
+                m.version,
+                m.imageDigest,
+                m.imageTag,
+                index,
+              ])}
               className={
                 m.tier === 1
                   ? 'text-fail'
@@ -271,7 +278,13 @@ function slimGrype(r: Obj): Obj {
       relatedVulnerabilities: Array.isArray(m.relatedVulnerabilities)
         ? (m.relatedVulnerabilities as Obj[]).map((x) => pick(x, ['id']))
         : [],
-      artifact: pick(m.artifact, ['name', 'version', 'type']),
+      artifact: {
+        ...pick(m.artifact, ['name', 'version', 'arch', 'type']),
+        metadata: pick((m.artifact as Obj | undefined)?.metadata, [
+          'imageID',
+          'userInput',
+        ]),
+      },
     })),
   }
 }

@@ -95,6 +95,9 @@ func summarizeExposure(access proto.AccessReport, sec proto.SecurityReport, at t
 	slices.Sort(ex.SpecificBinds)
 	ex.ListeningOnAllInterfaces = ex.PublicPorts
 	ex.Gaps = mergeGaps(access.Gaps, sec.Gaps)
+	if access.SudoIncomplete {
+		ex.Gaps = mergeGaps(ex.Gaps, []string{"sudo rules"})
+	}
 	ex.PasswordAuth = access.PasswordAuth
 	ex.PermitRootLogin = access.PermitRootLogin
 	ex.PermitEmptyPasswords = access.PermitEmptyPasswords
@@ -176,6 +179,21 @@ func exposureChanged(prev, next Exposure) bool {
 		prev.ExtraRoot != next.ExtraRoot ||
 		prev.NoPasswordAll != next.NoPasswordAll ||
 		!slices.Equal(prev.PublicPorts, next.PublicPorts)
+}
+
+// exposureObserved keeps a finding open when its evidence is missing.
+func exposureObserved(ex Exposure, subject string) bool {
+	switch subject {
+	case "password", "empty-password", "root-login":
+		return ex.SSHRead && !hasGap(ex.Gaps, "ssh settings")
+	case "firewall":
+		return ex.Firewall != "" && ex.Firewall != "unknown" &&
+			!hasGap(ex.Gaps, "firewall") && !hasGap(ex.Gaps, "ufw default policy")
+	case "nopasswd":
+		return !hasGap(ex.Gaps, "sudo rules")
+	default:
+		return true
+	}
 }
 
 func exposureConditions(ex Exposure) []condition {

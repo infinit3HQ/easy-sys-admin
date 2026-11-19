@@ -3001,12 +3001,16 @@ type ClientInterface interface {
 
 	// CreateAgentServerWithBody Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
 	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
 	CreateAgentServerWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3774,10 +3778,14 @@ type ClientInterface interface {
 
 	// RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
 	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+	//
 	// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
 	RevokeAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 	//
 	// Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
 	RotateAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4073,6 +4081,8 @@ func (c *Client) ListActivity(ctx context.Context, params *ListActivityParams, r
 
 // CreateAgentServerWithBody Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
 //
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
@@ -4089,6 +4099,8 @@ func (c *Client) CreateAgentServerWithBody(ctx context.Context, contentType stri
 }
 
 // CreateAgentServer Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6096,6 +6108,8 @@ func (c *Client) GetServerAdvisories(ctx context.Context, serverId ServerId, req
 
 // RevokeAgentCredential Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
 //
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+//
 // Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
 func (c *Client) RevokeAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewRevokeAgentCredentialRequest(c.Server, serverId)
@@ -6110,6 +6124,8 @@ func (c *Client) RevokeAgentCredential(ctx context.Context, serverId ServerId, r
 }
 
 // RotateAgentCredential Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+//
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 //
 // Corresponds with POST /servers/{serverId}/agent-credential (the `RotateAgentCredential` operationId).
 func (c *Client) RotateAgentCredential(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -11917,12 +11933,16 @@ type ClientWithResponsesInterface interface {
 
 	// CreateAgentServerWithBodyWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
 	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
 	CreateAgentServerWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentServerResponse, error)
 
 	// CreateAgentServerWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -12796,12 +12816,16 @@ type ClientWithResponsesInterface interface {
 
 	// RevokeAgentCredentialWithResponse Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
 	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
 	RevokeAgentCredentialWithResponse(ctx context.Context, serverId ServerId, reqEditors ...RequestEditorFn) (*RevokeAgentCredentialResponse, error)
 
 	// RotateAgentCredentialWithResponse Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+	//
+	// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -19024,6 +19048,8 @@ func (c *ClientWithResponses) ListActivityWithResponse(ctx context.Context, para
 
 // CreateAgentServerWithBodyWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
 //
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /agent-servers (the `CreateAgentServer` operationId).
@@ -19036,6 +19062,8 @@ func (c *ClientWithResponses) CreateAgentServerWithBodyWithResponse(ctx context.
 }
 
 // CreateAgentServerWithResponse Register an outbound server. Requires a recently signed-in space admin. The credential is shown once.
+//
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -20653,6 +20681,8 @@ func (c *ClientWithResponses) GetServerAdvisoriesWithResponse(ctx context.Contex
 
 // RevokeAgentCredentialWithResponse Disable an outbound connection and cancel pending commands. Does not change SSH settings on the server.
 //
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
+//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /servers/{serverId}/agent-credential (the `RevokeAgentCredential` operationId).
@@ -20665,6 +20695,8 @@ func (c *ClientWithResponses) RevokeAgentCredentialWithResponse(ctx context.Cont
 }
 
 // RotateAgentCredentialWithResponse Rotate an outbound server credential and cancel pending commands. Requires a recently signed-in space admin.
+//
+// Returns HTTP 409 with code reauth_required when the browser session needs a fresh sign-in.
 //
 // Returns a wrapper object for the known response body format(s).
 //

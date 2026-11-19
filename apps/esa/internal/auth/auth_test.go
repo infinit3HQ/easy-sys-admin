@@ -219,3 +219,20 @@ func TestSessions(t *testing.T) {
 		t.Fatal("a refused session must be deleted, not just skipped")
 	}
 }
+
+func TestLoginErrorKeepsSafeReturnPath(t *testing.T) {
+	for _, tc := range []struct{ target, want string }{
+		{"/app/servers/new?method=outbound", "/app/servers/new?method=outbound"},
+		{"//example.com", "/app"},
+	} {
+		body := url.Values{"return_to": {tc.target}}.Encode()
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		loginError(rec, req, "invalid")
+		loc, err := url.Parse(rec.Header().Get("Location"))
+		if err != nil || rec.Code != http.StatusSeeOther || loc.Path != "/login" || loc.Query().Get("error") != "invalid" || loc.Query().Get("return_to") != tc.want {
+			t.Fatalf("unexpected redirect: %d %s", rec.Code, rec.Header().Get("Location"))
+		}
+	}
+}

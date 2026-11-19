@@ -68,3 +68,30 @@ func TestKeyDriftResolvesWhenTheExtraKeyIsGone(t *testing.T) {
 		t.Fatalf("a complete check left the notice open: %d %v", open, err)
 	}
 }
+
+func TestKeyDriftNotifiesOnceBeforeSnapshotDiff(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "key-drift-notify")
+	srv := addTestServer(t, s, a, nil, "app")
+	if _, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/key-drift"}); err != nil {
+		t.Fatal(err)
+	}
+	s.notifier = quietNotifier{}
+	fp := "SHA256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	base := store.KeyBaseline{ServerID: srv.ID, AccountID: a.AccountID, Items: store.MustJSON([]baselineKey{{User: "deploy", Fingerprint: fp}}), ApprovedAt: s.now(), ApprovedBy: a.UserID}
+	if err := s.db.Omit("Server").Create(&base).Error; err != nil {
+		t.Fatal(err)
+	}
+	seen := []keyUse{
+		{User: "deploy", Fingerprint: fp, From: "192.0.2.5"},
+		{User: "root", Fingerprint: fp},
+	}
+	for range 2 {
+		s.reportKeyDrift(ctx, srv, seen, true)
+		s.noteAdditions(ctx, srv, nil, nil, []string{keyID(seen[0])}, seen, true)
+	}
+	if got := deliveries(t, s, a.AccountID); len(got) != 2 || !strings.Contains(got[0].Title, "restrictions changed") || !strings.Contains(got[1].Title, "approved baseline") {
+		t.Fatalf("expected one notice per changed grant, got %+v", got)
+	}
+}
