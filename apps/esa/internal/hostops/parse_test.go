@@ -157,7 +157,7 @@ func TestUFWRules(t *testing.T) {
 
 func TestDockerPublishIsNotUFWProof(t *testing.T) {
 	published := []publication{{Port: 80, Proto: "tcp", Address: "0.0.0.0", Names: "web"}}
-	ls := []proto.Listener{{Proto: "tcp", Port: 80, Exposure: "all", UFW: "allow", Process: "docker-proxy"}}
+	ls := []proto.Listener{{Proto: "tcp", Port: 80, Exposure: "all", UFW: "allow", Process: "docker-proxy", Address: "0.0.0.0"}}
 	markDockerUnknown(ls, published, true)
 	if ls[0].UFW != "unknown" {
 		t.Fatalf("ufw on a published port: %s", ls[0].UFW)

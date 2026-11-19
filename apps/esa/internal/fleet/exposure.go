@@ -258,8 +258,9 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 		state.Exposure, state.ExposureAt = store.MustJSON(ex), &now
 		return
 	}
+	var handledKeys map[string]bool
 	if accessRev >= proto.ReportRevision {
-		s.syncKeyOccurrences(ctx, srv, keys, now, len(keyEvidenceGaps(ex.Gaps)) == 0)
+		handledKeys = s.syncKeyOccurrences(ctx, srv, keys, now, len(keyEvidenceGaps(ex.Gaps)) == 0)
 	}
 	if ex.Ready {
 		ex = foldListen(prev, ex)
@@ -277,7 +278,7 @@ func (s *Service) maybeExposure(ctx context.Context, srv store.Server, state *st
 			if prev.BaselineBindsSeeded {
 				prevBinds = prev.BaselineBinds
 			}
-			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ex.PublicPorts), ex.SpecificBinds...), prev.BaselineKeys, keys, !hasGap(ex.Gaps, "listening sockets") && !hasGap(ex.Gaps, "docker ports"))
+			s.noteAdditions(ctx, srv, append(slices.Clone(prev.BaselinePorts), prevBinds...), append(slices.Clone(ex.PublicPorts), ex.SpecificBinds...), prev.BaselineKeys, keys, handledKeys, !hasGap(ex.Gaps, "listening sockets") && !hasGap(ex.Gaps, "docker ports"))
 		}
 		ex.BaselineKeys = keyIDs(keys)
 	}
@@ -455,7 +456,7 @@ func added(prev, cur []string) []string {
 // noteAdditions sends one-shot alerts for public ports and SSH keys that
 // were not in the previous report. Socket notices resolve only when a
 // complete socket read no longer sees any socket recorded in the notice.
-func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts, ports, prevKeys []string, keys []keyUse, complete bool) {
+func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts, ports, prevKeys []string, keys []keyUse, handledKeys map[string]bool, complete bool) {
 	if complete {
 		s.resolveGonePorts(ctx, srv, ports)
 	}
@@ -467,7 +468,9 @@ func (s *Service) noteAdditions(ctx context.Context, srv store.Server, prevPorts
 		s.oneShot(ctx, srv, rules[AlertNewPort], AlertNewPort, added(prevPorts, ports), "new listening socket")
 	}
 	if rules[AlertNewKey].Enabled {
-		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, freshKeys(prevKeys, keys), "new SSH key")
+		fresh := freshKeys(prevKeys, keys)
+		fresh = slices.DeleteFunc(fresh, func(subject string) bool { return handledKeys[subject] })
+		s.oneShot(ctx, srv, rules[AlertNewKey], AlertNewKey, fresh, "new SSH key")
 	}
 }
 

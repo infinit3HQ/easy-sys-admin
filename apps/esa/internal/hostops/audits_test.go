@@ -334,8 +334,14 @@ tcp LISTEN 0 128 0.0.0.0:3000 0.0.0.0:* users:(("docker-proxy",pid=3,fd=4))`
 	if len(byPort[3000]) != 1 || byPort[3000][0].Container != "api" || byPort[3000][0].UFW != "unknown" {
 		t.Fatalf("3000 must not be duplicated and ufw must not cover it: %+v", byPort[3000])
 	}
-	if len(byPort[8080]) != 1 || byPort[8080][0].Exposure != "all" || byPort[8080][0].UFW != "unknown" || byPort[8080][0].Container != "web" {
-		t.Fatalf("8080 published without a proxy: %+v", byPort[8080])
+	if len(byPort[8080]) != 2 {
+		t.Fatalf("8080 must retain both Docker address families: %+v", byPort[8080])
+	}
+	for i, addr := range []string{"0.0.0.0", "::"} {
+		l := byPort[8080][i]
+		if l.Address != addr || l.Exposure != "all" || l.UFW != "unknown" || l.Container != "web" {
+			t.Fatalf("8080 published without a proxy: %+v", l)
+		}
 	}
 	if len(byPort[9000]) != 1 || byPort[9000][0].Exposure != "local" {
 		t.Fatalf("9000 is bound to loopback: %+v", byPort[9000])

@@ -111,9 +111,9 @@ func (s *Service) evaluateAlerts(ctx context.Context, srv store.Server, state *s
 	blind := blindKinds(state)
 	var exposure Exposure
 	_ = state.Exposure.Decode(&exposure)
-	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind, subject string) bool {
+	s.reconcile(ctx, srv.AccountID, &srv.ID, rules, conds, func(k AlertKind, subject string, present bool) bool {
 		return k != AlertCertExpiry && k != AlertRunFailed && !blind[k] &&
-			(k != AlertExposure || exposureObserved(exposure, subject))
+			(k != AlertExposure || present || exposureObserved(exposure, subject))
 	})
 }
 
@@ -225,7 +225,7 @@ func severityFor(p, critical float64) string {
 
 // reconcile opens, fires, and resolves alerts for one server (or the
 // account when serverID is nil). owns says which kinds this caller manages.
-func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int64, rules map[AlertKind]store.AlertRule, conds []condition, owns func(AlertKind, string) bool) {
+func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int64, rules map[AlertKind]store.AlertRule, conds []condition, owns func(AlertKind, string, bool) bool) {
 	now := s.now()
 	q := s.db.WithContext(ctx).Where("account_id = ? AND resolved_at IS NULL", accountID)
 	if serverID != nil {
@@ -247,10 +247,10 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 	for i := range open {
 		al := &open[i]
 		k := key(AlertKind(al.Kind), al.Subject)
-		if !owns(AlertKind(al.Kind), al.Subject) {
+		c, still := current[k]
+		if !owns(AlertKind(al.Kind), al.Subject, still) {
 			continue
 		}
-		c, still := current[k]
 		if !still {
 			al.ResolvedAt = &now
 			s.db.WithContext(ctx).Model(al).Update("resolved_at", now)
@@ -272,7 +272,7 @@ func (s *Service) reconcile(ctx context.Context, accountID int64, serverID *int6
 		s.db.WithContext(ctx).Model(al).Updates(updates)
 	}
 	for k, c := range current {
-		if seen[k] || !owns(c.kind, c.subject) {
+		if seen[k] || !owns(c.kind, c.subject, true) {
 			continue
 		}
 		al := store.Alert{
