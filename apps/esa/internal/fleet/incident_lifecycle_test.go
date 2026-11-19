@@ -142,6 +142,7 @@ func TestPartialExposureKeepsOnlyFindingsWithMissingEvidence(t *testing.T) {
 		}
 	}
 	check(Exposure{Ready: true, SSHRead: true, PasswordAuth: true, Firewall: "none", ExtraRoot: 1}, 3)
-	check(Exposure{Ready: true, Firewall: "ufw active", Gaps: []string{"ssh settings", "ufw default policy"}}, 2)
+	check(Exposure{Ready: true, Firewall: "ufw active", NoPasswordAll: 1, Gaps: []string{"ssh settings", "ufw default policy", "sudo rules"}}, 3)
+	check(Exposure{Ready: true, SSHRead: true, Firewall: "ufw active", Gaps: []string{"sudo rules"}}, 1)
 	check(Exposure{Ready: true, SSHRead: true, Firewall: "ufw active"}, 0)
 }

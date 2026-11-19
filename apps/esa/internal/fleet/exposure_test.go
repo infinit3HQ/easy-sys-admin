@@ -101,14 +101,14 @@ func TestGoneSocketResolvesOnlyOnACompleteRead(t *testing.T) {
 	other := lifecycleServer(t, s, a, "other")
 	s.openIncident(ctx, a.AccountID, other.ID, string(AlertNewPort), "22/tcp", "other: 22/tcp", true)
 	s.openIncident(ctx, a.AccountID, srv.ID, string(AlertNewKey), "key", "web: key", true)
-	s.noteAdditions(ctx, srv, nil, nil, nil, nil, false)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, nil, false)
 	var open int64
 	q := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND state <> ?", srv.ID, string(AlertNewPort), "resolved")
 	if err := q.Count(&open).Error; err != nil || open != 3 {
 		t.Fatalf("partial read resolved sockets: %d %v", open, err)
 	}
 	ports := []string{"203.0.113.5 5432/tcp"}
-	s.noteAdditions(ctx, srv, ports, ports, nil, nil, true)
+	s.noteAdditions(ctx, srv, ports, ports, nil, nil, nil, true)
 	if err := s.db.Model(&store.SecurityIncident{}).Where("server_id = ? AND kind = ? AND subject = ? AND state <> ?", srv.ID, string(AlertNewPort), "22/tcp", "resolved").Count(&open).Error; err != nil || open != 0 {
 		t.Fatalf("22/tcp stayed open: %d %v", open, err)
 	}
@@ -118,7 +118,7 @@ func TestGoneSocketResolvesOnlyOnACompleteRead(t *testing.T) {
 	if err := q.Count(&open).Error; err != nil || open != 2 {
 		t.Fatalf("a socket still present was resolved: %d %v", open, err)
 	}
-	s.noteAdditions(ctx, srv, ports, nil, nil, nil, true)
+	s.noteAdditions(ctx, srv, ports, nil, nil, nil, nil, true)
 	if err := q.Count(&open).Error; err != nil || open != 1 {
 		t.Fatalf("specific bind did not resolve: %d %v", open, err)
 	}
@@ -169,12 +169,12 @@ func TestGroupedSocketNoticeResolvesOnlyAfterEverySocketIsGone(t *testing.T) {
 	if v := incidentState(t, s, a, row.ID); v.State != "open" {
 		t.Fatal("a later socket was forgotten")
 	}
-	s.noteAdditions(ctx, srv, nil, nil, nil, nil, false)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, nil, false)
 	if v := incidentState(t, s, a, row.ID); v.State != "open" {
 		t.Fatal("a partial read resolved the group")
 	}
-	s.noteAdditions(ctx, srv, nil, nil, nil, nil, true)
-	s.noteAdditions(ctx, srv, nil, nil, nil, nil, true)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, nil, true)
+	s.noteAdditions(ctx, srv, nil, nil, nil, nil, nil, true)
 	v := incidentState(t, s, a, row.ID)
 	if v.State != "resolved" || v.ResolvedAt == nil || len(v.Events) != 2 || v.Events[1].Kind != eventResolved {
 		t.Fatalf("resolution and history: %+v", v)

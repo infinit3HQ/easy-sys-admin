@@ -86,12 +86,13 @@ func TestKeyDriftNotifiesOnceBeforeSnapshotDiff(t *testing.T) {
 	seen := []keyUse{
 		{User: "deploy", Fingerprint: fp, From: "192.0.2.5"},
 		{User: "root", Fingerprint: fp},
+		{User: "ops", Fingerprint: fp},
 	}
 	for range 2 {
-		s.reportKeyDrift(ctx, srv, seen, true)
-		s.noteAdditions(ctx, srv, nil, nil, []string{keyID(seen[0])}, seen, true)
+		handled := s.reportKeyDrift(ctx, srv, seen, true)
+		s.noteAdditions(ctx, srv, nil, nil, []string{keyID(seen[0])}, seen, handled, true)
 	}
-	if got := deliveries(t, s, a.AccountID); len(got) != 2 || !strings.Contains(got[0].Title, "restrictions changed") || !strings.Contains(got[1].Title, "approved baseline") {
+	if got := deliveries(t, s, a.AccountID); len(got) != 3 || !strings.Contains(got[0].Title, "restrictions changed") || !strings.Contains(got[1].Title, "approved baseline") {
 		t.Fatalf("expected one notice per changed grant, got %+v", got)
 	}
 }
