@@ -368,3 +368,68 @@ func TestTagChangeDoesNotClearAnImageMatch(t *testing.T) {
 		t.Fatalf("a digest missing from a read image list stayed: %+v %v", v.Matches, err)
 	}
 }
+
+func TestParseGrypeKeepsDistinctArtifacts(t *testing.T) {
+	report := `{"descriptor":{"name":"grype"},"matches":[
+	  {"vulnerability":{"id":"CVE-1"},"relatedVulnerabilities":[{"id":"ADV-1"}],"artifact":{"name":"kernel","version":"1"}},
+	  {"vulnerability":{"id":"ADV-1"},"artifact":{"name":"kernel","version":"1"}},
+	  {"vulnerability":{"id":"ADV-1","fix":{"versions":["3"],"state":"fixed"}},"artifact":{"name":"kernel","version":"2"}},
+	  {"vulnerability":{"id":"ADV-1"},"artifact":{"name":"kernel","version":"1","metadata":{"imageID":"sha256:a"}}},
+	  {"vulnerability":{"id":"CVE-1"},"relatedVulnerabilities":[{"id":"ADV-1"}],"artifact":{"name":"kernel","version":"1","metadata":{"imageID":"sha256:b"}}}
+	]}`
+	_, _, _, matches, err := parseGrype([]byte(report))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 4 {
+		t.Fatalf("expected four distinct artifacts: %+v", matches)
+	}
+	seen := map[string]bool{}
+	for _, m := range matches {
+		seen[m.Version+"/"+m.ImageDigest] = true
+		if m.Version == "2" && (len(m.FixedIn) != 1 || m.FixedIn[0] != "3") {
+			t.Fatalf("lost version-specific fix: %+v", m)
+		}
+	}
+	for _, key := range []string{"1/", "2/", "1/sha256:a", "1/sha256:b"} {
+		if !seen[key] {
+			t.Errorf("missing artifact %s", key)
+		}
+	}
+}
+
+func TestAutoScanRotatesPastFailedAttempts(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "scan-rotation")
+	now := time.Now().UTC()
+	s.now = func() time.Time { return now }
+	s.scanDBAt = now
+	s.scanner = "/unused"
+	servers := make([]store.Server, scansPerRun+1)
+	for i := range servers {
+		servers[i] = store.Server{
+			AccountID: a.AccountID, Name: fmt.Sprintf("scan-%02d", i), Host: "192.0.2.1",
+			Enrollment: "ready", HelperCapabilities: store.MustJSON([]string{"inventory"}),
+		}
+	}
+	if err := s.db.Omit("Account", "Group").Create(&servers).Error; err != nil {
+		t.Fatal(err)
+	}
+	// These ready records have no host keys, so inventory exits before any SSH call.
+	s.AutoScan(ctx)
+	lastID := servers[len(servers)-1].ID
+	var last store.Server
+	if err := s.db.First(&last, lastID).Error; err != nil || last.LastScanAttemptAt != nil {
+		t.Fatalf("last server should wait for the next budget: %+v, %v", last.LastScanAttemptAt, err)
+	}
+	now = now.Add(time.Hour)
+	s.AutoScan(ctx)
+	if err := s.db.First(&last, lastID).Error; err != nil || last.LastScanAttemptAt == nil {
+		t.Fatalf("the next cycle must attempt the last server: %+v, %v", last.LastScanAttemptAt, err)
+	}
+	var coverage int64
+	if err := s.db.Model(&store.ScanImport{}).Count(&coverage).Error; err != nil || coverage != 0 {
+		t.Fatalf("failed attempts counted as scan coverage: %d, %v", coverage, err)
+	}
+}

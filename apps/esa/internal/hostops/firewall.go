@@ -3,6 +3,7 @@ package hostops
 import (
 	"context"
 	"net"
+	"net/netip"
 	"os"
 	"sort"
 	"strconv"
@@ -515,23 +516,27 @@ func attachContainers(ls []proto.Listener, pubs []publication) {
 	}
 }
 
-// addMissingPublications lists a published port that ss does not show, as
-// with userland-proxy off. A port ss already lists is not added again.
+// addMissingPublications lists Docker bindings absent from ss, as with
+// userland-proxy off. A socket only covers the same protocol and bind.
 func addMissingPublications(ls []proto.Listener, pubs []publication, ufwActive bool) []proto.Listener {
+	bindKey := func(portProtocol, address string) string {
+		address = strings.Trim(address, "[]")
+		if ip, err := netip.ParseAddr(address); err == nil {
+			address = ip.String()
+		}
+		return portProtocol + " " + address
+	}
 	have := map[string]bool{}
 	for _, l := range ls {
-		have[strconv.Itoa(l.Port)+"/"+baseProto(l.Proto)] = true
+		have[bindKey(strconv.Itoa(l.Port)+"/"+baseProto(l.Proto), l.Address)] = true
 	}
-	added := map[string]bool{}
 	for _, p := range pubs {
-		if have[p.key()] {
+		key := bindKey(p.key(), p.Address)
+		if have[key] {
 			continue
 		}
+		have[key] = true
 		exposure := listenExposure(strings.Trim(p.Address, "[]"))
-		if added[p.key()+" "+exposure] {
-			continue
-		}
-		added[p.key()+" "+exposure] = true
 		ls = append(ls, proto.Listener{
 			Proto: p.Proto, Address: p.Address, Port: p.Port, Process: "docker",
 			Container: p.Names, Exposure: exposure, UFW: map[bool]string{true: "unknown"}[ufwActive],

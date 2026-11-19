@@ -172,6 +172,20 @@ func TestTwoExecutionsShareOneRun(t *testing.T) {
 	if _, err := s.ApprovePlan(ctx, owner, plan.ID); err != nil {
 		t.Fatal(err)
 	}
+	// A run validation failure must leave the approved plan available for retry.
+	if err := s.db.Model(&srv).Update("helper_capabilities", store.MustJSON([]string{"status"})).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ExecutePlan(ctx, owner, plan.ID); err == nil {
+		t.Fatal("executed with an incompatible helper")
+	}
+	unchanged, err := s.GetPlan(ctx, owner, plan.ID)
+	if err != nil || unchanged.Status != "approved" || unchanged.RunID != nil {
+		t.Fatalf("failed start changed the plan: %+v %v", unchanged, err)
+	}
+	if err := s.db.Model(&srv).Update("helper_capabilities", store.MustJSON(proto.Capabilities())).Error; err != nil {
+		t.Fatal(err)
+	}
 	exec := owner
 	exec.Source, exec.TokenID, exec.Scopes = SourceAPI, 4, []Scope{ScopeActions}
 	type result struct {
@@ -194,4 +208,8 @@ func TestTwoExecutionsShareOneRun(t *testing.T) {
 		t.Fatalf("runs: %d %v", runs, err)
 	}
 	s.Wait()
+	completed, err := s.GetPlan(ctx, owner, plan.ID)
+	if err != nil || completed.RunID == nil || *completed.RunID != a.id || completed.Status == "executing" {
+		t.Fatalf("worker finished without updating its plan: %+v %v", completed, err)
+	}
 }

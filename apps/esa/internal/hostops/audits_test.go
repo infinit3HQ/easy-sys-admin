@@ -334,8 +334,14 @@ tcp LISTEN 0 128 0.0.0.0:3000 0.0.0.0:* users:(("docker-proxy",pid=3,fd=4))`
 	if len(byPort[3000]) != 1 || byPort[3000][0].Container != "api" || byPort[3000][0].UFW != "unknown" {
 		t.Fatalf("3000 must not be duplicated and ufw must not cover it: %+v", byPort[3000])
 	}
-	if len(byPort[8080]) != 1 || byPort[8080][0].Exposure != "all" || byPort[8080][0].UFW != "unknown" || byPort[8080][0].Container != "web" {
-		t.Fatalf("8080 published without a proxy: %+v", byPort[8080])
+	if len(byPort[8080]) != 2 {
+		t.Fatalf("8080 must retain both Docker address families: %+v", byPort[8080])
+	}
+	for i, addr := range []string{"0.0.0.0", "::"} {
+		l := byPort[8080][i]
+		if l.Address != addr || l.Exposure != "all" || l.UFW != "unknown" || l.Container != "web" {
+			t.Fatalf("8080 published without a proxy: %+v", l)
+		}
 	}
 	if len(byPort[9000]) != 1 || byPort[9000][0].Exposure != "local" {
 		t.Fatalf("9000 is bound to loopback: %+v", byPort[9000])
@@ -420,5 +426,27 @@ func TestAccessKeyCommandAndCertificatesAreGaps(t *testing.T) {
 	}
 	if !slices.Contains(rep.Gaps, "AuthorizedKeysCommand") || !slices.Contains(rep.Gaps, "ssh certificates") {
 		t.Fatalf("logins outside authorized_keys must be gaps: %v", rep.Gaps)
+	}
+}
+
+func TestDockerPublicationsKeepDistinctBindAddresses(t *testing.T) {
+	listeners := []proto.Listener{
+		{Proto: "tcp", Address: "127.0.0.1", Port: 8080},
+		{Proto: "tcp", Address: "[0:0:0:0:0:0:0:0]", Port: 8080},
+	}
+	publications := []publication{
+		{Proto: "tcp", Address: "::", Port: 8080},
+		{Proto: "tcp", Address: "0.0.0.0", Port: 8080},
+		{Proto: "tcp", Address: "192.0.2.5", Port: 8080},
+		{Proto: "tcp", Address: "192.0.2.6", Port: 8080},
+	}
+	got := addMissingPublications(listeners, publications, true)
+	if len(got) != 5 {
+		t.Fatalf("expected two sockets and three distinct publishes: %+v", got)
+	}
+	for i, addr := range []string{"0.0.0.0", "192.0.2.5", "192.0.2.6"} {
+		if got[i+2].Address != addr || got[i+2].UFW != "unknown" {
+			t.Fatalf("missing Docker publication for %s: %+v", addr, got)
+		}
 	}
 }

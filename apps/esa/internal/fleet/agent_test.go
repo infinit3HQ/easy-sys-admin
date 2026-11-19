@@ -26,6 +26,13 @@ func TestOutboundAgentIsolationRotationAndClaimOnce(t *testing.T) {
 	if _, _, err := s.CreateAgentServer(ctx, tokenActor, "bad", nil); err == nil {
 		t.Fatal("token enrolled agent")
 	}
+	stale := owner
+	signedIn := now.Add(-16 * time.Minute)
+	stale.SignedInAt = &signedIn
+	var reauth *ConflictError
+	if _, _, err := s.CreateAgentServer(ctx, stale, "stale", nil); !errors.As(err, &reauth) || reauth.Code != "reauth_required" {
+		t.Fatalf("stale enrollment must request a fresh sign-in: %v", err)
+	}
 	viewer := owner
 	viewer.Role = RoleViewer
 	if _, _, err := s.CreateAgentServer(ctx, viewer, "bad", nil); !errors.Is(err, ErrForbidden) {

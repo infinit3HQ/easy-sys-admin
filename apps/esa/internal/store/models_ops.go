@@ -148,6 +148,7 @@ type NotifyDelivery struct {
 	Body      string `gorm:"not null"`
 	Severity  string `gorm:"not null"`
 	URL       string `gorm:"not null;default:''"`
+	Resolved  bool   `gorm:"not null;default:false"`
 	// State is queued, sending, sent, or dead.
 	State     string `gorm:"not null;default:'queued';index"`
 	Attempts  int    `gorm:"not null;default:0"`

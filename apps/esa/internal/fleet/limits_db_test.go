@@ -221,3 +221,35 @@ func TestTwoProcessesSendOneDelivery(t *testing.T) {
 		t.Fatalf("state: %s %s", saved.State, saved.LastError)
 	}
 }
+
+type captureResolution chan bool
+
+func (n captureResolution) Send(_ context.Context, _ store.NotifyChannel, _ []byte, msg Message) error {
+	n <- msg.Resolved
+	return nil
+}
+
+func TestQueuedNotificationPreservesResolution(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "queue-resolution")
+	ch, err := s.CreateChannel(ctx, a, "desk", "webhook", ChannelConfig{URL: "https://hook.example.com/recovery"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var channel store.NotifyChannel
+	if err := s.db.First(&channel, ch.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	sent := make(captureResolution, 1)
+	s.notifier = sent
+	s.enqueueNotify(channel, Message{Title: "Recovered", Severity: "critical", Resolved: true})
+	select {
+	case resolved := <-sent:
+		if !resolved {
+			t.Fatal("queued recovery was delivered as a new alert")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("queued recovery was not delivered")
+	}
+}

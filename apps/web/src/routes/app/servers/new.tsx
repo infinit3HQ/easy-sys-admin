@@ -1,6 +1,7 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
+import { z } from 'zod'
 import {
   ArrowRightIcon,
   KeyRoundIcon,
@@ -28,10 +29,20 @@ import { Input } from '#/components/ui/input'
 import { Label } from '#/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '#/components/ui/radio-group'
 import { Textarea } from '#/components/ui/textarea'
-import { AgentSecret } from '#/components/server/agent-setup'
+import {
+  AgentReauth,
+  AgentSecret,
+  needsAgentReauth,
+} from '#/components/server/agent-setup'
 import { useRole } from '../route'
 
 export const Route = createFileRoute('/app/servers/new')({
+  validateSearch: z.object({
+    method: z
+      .enum(['login', 'command', 'outbound'])
+      .optional()
+      .catch(undefined),
+  }),
   head: () => ({ meta: [{ title: 'Add server · easy-sys-admin' }] }),
   component: AddServer,
 })
@@ -60,7 +71,8 @@ const methods = [
 ] as const
 
 function AddServer() {
-  const [method, setMethod] = useState<Method>('login')
+  const { method: initialMethod } = Route.useSearch()
+  const [method, setMethod] = useState<Method>(initialMethod ?? 'login')
   return (
     <div className="max-w-3xl">
       <PageHeader
@@ -545,7 +557,11 @@ function OutboundFlow() {
         >
           Create connection credential
         </Button>
-        <ErrorBanner error={create.error} />
+        {needsAgentReauth(create.error) ? (
+          <AgentReauth returnTo="/app/servers/new?method=outbound" />
+        ) : (
+          <ErrorBanner error={create.error} />
+        )}
       </form>
     </Panel>
   )

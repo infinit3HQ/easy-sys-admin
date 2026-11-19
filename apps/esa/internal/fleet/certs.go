@@ -135,7 +135,7 @@ func (s *Service) CheckCerts(ctx context.Context) {
 				}
 			}
 		}
-		s.reconcile(ctx, accountID, nil, rules, conds, func(k AlertKind) bool { return k == AlertCertExpiry })
+		s.reconcile(ctx, accountID, nil, rules, conds, func(k AlertKind, _ string, _ bool) bool { return k == AlertCertExpiry })
 	}
 }
 

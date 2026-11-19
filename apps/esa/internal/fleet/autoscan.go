@@ -52,7 +52,7 @@ func (s *Service) AutoScan(ctx context.Context) {
 		}
 	}
 	var servers []store.Server
-	if err := s.db.WithContext(ctx).Where("enrollment = ?", "ready").Order("id").Find(&servers).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("enrollment = ?", "ready").Order("last_scan_attempt_at ASC NULLS FIRST").Order("id").Find(&servers).Error; err != nil {
 		s.log.Error("list servers to scan", "err", err)
 		return
 	}
@@ -68,6 +68,12 @@ func (s *Service) AutoScan(ctx context.Context) {
 		if s.db.WithContext(ctx).Select("imported_at").Where("server_id = ?", srv.ID).Order("id desc").Take(&last).Error == nil &&
 			s.now().Sub(last.ImportedAt) < scanEvery {
 			continue
+		}
+		// Record the attempt separately from coverage, including failures.
+		if err := s.db.WithContext(ctx).Model(&store.Server{}).Where("id = ?", srv.ID).
+			UpdateColumn("last_scan_attempt_at", s.now()).Error; err != nil {
+			s.log.Error("record scan attempt", "server_id", srv.ID, "err", err)
+			return
 		}
 		done++
 		if err := s.scanServer(ctx, srv); err != nil {

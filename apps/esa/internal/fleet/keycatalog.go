@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
@@ -36,16 +38,17 @@ var fingerprintRe = regexp.MustCompile(`^SHA256:[A-Za-z0-9+/]{20,80}={0,2}$`)
 
 // syncKeyOccurrences replaces the stored keys for one server. Call it only
 // after a helper new enough to read the standard authorized_keys files.
-func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys []keyUse, at time.Time, complete bool) {
+// It returns grants handled by the approved baseline.
+func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys []keyUse, at time.Time, complete bool) map[string]bool {
 	tx := s.db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		s.log.Error("sync keys", "err", tx.Error)
-		return
+		return nil
 	}
 	if err := tx.Where("server_id = ?", srv.ID).Delete(&store.KeyOccurrence{}).Error; err != nil {
 		tx.Rollback()
 		s.log.Error("sync keys", "err", err)
-		return
+		return nil
 	}
 	for _, k := range keys {
 		row := store.KeyOccurrence{
@@ -55,14 +58,14 @@ func (s *Service) syncKeyOccurrences(ctx context.Context, srv store.Server, keys
 		if err := tx.Omit("Account", "Server").Create(&row).Error; err != nil {
 			tx.Rollback()
 			s.log.Error("sync keys", "err", err)
-			return
+			return nil
 		}
 	}
 	if err := tx.Commit().Error; err != nil {
 		s.log.Error("sync keys", "err", err)
-		return
+		return nil
 	}
-	s.reportKeyDrift(ctx, srv, keys, complete)
+	return s.reportKeyDrift(ctx, srv, keys, complete)
 }
 
 type baselineKey struct {
@@ -72,11 +75,12 @@ type baselineKey struct {
 	HasCommand  bool   `json:"hasCommand"`
 }
 
-func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []keyUse, complete bool) {
+func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []keyUse, complete bool) map[string]bool {
 	var base store.KeyBaseline
 	if err := s.db.WithContext(ctx).Where("server_id = ?", srv.ID).Take(&base).Error; err != nil {
-		return
+		return nil
 	}
+	handled := map[string]bool{}
 	var approved []baselineKey
 	_ = base.Items.Decode(&approved)
 	have := map[string]baselineKey{}
@@ -90,14 +94,16 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		seen[id] = true
 		old, ok := have[id]
 		if !ok {
+			subject := k.Fingerprint + " on " + k.User
+			handled[subject] = true
 			if excepted[id] {
 				continue
 			}
-			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" on "+k.User, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline", false)
+			s.notifyKeyDrift(ctx, srv, subject, srv.Name+": key "+k.Fingerprint+" on "+k.User+" is not in the approved baseline")
 			continue
 		}
 		if old.From != k.From || old.HasCommand != k.HasCommand {
-			s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", k.Fingerprint+" on "+k.User+" changed", srv.Name+": restrictions changed for "+k.Fingerprint+" on "+k.User, false)
+			s.notifyKeyDrift(ctx, srv, k.Fingerprint+" on "+k.User+" changed", srv.Name+": restrictions changed for "+k.Fingerprint+" on "+k.User)
 		}
 	}
 	for id, item := range have {
@@ -107,7 +113,7 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		s.openIncident(ctx, srv.AccountID, srv.ID, "new_key", "removed "+item.Fingerprint+" on "+item.User, srv.Name+": approved key "+item.Fingerprint+" on "+item.User+" was not in the files checked this time", false)
 	}
 	if !complete {
-		return
+		return handled
 	}
 	open := map[string]bool{}
 	for _, k := range keys {
@@ -131,7 +137,7 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 	}
 	var rows []store.SecurityIncident
 	if err := s.db.WithContext(ctx).Where("account_id = ? AND server_id = ? AND kind = ? AND state <> ?", srv.AccountID, srv.ID, "new_key", "resolved").Find(&rows).Error; err != nil {
-		return
+		return handled
 	}
 	for _, row := range rows {
 		if open[row.Subject] || !keyDriftSubject(row.Subject) {
@@ -140,6 +146,21 @@ func (s *Service) reportKeyDrift(ctx context.Context, srv store.Server, keys []k
 		s.resolveIncident(ctx, srv.AccountID, srv.ID, "new_key", row.Subject)
 		s.notifyResolved(ctx, srv.AccountID, srv.ID, "new_key", row.Subject, "a fresh check no longer saw it")
 	}
+	return handled
+}
+
+// Record ongoing baseline drift and deliver the first warning. The socket
+// and key change report shares this incident, so it will not alert twice.
+func (s *Service) notifyKeyDrift(ctx context.Context, srv store.Server, subject, message string) {
+	if !s.openIncident(ctx, srv.AccountID, srv.ID, string(AlertNewKey), subject, message, false) {
+		return
+	}
+	rules, err := s.rules(ctx, srv.AccountID)
+	if err != nil || !rules[AlertNewKey].Enabled {
+		return
+	}
+	alert := store.Alert{ServerID: &srv.ID}
+	s.notify(ctx, srv.AccountID, Message{Title: message, Body: message, Severity: "warning", URL: s.alertURL(&alert), Kind: string(AlertNewKey), ServerID: srv.ID})
 }
 
 func keyDriftSubject(subject string) bool {
@@ -253,6 +274,10 @@ func (s *Service) ListKeys(ctx context.Context, a Actor) ([]KeyView, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.listKeys(ctx, a, views, nil)
+}
+
+func (s *Service) listKeys(ctx context.Context, a Actor, views []ServerView, label *string) ([]KeyView, error) {
 	if len(views) == 0 {
 		return []KeyView{}, nil
 	}
@@ -262,12 +287,21 @@ func (s *Service) ListKeys(ctx context.Context, a Actor) ([]KeyView, error) {
 		ids[i] = v.ID
 		names[v.ID] = v.Name
 	}
+	db := s.db.WithContext(ctx)
+	occurrences := db.Where("server_id IN ?", ids).Order("fingerprint, server_id, user")
+	labelQuery := db.Model(&store.KeyLabel{}).Where("account_id = ?", a.AccountID)
+	if label == nil {
+		occurrences = occurrences.Limit(keyListLimit)
+	} else {
+		labelQuery = labelQuery.Where("label = ?", *label)
+		occurrences = occurrences.Where("fingerprint IN (?)", labelQuery.Session(&gorm.Session{}).Select("fingerprint"))
+	}
 	var rows []store.KeyOccurrence
-	if err := s.db.WithContext(ctx).Where("server_id IN ?", ids).Order("fingerprint, server_id, user").Limit(keyListLimit).Find(&rows).Error; err != nil {
+	if err := occurrences.Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	var labels []store.KeyLabel
-	if err := s.db.WithContext(ctx).Where("account_id = ?", a.AccountID).Find(&labels).Error; err != nil {
+	if err := labelQuery.Find(&labels).Error; err != nil {
 		return nil, err
 	}
 	labelOf := map[string]string{}

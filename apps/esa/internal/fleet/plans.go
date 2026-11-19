@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -258,10 +257,7 @@ func (s *Service) RejectPlan(ctx context.Context, a Actor, id int64, reason stri
 // ExecutePlan starts the approved plan once. A later call returns the same run.
 // A token that can read logs cannot execute.
 //
-// The plan is claimed in one transaction and the run starts after it
-// commits, so a failed commit cannot leave a run with no plan pointing at
-// it. A refusal (expired, invalidated) is written after the transaction,
-// so returning the error does not roll the status back.
+// The plan and its run are committed together before the worker starts.
 func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, error) {
 	if err := a.can(RoleAdmin, ScopeActions); err != nil {
 		return RunView{}, err
@@ -269,17 +265,26 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 	if a.hasScope(ScopeLogs) && a.Scopes != nil {
 		return RunView{}, ErrForbidden
 	}
-	claim, err := s.claimPlan(ctx, a, id)
-	for range 50 {
-		if !errors.Is(err, errPlanStarting) {
-			break
+	var claim planClaim
+	var run store.Run
+	err := s.store.InTx(ctx, func(q *store.Queries) error {
+		var err error
+		claim, err = s.claimPlan(ctx, q.Raw(), a, id)
+		if err != nil || claim.runID != nil {
+			return err
 		}
-		time.Sleep(20 * time.Millisecond)
-		claim, err = s.claimPlan(ctx, a, id)
-	}
-	if errors.Is(err, errPlanStarting) {
-		return RunView{}, invalid("status", "the plan is already being executed")
-	}
+		run, err = s.prepareRun(ctx, a, planRunRequest(claim.body), q)
+		if err != nil {
+			return err
+		}
+		if err := q.Raw().Model(&claim.row).Updates(map[string]any{
+			"status": "executing", "run_id": run.ID, "updated_at": s.now(),
+		}).Error; err != nil {
+			return err
+		}
+		s.auditOn(ctx, q, a, a.AccountID, "plan.execute", claim.row.Fingerprint, map[string]any{"id": id, "run": run.ID})
+		return nil
+	})
 	if claim.refuse != nil {
 		s.setPlanStatus(ctx, a, claim.row, claim.refuse.status, claim.refuse.reason)
 	}
@@ -289,7 +294,11 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 	if claim.runID != nil {
 		return s.GetRun(ctx, a, *claim.runID)
 	}
-	body := claim.body
+	s.background(func(ctx context.Context) { s.execute(s.netCtx(ctx), run.ID) })
+	return s.GetRun(ctx, a, run.ID)
+}
+
+func planRunRequest(body PlanBody) RunRequest {
 	opts := RunOptions{
 		UpdateMode: proto.UpdateMode(body.UpdateMode), Hold: body.Hold, RebootIfRequired: body.RebootIfRequired,
 		ObserveSeconds: body.ObserveSeconds, CanaryServerIDs: body.CanaryServerIDs,
@@ -305,22 +314,10 @@ func (s *Service) ExecutePlan(ctx context.Context, a Actor, id int64) (RunView, 
 		// the group since.
 		req.ServerIDs = body.PinnedServerIDs
 	}
-	run, err := s.StartRun(ctx, a, req)
-	if err != nil {
-		s.setPlanStatus(ctx, a, claim.row, "failed", err.Error())
-		return RunView{}, err
-	}
-	if err := s.db.WithContext(context.WithoutCancel(ctx)).Model(&store.FixPlan{}).Where("id = ?", claim.row.ID).
-		Updates(map[string]any{"run_id": run.ID, "updated_at": s.now()}).Error; err != nil {
-		s.log.Error("record plan run", "plan_id", claim.row.ID, "run_id", run.ID, "err", err)
-	}
-	s.audit(ctx, nil, a, "plan.execute", claim.row.Fingerprint, map[string]any{"id": claim.row.ID, "run": run.ID})
-	return run, nil
+	return req
 }
 
 type planRefusal struct{ status, reason string }
-
-var errPlanStarting = errors.New("fleet: plan starting")
 
 type planClaim struct {
 	row    store.FixPlan
@@ -329,99 +326,87 @@ type planClaim struct {
 	refuse *planRefusal
 }
 
-// claimPlan moves an approved plan to executing, or returns the run it
-// already started. A refusal is returned for the caller to record.
-func (s *Service) claimPlan(ctx context.Context, a Actor, id int64) (planClaim, error) {
+// claimPlan locks the plan and its approving memberships while the run is recorded.
+func (s *Service) claimPlan(ctx context.Context, tx *gorm.DB, a Actor, id int64) (planClaim, error) {
 	var c planClaim
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND account_id = ?", id, a.AccountID).Take(&c.row).Error; err != nil {
-			return mapStore(err)
-		}
-		row := c.row
-		if row.Status == "executing" {
-			if row.RunID != nil {
-				c.runID = row.RunID
-				return nil
-			}
-			return errPlanStarting
-		}
-		if row.RunID != nil && (row.Status == "succeeded" || row.Status == "failed" || row.Status == "partial") {
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND account_id = ?", id, a.AccountID).Take(&c.row).Error; err != nil {
+		return c, mapStore(err)
+	}
+	row := c.row
+	if row.Status == "executing" {
+		if row.RunID != nil {
 			c.runID = row.RunID
-			return nil
+			return c, nil
 		}
-		if row.Status != "approved" {
-			return invalid("status", "the plan is not approved")
-		}
-		if row.ExpiresAt == nil || !row.ExpiresAt.After(s.now()) {
-			c.refuse = &planRefusal{"expired", "the approval expired"}
-			return invalid("status", "the approval has expired")
-		}
-		if err := row.Body.Decode(&c.body); err != nil {
-			return err
-		}
-		fp, err := planFingerprint(c.body)
-		if err != nil || fp != row.Fingerprint {
-			c.refuse = &planRefusal{"invalidated", "fingerprint mismatch"}
-			return invalid("status", "the plan was invalidated")
-		}
+		return c, invalid("status", "the plan is already being executed")
+	}
+	if row.RunID != nil && (row.Status == "succeeded" || row.Status == "failed" || row.Status == "partial") {
+		c.runID = row.RunID
+		return c, nil
+	}
+	if row.Status != "approved" {
+		return c, invalid("status", "the plan is not approved")
+	}
+	if row.ExpiresAt == nil || !row.ExpiresAt.After(s.now()) {
+		c.refuse = &planRefusal{"expired", "the approval expired"}
+		return c, invalid("status", "the approval has expired")
+	}
+	if err := row.Body.Decode(&c.body); err != nil {
+		return c, err
+	}
+	fp, err := planFingerprint(c.body)
+	if err != nil || fp != row.Fingerprint {
+		c.refuse = &planRefusal{"invalidated", "fingerprint mismatch"}
+		return c, invalid("status", "the plan was invalidated")
+	}
 
-		required, err := s.planApprovalRequirement(ctx, tx, a.AccountID, c.body)
-		if err != nil {
-			return err
+	required, err := s.planApprovalRequirement(ctx, tx, a.AccountID, c.body)
+	if err != nil {
+		return c, err
+	}
+	required = max(required, row.ApprovalsRequired)
+	if row.ApprovedBy == nil || (required == 2 && (row.SecondApprovedBy == nil || *row.SecondApprovedBy == *row.ApprovedBy)) {
+		return c, invalid("status", "this plan needs two distinct admin approvals")
+	}
+	approvers := []int64{*row.ApprovedBy}
+	if required == 2 {
+		approvers = append(approvers, *row.SecondApprovedBy)
+	}
+	var active []store.Membership
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("account_id = ? AND user_id IN ? AND role IN ?", a.AccountID, approvers, []string{"owner", "admin"}).Order("user_id").Find(&active).Error; err != nil {
+		return c, err
+	}
+	if len(active) != required {
+		return c, invalid("status", "an approver is no longer an admin; propose a new plan")
+	}
+	target, err := s.planTarget(ctx, a.AccountID, c.body)
+	if err != nil || !sameIDs(serverIDs(target), c.body.PinnedServerIDs) {
+		c.refuse = &planRefusal{"invalidated", "the servers in the plan changed"}
+		return c, invalid("status", "the servers changed since the plan was approved, so this approval no longer applies")
+	}
+	if c.body.Kind == RunUpdate {
+		names, err := s.pendingNames(ctx, target, c.body.UpdateMode)
+		frozen := c.body.Pending
+		if frozen == nil {
+			frozen = c.body.Packages
 		}
-		required = max(required, row.ApprovalsRequired)
-		if row.ApprovedBy == nil || (required == 2 && (row.SecondApprovedBy == nil || *row.SecondApprovedBy == *row.ApprovedBy)) {
-			return invalid("status", "this plan needs two distinct admin approvals")
+		if err != nil || !sameNames(names, frozen) {
+			c.refuse = &planRefusal{"invalidated", "package list changed"}
+			return c, invalid("status", "the package list changed, so this approval no longer applies")
 		}
-		approvers := []int64{*row.ApprovedBy}
-		if required == 2 {
-			approvers = append(approvers, *row.SecondApprovedBy)
-		}
-		var active []store.Membership
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where("account_id = ? AND user_id IN ? AND role IN ?", a.AccountID, approvers, []string{"owner", "admin"}).Order("user_id").Find(&active).Error; err != nil {
-			return err
-		}
-		if len(active) != required {
-			return invalid("status", "an approver is no longer an admin; propose a new plan")
-		}
-		target, err := s.planTarget(ctx, a.AccountID, c.body)
-		if err != nil || !sameIDs(serverIDs(target), c.body.PinnedServerIDs) {
-			c.refuse = &planRefusal{"invalidated", "the servers in the plan changed"}
-			return invalid("status", "the servers changed since the plan was approved, so this approval no longer applies")
-		}
-		if c.body.Kind == RunUpdate {
-			names, err := s.pendingNames(ctx, target, c.body.UpdateMode)
-			frozen := c.body.Pending
-			if frozen == nil {
-				frozen = c.body.Packages
-			}
-			if err != nil || !sameNames(names, frozen) {
-				c.refuse = &planRefusal{"invalidated", "package list changed"}
-				return invalid("status", "the package list changed, so this approval no longer applies")
-			}
-		}
-		res := tx.Model(&store.FixPlan{}).Where("id = ? AND status = ? AND run_id IS NULL", row.ID, "approved").
-			Updates(map[string]any{"status": "executing", "updated_at": s.now()})
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return invalid("status", "the plan is already being executed")
-		}
-		return nil
-	})
-	return c, err
+	}
+	return c, nil
 }
 
 // setPlanStatus records a final plan status outside any transaction.
 func (s *Service) setPlanStatus(ctx context.Context, a Actor, row store.FixPlan, status, reason string) {
-	err := s.db.WithContext(context.WithoutCancel(ctx)).Model(&store.FixPlan{}).Where("id = ?", row.ID).
-		Updates(map[string]any{"status": status, "reason": reason, "updated_at": s.now()}).Error
-	if err != nil {
-		s.log.Error("record plan status", "plan_id", row.ID, "status", status, "err", err)
+	res := s.db.WithContext(context.WithoutCancel(ctx)).Model(&store.FixPlan{}).Where("id = ? AND account_id = ? AND status = ? AND run_id IS NULL", row.ID, a.AccountID, "approved").
+		Updates(map[string]any{"status": status, "reason": reason, "updated_at": s.now()})
+	if res.Error != nil {
+		s.log.Error("record plan status", "plan_id", row.ID, "status", status, "err", res.Error)
 		return
 	}
-	if status == "invalidated" {
+	if res.RowsAffected > 0 && status == "invalidated" {
 		s.audit(ctx, nil, a, "plan.invalidate", row.Fingerprint, map[string]any{"id": row.ID, "reason": reason})
 	}
 }

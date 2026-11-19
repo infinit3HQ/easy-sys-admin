@@ -98,6 +98,9 @@ type Server struct {
 	// Note is a short reminder kept in the control plane. It is never sent to the server.
 	Note string `gorm:"not null;default:''"`
 
+	// LastScanAttemptAt rotates the automatic scan budget across unreachable servers.
+	LastScanAttemptAt *time.Time
+
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`
 

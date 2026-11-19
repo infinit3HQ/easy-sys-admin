@@ -119,3 +119,30 @@ func TestAcceptedRiskAndSnoozeRules(t *testing.T) {
 		t.Fatalf("note: %+v %v", v.Note, err)
 	}
 }
+
+func TestPartialExposureKeepsOnlyFindingsWithMissingEvidence(t *testing.T) {
+	s := newTestService(t)
+	ctx := context.Background()
+	a := signIn(t, s, "partial-exposure")
+	srv := lifecycleServer(t, s, a, "web")
+	if _, err := s.rules(ctx, a.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.Model(&store.AlertRule{}).Where("account_id = ? AND kind = ?", a.AccountID, AlertExposure).Update("enabled", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	state := store.ServerState{Status: "ok", Snapshot: store.JSON(`{}`)}
+	check := func(ex Exposure, want int64) {
+		t.Helper()
+		state.Exposure = store.MustJSON(ex)
+		s.evaluateAlerts(ctx, srv, &state)
+		var n int64
+		if err := s.db.Model(&store.Alert{}).Where("server_id = ? AND kind = ? AND resolved_at IS NULL", srv.ID, AlertExposure).Count(&n).Error; err != nil || n != want {
+			t.Fatalf("open alerts: got %d, want %d: %v", n, want, err)
+		}
+	}
+	check(Exposure{Ready: true, SSHRead: true, PasswordAuth: true, Firewall: "none", ExtraRoot: 1}, 3)
+	check(Exposure{Ready: true, Firewall: "ufw active", NoPasswordAll: 1, Gaps: []string{"ssh settings", "ufw default policy", "sudo rules"}}, 3)
+	check(Exposure{Ready: true, SSHRead: true, Firewall: "ufw active", Gaps: []string{"sudo rules"}}, 1)
+	check(Exposure{Ready: true, SSHRead: true, Firewall: "ufw active"}, 0)
+}

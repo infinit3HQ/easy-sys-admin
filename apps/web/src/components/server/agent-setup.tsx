@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
-import { api, call } from '#/lib/api'
+import { ApiError, api, call } from '#/lib/api'
 import {
   ConfirmDialog,
   CopyBlock,
@@ -10,6 +10,26 @@ import {
   Panel,
 } from '#/components/kit'
 import { Button } from '#/components/ui/button'
+
+export function needsAgentReauth(error: unknown) {
+  return error instanceof ApiError && error.code === 'reauth_required'
+}
+
+export function AgentReauth({ returnTo }: { returnTo: string }) {
+  return (
+    <Notice tone="warn">
+      Sign in again to manage an outbound connection. If you were working in an
+      organization, check your active space when you return.{' '}
+      <Link
+        className="font-semibold underline"
+        to="/login"
+        search={{ return_to: returnTo }}
+      >
+        Sign in again
+      </Link>
+    </Notice>
+  )
+}
 
 export function AgentSecret({
   serverId,
@@ -72,6 +92,9 @@ export function AgentConnection({ serverId }: { serverId: number }) {
         )
       setConfirm(null)
     },
+    onError: (error) => {
+      if (needsAgentReauth(error)) setConfirm(null)
+    },
   })
   return (
     <div className="space-y-4">
@@ -120,7 +143,11 @@ export function AgentConnection({ serverId }: { serverId: number }) {
           if (confirm) change.mutate(confirm)
         }}
       />
-      <ErrorBanner error={change.error} />
+      {needsAgentReauth(change.error) ? (
+        <AgentReauth returnTo={`/app/servers/${serverId}?tab=settings`} />
+      ) : (
+        <ErrorBanner error={change.error} />
+      )}
     </div>
   )
 }
