@@ -34,10 +34,12 @@ export function AgentReauth({ returnTo }: { returnTo: string }) {
 export function AgentSecret({
   serverId,
   token,
+  signingPin,
   onClose,
 }: {
   serverId: number
   token: string
+  signingPin: string
   onClose: () => void
 }) {
   return (
@@ -48,6 +50,13 @@ export function AgentSecret({
         server.
       </p>
       <CopyBlock value={token} />
+      <p className="my-3 text-sm">
+        And this signing pin. The agent checks every command against it, so
+        something that starts rewriting traffic in front of esa after setup
+        cannot give the agent commands. Enter it when the installer asks, or set
+        ESA_AGENT_PIN.
+      </p>
+      <CopyBlock value={signingPin} />
       <p className="my-3 text-sm">
         Install esa-agent and the helper using the{' '}
         <Link
@@ -74,7 +83,9 @@ export function AgentSecret({
 
 export function AgentConnection({ serverId }: { serverId: number }) {
   const [confirm, setConfirm] = useState<'rotate' | 'revoke' | null>(null)
-  const [token, setToken] = useState<string | null>(null)
+  const [secret, setSecret] = useState<{ token: string; pin: string } | null>(
+    null,
+  )
   const change = useMutation({
     mutationFn: async (action: 'rotate' | 'revoke') => {
       if (action === 'rotate') {
@@ -83,7 +94,7 @@ export function AgentConnection({ serverId }: { serverId: number }) {
             params: { path: { serverId } },
           }),
         )
-        setToken(data.token)
+        setSecret({ token: data.token, pin: data.signingPin })
       } else
         await call(
           api().DELETE('/servers/{serverId}/agent-credential', {
@@ -98,11 +109,12 @@ export function AgentConnection({ serverId }: { serverId: number }) {
   })
   return (
     <div className="space-y-4">
-      {token ? (
+      {secret ? (
         <AgentSecret
           serverId={serverId}
-          token={token}
-          onClose={() => setToken(null)}
+          token={secret.token}
+          signingPin={secret.pin}
+          onClose={() => setSecret(null)}
         />
       ) : (
         <Panel title="Outbound connection">

@@ -509,6 +509,9 @@ func (s *Service) hideUnsharedRunServers(ctx context.Context, a Actor, runs []st
 			}
 		}
 		runs[i].Servers = kept
+		// The owning team's people, notes and other servers stay theirs.
+		runs[i].RequestedBy, runs[i].GateNote = nil, ""
+		runs[i].Options = receiverOptions(runs[i].Options, shared)
 		if g := runs[i].GroupID; g != nil {
 			if _, ok := groups[*g]; !ok {
 				runs[i].GroupID, runs[i].Group = nil, nil
@@ -609,4 +612,26 @@ func validOverride(a Actor, in CheckOverride, checks []HealthCheck) (CheckOverri
 		}
 	}
 	return CheckOverride{Checks: names, Reason: reason, By: a.UserID}, nil
+}
+
+// receiverOptions is a run's options as another team may see them: canaries
+// only among the servers shared with it, and no user ids.
+func receiverOptions(raw store.JSON, shared map[int64]bool) store.JSON {
+	var o RunOptions
+	if err := raw.Decode(&o); err != nil {
+		return store.JSON("{}")
+	}
+	var canaries []int64
+	for _, id := range o.CanaryServerIDs {
+		if shared[id] {
+			canaries = append(canaries, id)
+		}
+	}
+	o.CanaryServerIDs = canaries
+	if o.Override != nil {
+		kept := *o.Override
+		kept.By, kept.Reason = 0, "" // a person on the owning team wrote it
+		o.Override = &kept
+	}
+	return store.MustJSON(o)
 }

@@ -1033,11 +1033,20 @@ type AgentCommand struct {
 	Args      []string  `json:"args"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	Id        int64     `json:"id"`
+
+	// ServerId The server the command is for. Part of what is signed.
+	ServerId *int64 `json:"serverId,omitempty"`
+
+	// Signature Base64 Ed25519 signature over the command with the account key. An agent with a pin refuses a command without a valid one.
+	Signature *string `json:"signature,omitempty"`
 }
 
 // AgentCredential defines model for AgentCredential.
 type AgentCredential struct {
 	ServerId int64 `json:"serverId"`
+
+	// SigningPin Shown once with the token. The agent checks every command against it, so a proxy in front of esa cannot give the agent commands. Give it to the agent out of band, the same way as the token.
+	SigningPin string `json:"signingPin"`
 
 	// Token Shown once. Save in a protected file, never in a URL or command argument.
 	Token string `json:"token"`

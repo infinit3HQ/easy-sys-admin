@@ -440,7 +440,7 @@ func TestAuthorizedKeysSkipsFIFOAndLinks(t *testing.T) {
 	}
 	done := make(chan struct{})
 	go func() {
-		h.authorizedKeys("/home/u/.ssh/authorized_keys")
+		h.authorizedKeys("/home/u", ".ssh/authorized_keys")
 		close(done)
 	}()
 	select {
@@ -451,7 +451,34 @@ func TestAuthorizedKeysSkipsFIFOAndLinks(t *testing.T) {
 	if err := os.Symlink("/etc/passwd", filepath.Join(dir, "authorized_keys2")); err != nil {
 		t.Fatal(err)
 	}
-	if got, gaps := h.authorizedKeys("/home/u/.ssh/authorized_keys2"); got != nil || len(gaps) != 1 {
+	if got, gaps := h.authorizedKeys("/home/u", ".ssh/authorized_keys2"); got != nil || len(gaps) != 1 {
 		t.Fatalf("followed a symlink: %+v %v", got, gaps)
+	}
+}
+
+// A user can point ~/.ssh at another directory. Root must not read another
+// user's keys on their behalf, and the audit must say it could not look.
+func TestAuthorizedKeysRefusesLinkedSSHDirectory(t *testing.T) {
+	root := t.TempDir()
+	h := &Host{Root: root}
+	victim := filepath.Join(root, "root/.ssh")
+	if err := os.MkdirAll(victim, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKo2k1mQ0n1VQ9Zs8m9sJmQe1pW2Jg0x3m0m0m0m0m0m root-key\n"
+	if err := os.WriteFile(filepath.Join(victim, "authorized_keys"), []byte(key), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "home/mallory"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The link target is outside mallory's home, so it is outside the root
+	// the read is confined to.
+	if err := os.Symlink(filepath.Join(root, "root/.ssh"), filepath.Join(root, "home/mallory/.ssh")); err != nil {
+		t.Fatal(err)
+	}
+	keys, gaps := h.authorizedKeys("/home/mallory", ".ssh/authorized_keys")
+	if len(keys) != 0 || len(gaps) == 0 {
+		t.Fatalf("read through a linked .ssh: keys=%v gaps=%v", keys, gaps)
 	}
 }

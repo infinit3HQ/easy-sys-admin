@@ -2361,6 +2361,8 @@ export interface components {
             serverId: number;
             /** @description Shown once. Save in a protected file, never in a URL or command argument. */
             token: string;
+            /** @description Shown once with the token. The agent checks every command against it, so a proxy in front of esa cannot give the agent commands. Give it to the agent out of band, the same way as the token. */
+            signingPin: string;
         };
         AgentCommand: {
             /** Format: int64 */
@@ -2369,6 +2371,13 @@ export interface components {
             args: string[];
             /** Format: date-time */
             expiresAt: string;
+            /**
+             * Format: int64
+             * @description The server the command is for. Part of what is signed.
+             */
+            serverId?: number;
+            /** @description Base64 Ed25519 signature over the command with the account key. An agent with a pin refuses a command without a valid one. */
+            signature?: string;
         };
         Server: {
             /** Format: int64 */

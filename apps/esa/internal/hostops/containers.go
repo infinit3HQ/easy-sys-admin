@@ -203,10 +203,11 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 		return "", &RefusedError{Reason: c.Name + " has an invalid compose project or service name"}
 	}
 	dir = filepath.Clean(dir)
-	if fi, err := os.Stat(h.path(dir)); !filepath.IsAbs(dir) || err != nil || !fi.IsDir() {
+	if dirInfo, err := os.Stat(h.path(dir)); !filepath.IsAbs(dir) || err != nil || !dirInfo.IsDir() {
 		return "", &RefusedError{Reason: "compose directory " + dir + " is not a directory"}
 	}
 	args := []string{"compose", "--project-directory", dir, "-p", c.ComposeProject}
+	var composeFiles []string
 	nfiles := 0
 	for _, file := range strings.Split(files, ",") {
 		if file = strings.TrimSpace(file); file == "" {
@@ -219,14 +220,15 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 		if rel, err := filepath.Rel(dir, file); err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
 			return "", &RefusedError{Reason: "compose file " + file + " is outside " + dir}
 		}
-		if fi, err := os.Lstat(h.path(file)); err != nil || !fi.Mode().IsRegular() {
-			return "", &RefusedError{Reason: "compose file " + file + " no longer exists or is not a regular file"}
-		}
 		args = append(args, "-f", file)
+		composeFiles = append(composeFiles, file)
 		nfiles++
 	}
 	if nfiles == 0 {
 		return "", &RefusedError{Reason: c.Name + " has no compose file label"}
+	}
+	if err := h.checkComposeTree(dir, composeFiles); err != nil {
+		return "", err
 	}
 	// docker compose reports progress on stderr, so keep both streams.
 	run := func(sub ...string) (string, error) {
@@ -242,6 +244,10 @@ func (h *Host) ContainerUpdate(ctx context.Context, ref, confirm string, f Conta
 	}
 	pull, err := run("pull", c.ComposeService)
 	if err != nil {
+		return "", err
+	}
+	// A pull can take minutes. Check again that nothing changed under the path.
+	if err := h.checkComposeTree(dir, composeFiles); err != nil {
 		return "", err
 	}
 	up, err := run("up", "-d", "--no-deps", c.ComposeService)

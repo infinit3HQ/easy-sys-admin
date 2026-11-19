@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -17,7 +18,9 @@ import (
 
 // InstallScript is the shell script that sets a server up for esa. It is
 // shared by the enroll command (path A) and the control plane's own install
-// over a sudo login (path B). It expects the new helper binary at "$1".
+// over a sudo login (path B). It expects the new helper binary at "$1". An
+// optional "$2" is the helper's SHA-256, checked on the root-owned copy: over
+// a sudo login the upload sits in /tmp, written by a user who is not root.
 //
 // It creates a system user "esa" with no usable password, allows the
 // account's key with the "restrict" option (no pty, no forwarding) and a
@@ -57,8 +60,15 @@ fi
 mkdir -p "$home"
 chown root:root "$home"
 chmod 0755 "$home"
+if [ -L "$lib" ]; then echo "ESA_INSTALL_ERROR $lib is a symbolic link" >&2; exit 1; fi
 install -d -m 0755 -o root -g root "$lib"
 install -m 0755 -o root -g root "$src" "$lib/esa-helper.new"
+if [ -n "${2:-}" ]; then
+  if ! command -v sha256sum >/dev/null 2>&1 || ! printf '%s  %s\n' "$2" "$lib/esa-helper.new" | sha256sum -c - >/dev/null 2>&1; then
+    rm -f "$lib/esa-helper.new" "$src"
+    echo "ESA_INSTALL_ERROR the helper changed on its way to the server, or sha256sum is missing" >&2; exit 1
+  fi
+fi
 mv -f "$lib/esa-helper.new" "$lib/esa-helper"
 rm -f "$src"
 rm -rf "$home/.ssh"
@@ -188,6 +198,10 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 		return InstallResult{}, err
 	}
 
+	binSum := sha256.Sum256(bin)
+	helperSum := hex.EncodeToString(binSum[:])
+	scriptSum := sha256.Sum256([]byte(script))
+
 	rnd := make([]byte, 8)
 	_, _ = rand.Read(rnd)
 	tmp := "/tmp/esa-helper-upload-" + hex.EncodeToString(rnd)
@@ -199,12 +213,12 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 	var stdin []byte
 	switch {
 	case uid == "0":
-		cmd, stdin = "sh -s -- "+tmp, []byte(script)
+		cmd, stdin = "sh -s -- "+tmp+" "+helperSum, []byte(script)
 	case req.Login.Password == "":
-		cmd, stdin = "sudo -n sh -s -- "+tmp, []byte(script)
+		cmd, stdin = "sudo -n sh -s -- "+tmp+" "+helperSum, []byte(script)
 	default:
 		if _, err := run("sudo -n true", nil); err == nil {
-			cmd, stdin = "sudo -n sh -s -- "+tmp, []byte(script)
+			cmd, stdin = "sudo -n sh -s -- "+tmp+" "+helperSum, []byte(script)
 			break
 		}
 		// sudo needs the password. stdin then carries only the password,
@@ -216,7 +230,7 @@ func Install(ctx context.Context, req InstallRequest) (InstallResult, error) {
 			return InstallResult{}, fmt.Errorf("upload install script: %w", err)
 		}
 		defer func() { _, _ = run("rm -f "+scriptTmp, nil) }()
-		cmd = `sudo -S -p '' sh -c 'exec sh "$1" "$2" </dev/null' sh ` + scriptTmp + " " + tmp
+		cmd = sudoVerifiedScriptCommand(scriptTmp, tmp, hex.EncodeToString(scriptSum[:]), helperSum)
 		stdin = []byte(req.Login.Password + "\n")
 	}
 	out, err := run(cmd, stdin)
@@ -281,3 +295,13 @@ func goArch(uname string) (string, error) {
 // Helper updates also go through Install with a sudo login. The helper has
 // no self-update action on purpose: with one, the esa key could install any
 // binary as root, while today it can only run the helper's fixed actions.
+
+// sudoVerifiedScriptCommand runs the install script from a file that the
+// login user wrote. Root first copies the file into a directory only root can
+// use and checks its SHA-256 there, so the file cannot be swapped between the
+// check and the run. The script then checks the helper the same way. stdin
+// carries only the sudo password, and the script reads /dev/null.
+func sudoVerifiedScriptCommand(scriptFile, helperFile, scriptSum, helperSum string) string {
+	const body = `d=$(mktemp -d) || exit 1; cp "$1" "$d/s" && printf "%s  %s\n" "$3" "$d/s" | sha256sum -c - >/dev/null 2>&1 && sh "$d/s" "$2" "$4" </dev/null; r=$?; rm -rf "$d"; exit $r`
+	return "sudo -S -p '' sh -c '" + body + "' sh " + scriptFile + " " + helperFile + " " + scriptSum + " " + helperSum
+}

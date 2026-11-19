@@ -13,12 +13,21 @@ case "$host" in ''|*[!a-zA-Z0-9.:-]*|*:*:*) echo 'Use an HTTPS DNS name with an 
 command -v curl >/dev/null
 command -v sudo >/dev/null
 command -v systemctl >/dev/null
+command -v sha256sum >/dev/null
 case "$(uname -m)" in x86_64) arch=amd64;; aarch64|arm64) arch=arm64;; *) echo 'Supported architectures: amd64 and arm64.' >&2; exit 1;; esac
 umask 077
 tmp=$(mktemp -d)
 trap 'stty echo </dev/tty 2>/dev/null || true; rm -rf "$tmp"' EXIT HUP INT TERM
 curl --proto '=https' --tlsv1.2 -fsS "$origin/enroll/outbound/binaries/helper/$arch" -o "$tmp/helper"
 curl --proto '=https' --tlsv1.2 -fsS "$origin/enroll/outbound/binaries/agent/$arch" -o "$tmp/agent"
+# The server that sends these files cannot vouch for them. To pin them, set
+# ESA_HELPER_SHA256 and ESA_AGENT_SHA256 to the values for your architecture
+# in the release notes. Without them the hashes are printed so you can compare.
+helper_sum=$(sha256sum "$tmp/helper" | cut -d' ' -f1)
+agent_sum=$(sha256sum "$tmp/agent" | cut -d' ' -f1)
+printf 'helper sha256 %s\nagent  sha256 %s\n' "$helper_sum" "$agent_sum"
+if [ -n "${ESA_HELPER_SHA256:-}" ] && [ "$ESA_HELPER_SHA256" != "$helper_sum" ]; then echo 'The helper does not match ESA_HELPER_SHA256. Nothing was installed.' >&2; exit 1; fi
+if [ -n "${ESA_AGENT_SHA256:-}" ] && [ "$ESA_AGENT_SHA256" != "$agent_sum" ]; then echo 'The agent does not match ESA_AGENT_SHA256. Nothing was installed.' >&2; exit 1; fi
 if id esa >/dev/null 2>&1; then
  [ "$(getent passwd esa | cut -d: -f5,6)" = 'easy-sys-admin control plane:/var/lib/esa-home' ] || { echo 'A user named esa exists and was not created by easy-sys-admin. Refusing to reuse it.' >&2; exit 1; }
 else
@@ -39,10 +48,15 @@ printf '\n' >/dev/tty
 case "$token" in esa_agent_*) ;; *) echo 'Invalid agent credential.' >&2; exit 1;; esac
 case "$token" in *[!a-zA-Z0-9_-]* ) echo 'Invalid agent credential.' >&2; exit 1;; esac
 [ "${#token}" -le 200 ] || exit 1
+printf 'Paste the signing pin shown with it: ' >/dev/tty
+IFS= read -r pin </dev/tty
+case "$pin" in esa_pin_[0-9]*_*) ;; *) echo 'Invalid signing pin.' >&2; exit 1;; esac
+case "$pin" in *[!a-zA-Z0-9_-]* ) echo 'Invalid signing pin.' >&2; exit 1;; esac
+[ "${#pin}" -le 200 ] || exit 1
 printf '%s\n' "$token" > "$tmp/token"
 unset token
 install -o root -g esa -m 0640 "$tmp/token" /etc/esa/agent.token
-printf 'ESA_AGENT_URL=%s\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token\n' "$origin" > "$tmp/env"
+printf 'ESA_AGENT_URL=%s\nESA_AGENT_TOKEN_FILE=/etc/esa/agent.token\nESA_AGENT_PIN=%s\n' "$origin" "$pin" > "$tmp/env"
 install -o root -g root -m 0600 "$tmp/env" /etc/esa/agent.env
 printf '%s\n' 'Defaults:esa !requiretty' 'Defaults:esa env_reset' 'Defaults:esa secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"' 'esa ALL=(root) NOPASSWD: /usr/local/lib/esa/esa-helper *' > "$tmp/sudoers"
 visudo -cf "$tmp/sudoers"

@@ -32,6 +32,27 @@ function json(data: unknown) {
   }
 }
 
+/**
+ * The comment on an authorized_keys line is free text from whoever can edit
+ * that file, which on a managed server can be any local user. A token that
+ * can start runs does not get it, so it cannot be used to steer such an agent.
+ */
+function withoutKeyComments<
+  T extends {
+    users?: ReadonlyArray<{
+      authorizedKeys?: ReadonlyArray<{ comment?: string }>
+    }>
+  },
+>(report: T): T {
+  return {
+    ...report,
+    users: report.users?.map((u) => ({
+      ...u,
+      authorizedKeys: u.authorizedKeys?.map((k) => ({ ...k, comment: '' })),
+    })),
+  }
+}
+
 function failure(e: unknown) {
   const message = e instanceof Error ? e.message : String(e)
   return {
@@ -428,15 +449,16 @@ function buildServer(token: string, me: Me): McpServer {
 
   tool(
     'get_access_report',
-    'Login users and whether each has a password, sudo rules, SSH settings, key fingerprints, recent logins, and failed SSH attempts. Password hashes are not included.',
+    'Login users and whether each has a password, sudo rules, SSH settings, key fingerprints, recent logins, and failed SSH attempts. Password hashes are not included. Key comments are left out when the token can start runs, because anyone who can edit an authorized_keys file can write them.',
     { server: serverArg },
     async ({ server: ref }) => {
       const s = await resolveServer(ref)
-      return call(
+      const report = await call(
         api.GET('/servers/{serverId}/access', {
           params: { path: { serverId: s.id } },
         }),
       )
+      return canStartRuns ? withoutKeyComments(report) : report
     },
   )
 

@@ -93,6 +93,8 @@ These are enforced in `hostops` and pinned by `hostops/safety_test.go`. Do not w
 - Unit names must match `unitNameRe` (`.service` only). Reject anything with shell syntax.
 - The three rules above apply to every alias of a unit, not only the name given. `ServiceAction` resolves names with `systemctl show` and refuses when any of them is listed. Do not add a path that compares only the typed name.
 - `upgrade-exec` runs only inside the unit that `upgrade-start` creates. `DispatchArgs` refuses it over SSH.
+- Files that users choose the location of (`authorized_keys`, compose files) are read inside a confined root (`os.OpenRoot`) or checked for owner and mode first. Do not follow a path a user controls as root.
+- Agent commands are signed by the control plane and checked by the agent against its pin (`proto.AgentCommandMessage`). Change the signed fields on both sides together.
 - Template instances (`name@instance`) are started or restarted only when systemd already has them loaded.
 - Protected containers (default prefixes `traefik`, `authentik`, `portainer`, `crowdsec`, or the server's own list) need `--confirm <exact name>` for actions and updates. Compose project and service names count as names.
 - `container-update` refuses containers not managed by docker compose.

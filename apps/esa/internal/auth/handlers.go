@@ -65,19 +65,25 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				email = strings.ToLower(strings.TrimSpace(r.FormValue("email")))
 			}
 			ip := clientIP(r)
-			if code := fl.SignInBlocked(email, ip); code != "" {
+			// The attempt is counted before the password is checked, so a
+			// burst of parallel guesses meets the same limit as a slow one.
+			ticket, code := fl.SignInReserve(r.Context(), email, ip)
+			if code != "" {
 				loginError(w, r, code)
 				return
 			}
 			res, err := fl.SignInPassword(r.Context(), email, r.FormValue("password"))
 			switch {
 			case errors.Is(err, fleet.ErrSignInNotAllowed):
+				fl.SignInRelease(ticket)
 				loginError(w, r, "not_allowed")
 				return
 			case errors.Is(err, fleet.ErrEmailUnconfirmed):
+				fl.SignInRelease(ticket)
 				http.Redirect(w, r, "/login?mode=verify&email="+url.QueryEscape(email), http.StatusSeeOther)
 				return
 			case busy(err):
+				fl.SignInRelease(ticket)
 				log.Warn("password sign in", "err", err)
 				loginError(w, r, "busy")
 				return
@@ -85,11 +91,10 @@ func Routes(mux *http.ServeMux, cfg config.Config, oidc map[string]*OIDC, sessio
 				if !errors.Is(err, fleet.ErrBadCredentials) {
 					log.Error("password sign in", "err", err)
 				}
-				fl.SignInFail(email, ip)
 				loginError(w, r, "bad_password")
 				return
 			}
-			fl.SignInSucceed(email, ip)
+			fl.SignInSucceed(ticket)
 			start(w, r, res)
 		})
 		mux.HandleFunc("POST /auth/password/signup", func(w http.ResponseWriter, r *http.Request) {

@@ -52,6 +52,13 @@ func (s *Service) UpdateServer(ctx context.Context, a Actor, id int64, in Update
 		}
 	}
 	if in.HostsControlPlane != nil {
+		// Clearing the flag removes the protection that keeps a reboot of
+		// the control plane's own host out of a run.
+		if !*in.HostsControlPlane {
+			if err := requirePerson(a, "stop protecting the control plane's host"); err != nil {
+				return ServerView{}, err
+			}
+		}
 		changes["hosts_control_plane"] = *in.HostsControlPlane
 	}
 	if in.ProtectedContainers != nil {
@@ -187,6 +194,12 @@ func (s *Service) ReinstallHelper(ctx context.Context, a Actor, id int64, login 
 	if login != nil && login.User != "" {
 		l = *login
 	} else {
+		// The owner chose to keep this login for this server. An admin who
+		// is not an owner enters their own, so they cannot send the owner's
+		// login to whatever now answers at the address.
+		if err := a.can(RoleOwner, ScopeAdmin); err != nil {
+			return ServerView{}, invalid("login", "enter a sudo login; only an owner can use the one kept for this server")
+		}
 		stored, ok, err := s.storedLogin(ctx, srv.ID)
 		if err != nil {
 			return ServerView{}, err

@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -34,40 +35,89 @@ func (s *Service) AuthHit(key string) {
 	}
 }
 
-// SignInBlocked reports why this password attempt must stop, or "" when it
-// may go ahead. A database error stops the attempt, so a second process
-// cannot guess while the shared count is unreadable.
-func (s *Service) SignInBlocked(email, ip string) string {
+// signInLockID serializes sign-in accounting across control planes.
+const signInLockID int64 = 7340011
+
+// SignInTicket is one password attempt that has been counted. It is counted
+// before the password is checked, so parallel guesses cannot all pass a
+// limit that only the failures would have reached.
+type SignInTicket struct {
+	ids       []int64
+	email, ip string
+}
+
+// SignInReserve counts this attempt and reports why it must stop, or "" when
+// it may go ahead. Counting and checking happen under one database lock, so
+// a burst of parallel requests is held to the same limits as a slow one. A
+// database error stops the attempt, so a second process cannot guess while
+// the shared count is unreadable. Call SignInRelease or SignInSucceed when
+// the attempt turns out not to be a wrong guess.
+func (s *Service) SignInReserve(ctx context.Context, email, ip string) (SignInTicket, string) {
 	email, ip = signInKeyPart(email), signInKeyPart(ip)
-	n, err := s.signInCounts(email, ip)
+	ticket := SignInTicket{email: email, ip: ip}
+	reason := ""
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// A queue behind the lock must not hold connections without end: a
+		// flood of attempts would otherwise starve every other query.
+		if err := tx.Exec("SET LOCAL lock_timeout = '2s'").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", signInLockID).Error; err != nil {
+			return err
+		}
+		n, err := signInCounts(tx, s.now(), email, ip)
+		if err != nil {
+			return err
+		}
+		switch {
+		case n.pair >= 5 || n.email >= 100:
+			reason = "locked"
+			return nil
+		case n.client >= 30 || n.global >= 1000:
+			reason = "rate_limited"
+			return nil
+		}
+		now := s.now()
+		if err := tx.Where("at < ?", now.Add(-authKeep)).Delete(&store.SignInHit{}).Error; err != nil {
+			return err
+		}
+		keys := []string{signInPair(email, ip), "email\n" + email, "client\n" + ip, "global"}
+		rows := make([]store.SignInHit, len(keys))
+		for i, key := range keys {
+			rows[i] = store.SignInHit{Key: key, At: now}
+		}
+		if err := tx.Create(&rows).Error; err != nil {
+			return err
+		}
+		for _, r := range rows {
+			ticket.ids = append(ticket.ids, r.ID)
+		}
+		return nil
+	})
 	if err != nil {
 		s.log.Error("sign-in limit", "err", err)
-		return "rate_limited"
+		return SignInTicket{}, "rate_limited"
 	}
-	if n.pair >= 5 || n.email >= 100 {
-		return "locked"
-	}
-	if n.client >= 30 || n.global >= 1000 {
-		return "rate_limited"
-	}
-	return ""
+	return ticket, reason
 }
 
-// SignInFail records one failed password sign-in on the shared rows.
-func (s *Service) SignInFail(email, ip string) {
-	email, ip = signInKeyPart(email), signInKeyPart(ip)
-	keys := []string{signInPair(email, ip), "email\n" + email, "client\n" + ip, "global"}
-	if err := s.recordHits(keys); err != nil {
-		s.log.Error("record sign-in failure", "err", err)
+// SignInRelease takes back a counted attempt that was not a wrong guess, such
+// as a correct password on an account that still has to confirm its address.
+func (s *Service) SignInRelease(t SignInTicket) {
+	if len(t.ids) == 0 {
+		return
+	}
+	if err := s.db.Where("id IN ?", t.ids).Delete(&store.SignInHit{}).Error; err != nil {
+		s.log.Error("release sign-in attempt", "err", err)
 	}
 }
 
-// SignInSucceed clears the counters only the account owner can clear.
-// The client and whole-install budgets stay, so one sign-in does not buy
-// more guesses at other accounts.
-func (s *Service) SignInSucceed(email, ip string) {
-	email, ip = signInKeyPart(email), signInKeyPart(ip)
-	err := s.db.Where("key IN ?", []string{signInPair(email, ip), "email\n" + email}).Delete(&store.SignInHit{}).Error
+// SignInSucceed releases the attempt and clears the counters only the account
+// owner can clear. The client and whole-install budgets keep their earlier
+// failures, so one sign-in does not buy more guesses at other accounts.
+func (s *Service) SignInSucceed(t SignInTicket) {
+	s.SignInRelease(t)
+	err := s.db.Where("key IN ?", []string{signInPair(t.email, t.ip), "email\n" + t.email}).Delete(&store.SignInHit{}).Error
 	if err != nil {
 		s.log.Error("clear sign-in limit", "err", err)
 	}
@@ -75,13 +125,13 @@ func (s *Service) SignInSucceed(email, ip string) {
 
 type signInCount struct{ pair, email, client, global int64 }
 
-func (s *Service) signInCounts(email, ip string) (signInCount, error) {
-	since := s.now().Add(-signInWindow)
+func signInCounts(db *gorm.DB, now time.Time, email, ip string) (signInCount, error) {
+	since := now.Add(-signInWindow)
 	var rows []struct {
 		Key string
 		N   int64
 	}
-	err := s.db.Model(&store.SignInHit{}).
+	err := db.Model(&store.SignInHit{}).
 		Select("key, count(*) as n").
 		Where("at >= ? AND key IN ?", since, []string{signInPair(email, ip), "email\n" + email, "client\n" + ip, "global"}).
 		Group("key").

@@ -3,6 +3,11 @@ package remote
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -48,6 +53,9 @@ func TestInstallScriptLocksDownHome(t *testing.T) {
 		"Defaults:esa env_reset",
 		`Defaults:esa secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"`,
 		"home=" + proto.UserHome + "\n",
+		// The helper is checked on the root-owned copy, not the upload.
+		`sha256sum -c -`,
+		`if [ -L "$lib" ]`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("install script lacks %q", want)
@@ -57,6 +65,10 @@ func TestInstallScriptLocksDownHome(t *testing.T) {
 		if strings.Contains(script, bad) {
 			t.Errorf("install script still has %q", bad)
 		}
+	}
+	if strings.Index(script, `sha256sum -c -`) < strings.Index(script, `install -m 0755 -o root -g root "$src" "$lib/esa-helper.new"`) ||
+		strings.Index(script, `sha256sum -c -`) > strings.Index(script, `mv -f "$lib/esa-helper.new" "$lib/esa-helper"`) {
+		t.Error("the helper checksum must be checked on the root-owned copy, before it replaces the helper")
 	}
 	// The root-owned home must be in place before anything is written in it.
 	if strings.Index(script, `chown root:root "$home"`) > strings.Index(script, `rm -rf "$home/.ssh"`) {
@@ -73,5 +85,45 @@ func TestScrubRemovesPassword(t *testing.T) {
 	}
 	if got := scrub("plain", ""); got != "plain" {
 		t.Fatalf("empty password changed text: %q", got)
+	}
+}
+
+// The script file is written by the login user. It must run only if it still
+// has the hash that was computed before it was uploaded.
+func TestSudoVerifiedScriptRunsOnlyUnchangedScript(t *testing.T) {
+	if _, err := exec.LookPath("sha256sum"); err != nil {
+		t.Skip("sha256sum is not installed")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A stand-in sudo that drops "-S -p ''" and runs the rest.
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nshift 3\nexec \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "script.sh")
+	body := []byte("echo ran:$1:$2\n")
+	if err := os.WriteFile(script, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	run := func() (string, error) {
+		cmd := exec.Command("sh", "-c", sudoVerifiedScriptCommand(script, "/tmp/upload", hex.EncodeToString(sum[:]), "HELPERSUM"))
+		cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	out, err := run()
+	if err != nil || strings.TrimSpace(out) != "ran:/tmp/upload:HELPERSUM" {
+		t.Fatalf("unchanged script: %q %v", out, err)
+	}
+	if err := os.WriteFile(script, append(body, []byte("echo pwned\n")...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err = run()
+	if err == nil || strings.Contains(out, "pwned") || strings.Contains(out, "ran:") {
+		t.Fatalf("a changed script ran: %q %v", out, err)
 	}
 }

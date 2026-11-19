@@ -184,6 +184,7 @@ Container names and ids must match `^[a-zA-Z0-9][a-zA-Z0-9_.\-]{0,127}$`. Protec
 `container-update` has extra rules:
 
 - The compose project and service names are checked against the protected list too, because compose labels can come from the image.
+- Compose runs as root, so the working directory and each compose file must not be writable by group or others, and must be owned by root or by a member of the `docker` group. Anything else is refused. A user without Docker access cannot make `container-update` run a file they wrote.
 - The container must be managed by docker compose, with a project, a service, and a working directory label. Others are refused, because recreating them would need their full run options.
 - The working directory must be an absolute path to a directory. Each compose file must be a regular file inside it.
 - It runs `docker compose pull <service>` and `docker compose up -d --no-deps <service>`, 10 minutes each.

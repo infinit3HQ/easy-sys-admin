@@ -148,6 +148,23 @@ func (s *Service) underCap(ctx context.Context, a Actor, model any, max int, wha
 	return nil
 }
 
+// capLocked is underCap inside the transaction that inserts the row. It takes
+// a per-account lock first, so requests that all passed the early check count
+// one another instead of each seeing room for one more.
+func (s *Service) capLocked(tx *gorm.DB, accountID int64, model any, max int, what string) error {
+	if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended('esa-cap', ?))", accountID).Error; err != nil {
+		return err
+	}
+	var n int64
+	if err := tx.Model(model).Where("account_id = ?", accountID).Count(&n).Error; err != nil {
+		return err
+	}
+	if n >= int64(max) {
+		return &ConflictError{Message: "this account has reached the limit of " + strconv.Itoa(max) + " " + what + "; delete one first"}
+	}
+	return nil
+}
+
 // ---- Notification queue ----------------------------------------------------
 
 const (

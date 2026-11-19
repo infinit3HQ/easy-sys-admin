@@ -57,7 +57,7 @@ func (h *Host) Access(ctx context.Context) (proto.AccessReport, error) {
 		}
 		u := proto.LocalUser{Name: f[0], UID: uid, Home: f[5], Shell: f[6], Password: pw, AuthorizedKeys: []proto.AuthorizedKey{}}
 		for _, name := range []string{"authorized_keys", "authorized_keys2"} {
-			keys, gaps := h.authorizedKeys(filepath.Join(f[5], ".ssh", name))
+			keys, gaps := h.authorizedKeys(f[5], filepath.Join(".ssh", name))
 			u.AuthorizedKeys = append(u.AuthorizedKeys, keys...)
 			for _, g := range gaps {
 				rep.Gaps = addGap(rep.Gaps, g)
@@ -529,21 +529,32 @@ func splitSpecs(s string) []string {
 // maxAuthorizedKeys caps how much of one authorized_keys file is read.
 const maxAuthorizedKeys = 1 << 20
 
-// authorizedKeys reads a user's authorized_keys. Users choose what sits at
-// that path, so it must be a regular file (not a link, FIFO, or device),
-// is opened without blocking, and only the first MiB is read. gaps names
-// what could not be read, so a skipped file or line does not read as clean.
-func (h *Host) authorizedKeys(path string) (keys []proto.AuthorizedKey, gaps []string) {
-	fi, err := os.Lstat(h.path(path))
+// authorizedKeys reads a user's authorized_keys at rel inside their home.
+// Users choose what sits at that path, so the home is opened as a root that
+// path walking cannot leave: a ~/.ssh that is a link to /root/.ssh or to
+// another user's directory is refused, not followed. The file must be a
+// regular file (not a link, FIFO, or device), is opened without blocking,
+// and only the first MiB is read. gaps names what could not be read, so a
+// skipped file or line does not read as clean.
+func (h *Host) authorizedKeys(home, rel string) (keys []proto.AuthorizedKey, gaps []string) {
+	root, err := os.OpenRoot(h.path(home))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, []string{"authorized_keys unreadable"}
+	}
+	defer root.Close()
+	fi, err := root.Lstat(rel)
 	switch {
 	case os.IsNotExist(err):
 		return nil, nil
 	case err != nil:
-		return nil, []string{"authorized_keys unreadable"}
+		return nil, []string{"authorized_keys symlink"}
 	case !fi.Mode().IsRegular():
 		return nil, []string{"authorized_keys symlink"}
 	}
-	f, err := os.OpenFile(h.path(path), os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
+	f, err := root.OpenFile(rel, os.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

@@ -138,6 +138,8 @@ jobs:
         if: inputs.environment == 'production'
         env:
           ESA_DEPLOY_BACKUP_DIR: ${{ vars.ESA_DEPLOY_BACKUP_DIR }}
+          ESA_BACKUP_KEEP: ${{ vars.ESA_BACKUP_KEEP }}
+          ESA_BACKUP_AGE_RECIPIENT: ${{ vars.ESA_BACKUP_AGE_RECIPIENT }}
         run: deploy/backup-production.sh
 
       - name: Close nightly public route during bootstrap

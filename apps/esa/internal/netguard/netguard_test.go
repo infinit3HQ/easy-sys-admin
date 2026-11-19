@@ -91,3 +91,26 @@ func TestDialerRefuses(t *testing.T) {
 		t.Errorf("metadata dial: %v, want blocked", err)
 	}
 }
+
+// A public address assigned to this machine is a way to reach its own
+// services from the inside. It is refused unless private networks are allowed.
+func TestCheckRefusesOwnAddress(t *testing.T) {
+	old := interfaceAddrs
+	t.Cleanup(func() { interfaceAddrs = old })
+	interfaceAddrs = func() ([]net.Addr, error) {
+		return []net.Addr{&net.IPNet{IP: net.ParseIP("203.0.113.7"), Mask: net.CIDRMask(24, 32)}}, nil
+	}
+	own := netip.MustParseAddr("203.0.113.7")
+	if err := Check(own, false); !IsBlocked(err) {
+		t.Fatalf("own public address: %v", err)
+	}
+	if err := Check(own, true); err != nil {
+		t.Fatalf("own address with private networks allowed: %v", err)
+	}
+	if err := Check(netip.MustParseAddr("203.0.113.8"), false); err != nil {
+		t.Fatalf("another public address: %v", err)
+	}
+	if msg := (&BlockedError{IP: own, Private: true}).Error(); strings.Contains(msg, "203.0.113.7") {
+		t.Fatalf("the message names the address: %q", msg)
+	}
+}

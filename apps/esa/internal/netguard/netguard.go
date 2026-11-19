@@ -21,11 +21,13 @@ type BlockedError struct {
 	Private bool
 }
 
+// Error does not name the address. A host name can resolve to an internal
+// address, and the message goes back to whoever typed the name.
 func (e *BlockedError) Error() string {
 	if e.Private {
-		return "esa does not connect to " + e.IP.String() + ": private and internal addresses are blocked (ESA_ALLOW_PRIVATE_NETWORKS)"
+		return "esa does not connect to that address: private and internal addresses are blocked (ESA_ALLOW_PRIVATE_NETWORKS)"
 	}
-	return "esa does not connect to " + e.IP.String() + ": link-local, metadata, multicast, and unspecified addresses are always blocked"
+	return "esa does not connect to that address: link-local, metadata, multicast, and unspecified addresses are always blocked"
 }
 
 // IsBlocked reports whether err comes from the address policy.
@@ -76,7 +78,35 @@ func Check(ip netip.Addr, allowPrivate bool) error {
 	if ip.IsLoopback() || ip.IsPrivate() || cgnat.Contains(ip) || !ip.IsGlobalUnicast() {
 		return &BlockedError{IP: ip, Private: true}
 	}
+	// A public address that belongs to this machine reaches its own services
+	// from the inside, past any firewall in front of it.
+	if isLocalAddress(ip) {
+		return &BlockedError{IP: ip, Private: true}
+	}
 	return nil
+}
+
+// interfaceAddrs lists this machine's addresses. Tests replace it.
+var interfaceAddrs = net.InterfaceAddrs
+
+func isLocalAddress(ip netip.Addr) bool {
+	addrs, err := interfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		var local net.IP
+		switch v := a.(type) {
+		case *net.IPNet:
+			local = v.IP
+		case *net.IPAddr:
+			local = v.IP
+		}
+		if l, ok := netip.AddrFromSlice(local); ok && l.Unmap() == ip {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckIP is Check for a net.IP.

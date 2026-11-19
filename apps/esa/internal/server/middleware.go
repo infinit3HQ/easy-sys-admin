@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"regexp"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/api"
@@ -100,6 +102,70 @@ func bodyLimit(p string) int64 {
 	return maxBodyBytes
 }
 
+// Large bodies are read before the request is authenticated, so without a
+// bound a handful of slow uploads would hold most of the memory of a small
+// host. The bound is per client as well as overall, so one client cannot take
+// every slot, and a read that takes too long is cut off.
+const (
+	maxLargeBodies          = 8
+	maxLargeBodiesPerClient = 2
+	largeBodyReadTimeout    = 30 * time.Second
+)
+
+var largeBodies = struct {
+	mu     sync.Mutex
+	total  int
+	client map[string]int
+}{client: map[string]int{}}
+
+// acquireLargeBody takes a slot for client and returns its release func, or
+// nil when the client or the server has none free.
+func acquireLargeBody(client string) func() {
+	largeBodies.mu.Lock()
+	defer largeBodies.mu.Unlock()
+	if largeBodies.total >= maxLargeBodies || largeBodies.client[client] >= maxLargeBodiesPerClient {
+		return nil
+	}
+	largeBodies.total++
+	largeBodies.client[client]++
+	return func() {
+		largeBodies.mu.Lock()
+		defer largeBodies.mu.Unlock()
+		largeBodies.total--
+		if largeBodies.client[client]--; largeBodies.client[client] <= 0 {
+			delete(largeBodies.client, client)
+		}
+	}
+}
+
+// bodyClient names the sender for the slot bound: the address the reverse
+// proxy appended, as for the sign-in limits, or the peer.
+func bodyClient(r *http.Request) string {
+	if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+		last := xff[len(xff)-1]
+		if i := strings.LastIndexByte(last, ','); i >= 0 {
+			last = last[i+1:]
+		}
+		if ip := strings.TrimSpace(last); ip != "" {
+			return ip
+		}
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// hasCredentials reports whether a request for a large-body path names a
+// caller at all. It is not authentication. It keeps anonymous requests from
+// making the server buffer megabytes before they are turned away.
+func hasCredentials(r *http.Request) bool {
+	if r.URL.Path == "/api/v1/agent/result" {
+		return r.Header.Get("X-Esa-Agent-Token") != ""
+	}
+	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") || r.Header.Get("Cookie") != ""
+}
+
 // limitBodies answers 413 in the API's error format when a body is over
 // maxBodyBytes. The body is read up front because the web app's proxy
 // forwards it chunked, without a Content-Length to check.
@@ -111,7 +177,21 @@ func limitBodies(next http.Handler) http.Handler {
 			return
 		}
 		limit := bodyLimit(p)
+		release := func() {}
+		if limit > maxBodyBytes {
+			if !hasCredentials(r) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized", "Send credentials with this request.")
+				return
+			}
+			if release = acquireLargeBody(bodyClient(r)); release == nil {
+				w.Header().Set("Retry-After", "5")
+				writeJSONError(w, http.StatusServiceUnavailable, "busy", "Too many large uploads are in progress. Try again shortly.")
+				return
+			}
+			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(largeBodyReadTimeout))
+		}
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+		release()
 		var tooLarge *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooLarge):

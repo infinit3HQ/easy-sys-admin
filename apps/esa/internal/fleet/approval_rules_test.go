@@ -3,6 +3,9 @@ package fleet
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/store"
 )
 
 // tokenActor is a's account and role, reached through an API token.
@@ -166,4 +169,35 @@ func TestTokenCannotWidenPlanGroupReboot(t *testing.T) {
 	unheld.Updates.Hold = nil
 	_, err = s.UpdateGroup(ctx, tok, f.g.ID, unheld)
 	wantInvalid(t, "token drops a held package", err)
+}
+
+// An admin who is not an owner cannot send the owner's kept sudo login to a
+// server by reinstalling the helper. They enter their own.
+func TestReinstallStoredLoginIsOwnerOnly(t *testing.T) {
+	f := newRoleFixture(t)
+	s, ctx := f.s, context.Background()
+	admin := shareMember(t, s, f.org, signIn(t, s, "adam"), RoleAdmin)
+	if err := s.db.Model(&f.gSrv).Update("host_key", "ssh-ed25519 AAAA").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.ReinstallHelper(ctx, admin, f.gSrv.ID, nil)
+	wantInvalid(t, "admin reinstalls with the owner's kept login", err)
+}
+
+// A plan that was approved while a rejection was being written stays approved.
+func TestRejectPlanDoesNotOverwriteApproval(t *testing.T) {
+	f := newRoleFixture(t)
+	s, ctx := f.s, context.Background()
+	row := store.FixPlan{AccountID: f.org, Status: "approved", Fingerprint: "fp", CreatedBy: f.owner.UserID, Body: store.JSON("{}"), CreatedAt: time.Now(), UpdatedAt: time.Now()}
+	if err := s.db.Omit("Account").Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RejectPlan(ctx, f.owner, row.ID, "late"); err == nil {
+		t.Fatal("an approved plan was rejected")
+	}
+	var got store.FixPlan
+	s.db.First(&got, row.ID)
+	if got.Status != "approved" {
+		t.Fatalf("plan status = %q, want approved", got.Status)
+	}
 }

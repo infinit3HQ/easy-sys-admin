@@ -2810,10 +2810,11 @@ components:
 
     AgentCredential:
       type: object
-      required: [serverId, token]
+      required: [serverId, token, signingPin]
       properties:
         serverId: { type: integer, format: int64 }
         token: { type: string, description: "Shown once. Save in a protected file, never in a URL or command argument." }
+        signingPin: { type: string, description: "Shown once with the token. The agent checks every command against it, so a proxy in front of esa cannot give the agent commands. Give it to the agent out of band, the same way as the token." }
     AgentCommand:
       type: object
       required: [id, action, args, expiresAt]
@@ -2822,6 +2823,8 @@ components:
         action: { type: string }
         args: { type: array, maxItems: 256, items: { type: string, maxLength: 65536 } }
         expiresAt: { type: string, format: date-time }
+        serverId: { type: integer, format: int64, description: The server the command is for. Part of what is signed. }
+        signature: { type: string, description: Base64 Ed25519 signature over the command with the account key. An agent with a pin refuses a command without a valid one. }
     Server:
       type: object
       required: [id, name, host, port, username, enrollment, hostKeyFingerprint, helperVersion, arch, hostsControlPlane, protectedContainers, hasStoredLogin, createdAt, status, reasons, lastError, hostKeyMismatch, presentedFingerprint, access, yourRole, note]

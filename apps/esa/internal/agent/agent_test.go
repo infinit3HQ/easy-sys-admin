@@ -2,10 +2,19 @@ package agent
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/nirajdilshan/easy-sys-admin/apps/esa/internal/hostops/proto"
 )
 
 func TestAgentRejectsUnsafeOriginsAndCredentials(t *testing.T) {
@@ -43,5 +52,83 @@ func TestAgentNeverExecutesNetworkChosenPrograms(t *testing.T) {
 	}
 	if validCommand(Command{ID: 1, Action: "status", ExpiresAt: time.Now().Add(-time.Second)}) {
 		t.Fatal("expired command accepted")
+	}
+}
+
+// An agent with a pin runs only commands signed for its server. What answers
+// at its origin, including a proxy, cannot give it work.
+func TestAgentWithPinRunsOnlySignedCommands(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	const serverID = 7
+	expires := time.Now().Add(time.Minute)
+	sign := func(server, id int64, action string) string {
+		return base64.StdEncoding.EncodeToString(ed25519.Sign(priv, proto.AgentCommandMessage(server, id, action, []string{}, expires.Unix())))
+	}
+	commands := []Command{
+		{ID: 1, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: sign(serverID, 1, "status")},
+		{ID: 2, Action: "reboot", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: ""},
+		{ID: 3, Action: "reboot", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: sign(serverID, 3, "status")},
+		{ID: 4, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: 8, Signature: sign(8, 4, "status")},
+		// A signed command delivered a second time, or one with an older id
+		// delivered after a newer one, is not run again.
+		{ID: 1, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: sign(serverID, 1, "status")},
+		{ID: 5, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: sign(serverID, 5, "status")},
+		{ID: 4, Action: "status", Args: []string{}, ExpiresAt: expires, ServerID: serverID, Signature: sign(serverID, 4, "status")},
+	}
+	var (
+		mu      sync.Mutex
+		next    int
+		results = map[int64]Result{}
+		done    = make(chan struct{})
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch r.URL.Path {
+		case "/api/v1/agent/poll":
+			if next < len(commands) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"command": commands[next]})
+				next++
+				return
+			}
+			_, _ = w.Write([]byte("{}"))
+		case "/api/v1/agent/result":
+			var res Result
+			_ = json.NewDecoder(r.Body).Decode(&res)
+			results[res.ID] = res
+			w.WriteHeader(http.StatusNoContent)
+			if len(results) == 5 {
+				close(done)
+			}
+		}
+	}))
+	defer srv.Close()
+	client, err := New(srv.URL, "esa_agent_test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.WithPin(proto.AgentPin{ServerID: serverID, Key: pub})
+	var ran []int64
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	go func() {
+		<-done
+		cancel()
+	}()
+	_ = client.Run(ctx, func(_ context.Context, c Command) Result {
+		mu.Lock()
+		ran = append(ran, c.ID)
+		mu.Unlock()
+		return Result{ID: c.ID, Output: `{"ok":true,"protocol":1}`}
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(ran) != 2 || ran[0] != 1 || ran[1] != 5 {
+		t.Fatalf("ran commands %v, want 1 and 5 once each", ran)
+	}
+	for _, id := range []int64{2, 3, 4} {
+		if res, ok := results[id]; !ok || res.Exit == 0 {
+			t.Errorf("command %d: refusal was not reported: %+v", id, res)
+		}
 	}
 }

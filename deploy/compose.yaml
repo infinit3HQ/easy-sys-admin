@@ -19,6 +19,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
       - postgres:/var/lib/postgresql
+    security_opt: [no-new-privileges:true]
     networks: [database]
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U esa -d esa']
@@ -74,6 +75,13 @@ services:
     # its public address, so it needs normal outbound networking.
     extra_hosts:
       - host.docker.internal:host-gateway
+    # A compromised process gets no extra privileges, no capabilities, and a
+    # bounded share of the host. Raise the limits with ESA_MEM_LIMIT and
+    # ESA_PIDS_LIMIT for a very large fleet.
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: ${ESA_MEM_LIMIT:-2g}
+    pids_limit: ${ESA_PIDS_LIMIT:-1024}
     networks: [internal, database]
 
   web:
@@ -98,6 +106,10 @@ services:
       ESA_SEO: ${ESA_SEO:-false}
       # Revision metadata is baked into the image.
       ESA_SOURCE_URL: ${ESA_SOURCE_URL:-https://github.com/infinit3HQ/easy-sys-admin}
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    mem_limit: ${ESA_WEB_MEM_LIMIT:-1g}
+    pids_limit: ${ESA_PIDS_LIMIT:-1024}
     networks: [internal, proxy]
     labels:
       - traefik.enable=true

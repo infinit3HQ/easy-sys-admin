@@ -246,8 +246,15 @@ func (s *Service) RejectPlan(ctx context.Context, a Actor, id int64, reason stri
 		return PlanView{}, invalid("status", "only a submitted plan can be rejected")
 	}
 	now := s.now()
-	if err := s.db.WithContext(ctx).Model(&row).Updates(map[string]any{"status": "rejected", "reason": reason, "updated_at": now}).Error; err != nil {
-		return PlanView{}, err
+	// Only a plan that is still submitted can be rejected. An approval that
+	// landed since the read must not be overwritten.
+	res := s.db.WithContext(ctx).Model(&store.FixPlan{}).Where("id = ? AND status = ?", row.ID, "submitted").
+		Updates(map[string]any{"status": "rejected", "reason": reason, "updated_at": now})
+	if res.Error != nil {
+		return PlanView{}, res.Error
+	}
+	if res.RowsAffected != 1 {
+		return PlanView{}, invalid("status", "only a submitted plan can be rejected")
 	}
 	s.audit(ctx, nil, a, "plan.reject", row.Fingerprint, map[string]any{"id": row.ID})
 	row.Status, row.Reason = "rejected", reason
