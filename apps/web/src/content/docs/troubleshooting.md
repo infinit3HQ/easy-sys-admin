@@ -37,11 +37,11 @@ The control plane connects out to the SSH port you entered. Check that port from
 
 A changed host key looks like a failure, not a timeout. The reason on the board says the host key changed.
 
-## A run failed on apt
+## A run failed on apt or DNF
 
-Updates use `apt` on Debian and Ubuntu. Another family is not supported. An upgrade that was killed in the past can leave dpkg in a state that needs a person on the server. The helper will not run a shell for you.
+Updates use APT on Debian and Ubuntu and DNF on Rocky Linux 9. Other RHEL-family releases are not supported. Rocky needs `dnf-utils` for reboot checks. An upgrade that was killed in the past can leave dpkg or RPM in a state that needs a person on the server. The helper will not run a shell for you.
 
-Held packages are skipped. Security-only mode installs packages whose candidate version is in a `-security` pocket.
+Held packages are skipped. On APT, security-only mode installs packages whose candidate version is in a `-security` pocket. On Rocky, it uses DNF security advisories. If that metadata is missing, the update check fails and asks you to refresh package lists, instead of reporting no security updates.
 
 ## The CLI says it is not logged in
 

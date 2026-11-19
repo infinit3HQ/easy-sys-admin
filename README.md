@@ -2,7 +2,15 @@
 
 One board for a fleet of Linux servers. Add servers, put them in groups, and set when each group gets its disks cleaned and its packages patched. The board shows live status, and you can share a group with another organization. AI agents read the same data, and can start runs, over MCP.
 
-Nothing listens on your servers. The control plane connects over SSH as a restricted `esa` user that can only run one small helper binary.
+Nothing listens on your servers. By default the control plane connects over SSH as a restricted `esa` user that can only run one small helper binary through sudo. [docs/security.md](docs/security.md#why-the-sudo-rule-ends-in-a-wildcard) explains why that sudo rule is safe.
+
+For a server behind NAT or without inbound SSH, install the [outbound agent](docs/outbound-agent.md) instead. It calls the control plane over HTTPS, runs only commands signed with your space's key, and opens no port.
+
+## Supported servers
+
+- Linux on amd64 or arm64, with systemd and `sudo`.
+- Package updates with APT on Debian and Ubuntu, and with DNF on Rocky Linux 9 (install `dnf-utils` for reboot checks). Other RHEL-family releases are not supported.
+- The outbound agent runs on Ubuntu 24.04 and Rocky Linux 9.
 
 ## What it does
 
@@ -22,16 +30,16 @@ browser / CLI / AI agent ──HTTPS──> web (TanStack Start) ──> control
                                                                     └─SSH as "esa"─> esa-helper on each server
 ```
 
-| Path                     | What it is                                                                                  |
-| ------------------------ | ------------------------------------------------------------------------------------------- |
-| `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers    |
+| Path                     | What it is                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------- |
+| `apps/esa`               | Go: the control plane (`esa serve`), the `esa` CLI, and `esa-helper` for managed servers           |
 | `apps/web`               | TanStack Start: landing page, the board, docs at `/docs`, the MCP endpoint, and a proxy to the API |
-| `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it               |
-| `packages/plans`         | Plan names, prices, and the hosted beta caps                                                |
-| `packages/eslint-config` | Shared ESLint config                                                                        |
-| `packages/tsconfig`      | Shared TypeScript configs                                                                   |
-| `deploy`                 | `compose.yaml` and `.env.example` for one Docker host behind Traefik                        |
-| `docs`                   | Documentation, listed below                                                                 |
+| `packages/api`           | `openapi.yaml`, the API contract. Go and TypeScript code is generated from it                      |
+| `packages/plans`         | Plan names, prices, and the hosted beta caps                                                       |
+| `packages/eslint-config` | Shared ESLint config                                                                               |
+| `packages/tsconfig`      | Shared TypeScript configs                                                                          |
+| `deploy`                 | `compose.yaml` and `.env.example` for one Docker host behind Traefik                               |
+| `docs`                   | Documentation, listed below                                                                        |
 
 ## Quick start
 
@@ -49,12 +57,19 @@ Open http://localhost:3000 and use "Continue as the local dev user". Details are
 
 ## Deploy
 
+Run it on one Docker host behind Traefik with the published images from GHCR. Traefik must already run on the host and own an external network, `proxy` by default.
+
 ```sh
+git clone https://github.com/infinit3HQ/easy-sys-admin.git && cd easy-sys-admin
 cp deploy/.env.example deploy/.env  # set ESA_HOST, ESA_PUBLIC_URL, ESA_MASTER_KEY, POSTGRES_PASSWORD
-docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build
+# and the images:
+#   ESA_CONTROL_PLANE_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-control-plane:stable
+#   ESA_WEB_IMAGE=ghcr.io/infinit3hq/easy-sys-admin-web:stable
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env pull
+docker compose -f deploy/compose.yaml -f deploy/compose.images.yaml --env-file deploy/.env up -d --no-build --wait
 ```
 
-Traefik must already run on the host. No ports are published; one hostname serves the app, the API, MCP and the enroll scripts. Deploying from GitHub Actions on a self-hosted runner is covered in [docs/deployment.md](docs/deployment.md). Every setting is an environment variable, listed in [docs/configuration.md](docs/configuration.md).
+This needs Compose 2.24.4 or newer. No ports are published; one hostname serves the app, the API, MCP and the enroll scripts. To build from source instead, leave the image settings unset and run `docker compose -f deploy/compose.yaml --env-file deploy/.env up -d --build`. The full guide is the self-hosting page at `/docs/self-hosting` in the web app. Deploying from GitHub Actions on a self-hosted runner is covered in [docs/deployment.md](docs/deployment.md). Every setting is an environment variable, listed in [docs/configuration.md](docs/configuration.md).
 
 ## Add a server
 
@@ -87,8 +102,9 @@ User documentation is served by the web app at `/docs`. The pages below are the 
 | [deployment.md](docs/deployment.md)          | Compose, GitHub Actions, upgrades, backups, rollbacks            |
 | [development.md](docs/development.md)        | Local setup, scripts, tests, adding endpoints and helper actions |
 | [server-helper.md](docs/server-helper.md)    | What runs on a managed server and its safety rules               |
+| [outbound-agent.md](docs/outbound-agent.md)  | The outbound agent for servers without inbound SSH               |
 | [teams.md](docs/teams.md)                    | Personal spaces, organizations, teams, invites, shared groups    |
-| [security.md](docs/security.md)              | Security model and how to report a vulnerability                 |
+| [security.md](docs/security.md)              | Security model, the sudo rule, and how to report a vulnerability |
 | [cli.md](docs/cli.md), [mcp.md](docs/mcp.md) | The command line and the MCP endpoint                            |
 | [decisions.md](docs/decisions.md)            | Why the stack and design are what they are                       |
 | [status.md](docs/status.md)                  | What is built and what is left                                   |

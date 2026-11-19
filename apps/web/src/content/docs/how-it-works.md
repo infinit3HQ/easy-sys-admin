@@ -87,10 +87,10 @@ Passwords are hashed. Server logins you choose to keep, the space's SSH private 
 
 ## What is not done yet
 
-- One control plane process. Run locks, rate limits, the notification queue, and poll back-off live in memory, so a second process is not supported.
-- Package updates are `apt` only.
-- The helper's protocol version is reported and not checked. A new helper action needs a reinstall on older servers.
-- There is no step that re-encrypts old secrets when you rotate `ESA_MASTER_KEY`. Keep old keys in the list.
-- The audit log is not pruned.
-- Servers without inbound SSH can use the [outbound agent](/outbound-agent).
 - Logs are not followed live. The poll interval is fixed at one minute.
+- Package updates use APT on Debian and Ubuntu and DNF on Rocky Linux 9. Other RHEL-family releases are not supported.
+- A new helper action needs a helper reinstall on older servers. The control plane sends only actions the helper lists, and refuses a helper that speaks another protocol version.
+- The CLI has no commands for organizations, teams, or sharing. Use the web app or the API.
+- Servers without inbound SSH can use the [outbound agent](/outbound-agent).
+
+More than one control plane process can share one database. Run locks, rate limits, the notification queue, and poll back-off live in PostgreSQL, and one process at a time holds the poll. Rotate `ESA_MASTER_KEY` with `esa reseal`. The audit log is kept until the account is deleted, or for `ESA_AUDIT_RETENTION` when that is set.
